@@ -3,6 +3,7 @@ using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.Linq;
 
 namespace SeriLovers.API.Services
 {
@@ -18,7 +19,8 @@ namespace SeriLovers.API.Services
         public List<Actor> GetAll()
         {
             return _context.Actors
-                           .Include(a => a.Series)
+                           .Include(a => a.SeriesActors)
+                               .ThenInclude(sa => sa.Series)
                            .OrderBy(a => a.LastName)
                            .ThenBy(a => a.FirstName)
                            .ToList();
@@ -27,7 +29,8 @@ namespace SeriLovers.API.Services
         public Actor? GetById(int id)
         {
             return _context.Actors
-                           .Include(a => a.Series)
+                           .Include(a => a.SeriesActors)
+                               .ThenInclude(sa => sa.Series)
                            .FirstOrDefault(a => a.Id == id);
         }
 
@@ -46,7 +49,7 @@ namespace SeriLovers.API.Services
                 throw new ArgumentNullException(nameof(actor));
 
             var existing = _context.Actors
-                                   .Include(a => a.Series)
+                                   .Include(a => a.SeriesActors)
                                    .FirstOrDefault(a => a.Id == actor.Id);
 
             if (existing == null)
@@ -67,14 +70,14 @@ namespace SeriLovers.API.Services
         public void Delete(int id)
         {
             var actor = _context.Actors
-                               .Include(a => a.Series)
+                               .Include(a => a.SeriesActors)
                                .FirstOrDefault(a => a.Id == id);
 
             if (actor == null)
                 throw new KeyNotFoundException($"Actor with ID {id} not found.");
 
             // Check if actor is associated with any series
-            if (actor.Series != null && actor.Series.Any())
+            if (actor.SeriesActors != null && actor.SeriesActors.Any())
             {
                 throw new InvalidOperationException($"Cannot delete actor with ID {id} because they are associated with one or more series.");
             }

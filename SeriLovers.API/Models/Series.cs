@@ -1,4 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+
+using System.Collections.Generic;
 
 namespace SeriLovers.API.Models
 {
@@ -23,10 +26,18 @@ namespace SeriLovers.API.Models
 
         [StringLength(100, ErrorMessage = "Genre cannot exceed 100 characters.")]
         public string Genre { get; set; } = string.Empty;
-        
+
         // Navigation properties
         public ICollection<Season> Seasons { get; set; } = new List<Season>();
+        public ICollection<SeriesGenre> SeriesGenres { get; set; } = new List<SeriesGenre>();
+        public ICollection<SeriesActor> SeriesActors { get; set; } = new List<SeriesActor>();
+        public ICollection<Rating> Ratings { get; set; } = new List<Rating>();
+        public ICollection<Watchlist> Watchlists { get; set; } = new List<Watchlist>();
+
+        [NotMapped]
         public ICollection<Genre> Genres { get; set; } = new List<Genre>();
+
+        [NotMapped]
         public ICollection<Actor> Actors { get; set; } = new List<Actor>();
     }
 }

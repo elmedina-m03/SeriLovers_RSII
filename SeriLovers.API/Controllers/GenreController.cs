@@ -1,8 +1,12 @@
+using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Data;
 using SeriLovers.API.Models;
+using SeriLovers.API.Models.DTOs;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SeriLovers.API.Controllers
 {
@@ -12,10 +16,12 @@ namespace SeriLovers.API.Controllers
     public class GenreController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly IMapper _mapper;
 
-        public GenreController(ApplicationDbContext context)
+        public GenreController(ApplicationDbContext context, IMapper mapper)
         {
             _context = context;
+            _mapper = mapper;
         }
 
         // GET: api/genre
@@ -23,10 +29,12 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetAll()
         {
             var genres = await _context.Genres
-                .Include(g => g.Series)
+                .Include(g => g.SeriesGenres)
+                    .ThenInclude(sg => sg.Series)
                 .OrderBy(g => g.Name)
                 .ToListAsync();
-            return Ok(genres);
+            var result = _mapper.Map<IEnumerable<GenreDto>>(genres);
+            return Ok(result);
         }
 
         // GET: api/genre/{id}
@@ -34,7 +42,8 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetById(int id)
         {
             var genre = await _context.Genres
-                .Include(g => g.Series)
+                .Include(g => g.SeriesGenres)
+                    .ThenInclude(sg => sg.Series)
                 .FirstOrDefaultAsync(g => g.Id == id);
 
             if (genre == null)
@@ -42,7 +51,8 @@ namespace SeriLovers.API.Controllers
                 return NotFound(new { message = $"Genre with ID {id} not found." });
             }
 
-            return Ok(genre);
+            var result = _mapper.Map<GenreDto>(genre);
+            return Ok(result);
         }
 
         // GET: api/genre/search?name={name}
@@ -55,12 +65,14 @@ namespace SeriLovers.API.Controllers
             }
 
             var genres = await _context.Genres
-                .Include(g => g.Series)
+                .Include(g => g.SeriesGenres)
+                    .ThenInclude(sg => sg.Series)
                 .Where(g => g.Name.Contains(name))
                 .OrderBy(g => g.Name)
                 .ToListAsync();
 
-            return Ok(genres);
+            var result = _mapper.Map<IEnumerable<GenreDto>>(genres);
+            return Ok(result);
         }
 
         // GET: api/genre/series/{seriesId}
@@ -74,40 +86,44 @@ namespace SeriLovers.API.Controllers
             }
 
             var genres = await _context.Genres
-                .Include(g => g.Series)
-                .Where(g => g.Series.Any(s => s.Id == seriesId))
+                .Include(g => g.SeriesGenres)
+                    .ThenInclude(sg => sg.Series)
+                .Where(g => g.SeriesGenres.Any(sg => sg.SeriesId == seriesId))
                 .OrderBy(g => g.Name)
                 .ToListAsync();
 
-            return Ok(genres);
+            var result = _mapper.Map<IEnumerable<GenreDto>>(genres);
+            return Ok(result);
         }
 
         // POST: api/genre
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Create([FromBody] Genre genre)
+        public async Task<IActionResult> Create([FromBody] GenreUpsertDto genreDto)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ValidationProblem(ModelState);
             }
 
             // Validate Name is not empty
-            if (string.IsNullOrWhiteSpace(genre.Name))
+            if (string.IsNullOrWhiteSpace(genreDto.Name))
             {
                 return BadRequest(new { message = "Name is required." });
             }
 
+            var trimmedName = genreDto.Name.Trim();
+
             // Validate Name is unique (case-insensitive)
             var nameExists = await _context.Genres
-                .AnyAsync(g => g.Name.ToLower() == genre.Name.Trim().ToLower());
+                .AnyAsync(g => g.Name.ToLower() == trimmedName.ToLower());
             if (nameExists)
             {
-                return BadRequest(new { message = $"Genre with name '{genre.Name}' already exists." });
+                return BadRequest(new { message = $"Genre with name '{trimmedName}' already exists." });
             }
 
-            // Trim and set the name
-            genre.Name = genre.Name.Trim();
+            var genre = _mapper.Map<Genre>(genreDto);
+            genre.Name = trimmedName;
 
             _context.Genres.Add(genre);
             
@@ -121,56 +137,59 @@ namespace SeriLovers.API.Controllers
                 if (ex.InnerException?.Message.Contains("UNIQUE") == true || 
                     ex.InnerException?.Message.Contains("duplicate") == true)
                 {
-                    return BadRequest(new { message = $"Genre with name '{genre.Name}' already exists." });
+                    return BadRequest(new { message = $"Genre with name '{trimmedName}' already exists." });
                 }
                 throw;
             }
 
             // Load related data for response
             await _context.Entry(genre)
-                .Collection(g => g.Series)
+                .Collection(g => g.SeriesGenres)
+                .Query()
+                .Include(sg => sg.Series)
                 .LoadAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = genre.Id }, genre);
+            var result = _mapper.Map<GenreDto>(genre);
+
+            return CreatedAtAction(nameof(GetById), new { id = genre.Id }, result);
         }
 
         // PUT: api/genre/{id}
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Update(int id, [FromBody] Genre genre)
+        public async Task<IActionResult> Update(int id, [FromBody] GenreUpsertDto genreDto)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ValidationProblem(ModelState);
             }
 
-            if (id != genre.Id)
-            {
-                return BadRequest(new { message = "ID mismatch between URL and request body." });
-            }
-
-            var existingGenre = await _context.Genres.FindAsync(id);
+            var existingGenre = await _context.Genres
+                .Include(g => g.SeriesGenres)
+                .FirstOrDefaultAsync(g => g.Id == id);
             if (existingGenre == null)
             {
                 return NotFound(new { message = $"Genre with ID {id} not found." });
             }
 
             // Validate Name is not empty
-            if (string.IsNullOrWhiteSpace(genre.Name))
+            if (string.IsNullOrWhiteSpace(genreDto.Name))
             {
                 return BadRequest(new { message = "Name is required." });
             }
 
+            var trimmedName = genreDto.Name.Trim();
+
             // Validate Name is unique (case-insensitive, excluding current genre)
             var nameExists = await _context.Genres
-                .AnyAsync(g => g.Name.ToLower() == genre.Name.Trim().ToLower() && g.Id != id);
+                .AnyAsync(g => g.Name.ToLower() == trimmedName.ToLower() && g.Id != id);
             if (nameExists)
             {
-                return BadRequest(new { message = $"Genre with name '{genre.Name}' already exists." });
+                return BadRequest(new { message = $"Genre with name '{trimmedName}' already exists." });
             }
 
             // Update properties
-            existingGenre.Name = genre.Name.Trim();
+            existingGenre.Name = trimmedName;
 
             try
             {
@@ -190,17 +209,20 @@ namespace SeriLovers.API.Controllers
                 if (ex.InnerException?.Message.Contains("UNIQUE") == true || 
                     ex.InnerException?.Message.Contains("duplicate") == true)
                 {
-                    return BadRequest(new { message = $"Genre with name '{genre.Name}' already exists." });
+                    return BadRequest(new { message = $"Genre with name '{trimmedName}' already exists." });
                 }
                 throw;
             }
 
             // Load related data for response
             await _context.Entry(existingGenre)
-                .Collection(g => g.Series)
+                .Collection(g => g.SeriesGenres)
+                .Query()
+                .Include(sg => sg.Series)
                 .LoadAsync();
 
-            return Ok(existingGenre);
+            var result = _mapper.Map<GenreDto>(existingGenre);
+            return Ok(result);
         }
 
         // DELETE: api/genre/{id}
@@ -208,32 +230,21 @@ namespace SeriLovers.API.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
         {
-            var genre = await _context.Genres.FindAsync(id);
+            var genre = await _context.Genres
+                .Include(g => g.SeriesGenres)
+                .FirstOrDefaultAsync(g => g.Id == id);
             if (genre == null)
             {
                 return NotFound(new { message = $"Genre with ID {id} not found." });
             }
 
-            _context.Genres.Remove(genre);
-            
-            try
+            if (genre.SeriesGenres.Any())
             {
-                await _context.SaveChangesAsync();
+                return BadRequest(new { message = $"Cannot delete genre '{genre.Name}' because it is associated with one or more series." });
             }
-            catch (DbUpdateException)
-            {
-                // Check if genre is being used by any series
-                var hasSeries = await _context.Genres
-                    .Include(g => g.Series)
-                    .Where(g => g.Id == id)
-                    .AnyAsync(g => g.Series.Any());
 
-                if (hasSeries)
-                {
-                    return BadRequest(new { message = $"Cannot delete genre '{genre.Name}' because it is associated with one or more series." });
-                }
-                throw;
-            }
+            _context.Genres.Remove(genre);
+            await _context.SaveChangesAsync();
 
             return NoContent();
         }

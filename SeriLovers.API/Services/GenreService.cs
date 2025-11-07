@@ -3,6 +3,7 @@ using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.Linq;
 
 namespace SeriLovers.API.Services
 {
@@ -18,7 +19,8 @@ namespace SeriLovers.API.Services
         public List<Genre> GetAll()
         {
             return _context.Genres
-                           .Include(g => g.Series)
+                           .Include(g => g.SeriesGenres)
+                               .ThenInclude(sg => sg.Series)
                            .OrderBy(g => g.Name)
                            .ToList();
         }
@@ -26,7 +28,8 @@ namespace SeriLovers.API.Services
         public Genre? GetById(int id)
         {
             return _context.Genres
-                           .Include(g => g.Series)
+                           .Include(g => g.SeriesGenres)
+                               .ThenInclude(sg => sg.Series)
                            .FirstOrDefault(g => g.Id == id);
         }
 
@@ -58,7 +61,7 @@ namespace SeriLovers.API.Services
                 throw new ArgumentNullException(nameof(genre));
 
             var existing = _context.Genres
-                                  .Include(g => g.Series)
+                                  .Include(g => g.SeriesGenres)
                                   .FirstOrDefault(g => g.Id == genre.Id);
 
             if (existing == null)
@@ -87,14 +90,14 @@ namespace SeriLovers.API.Services
         public void Delete(int id)
         {
             var genre = _context.Genres
-                               .Include(g => g.Series)
+                               .Include(g => g.SeriesGenres)
                                .FirstOrDefault(g => g.Id == id);
 
             if (genre == null)
                 throw new KeyNotFoundException($"Genre with ID {id} not found.");
 
             // Check if genre is associated with any series
-            if (genre.Series != null && genre.Series.Any())
+            if (genre.SeriesGenres != null && genre.SeriesGenres.Any())
             {
                 throw new InvalidOperationException($"Cannot delete genre with ID {id} because it is associated with one or more series.");
             }

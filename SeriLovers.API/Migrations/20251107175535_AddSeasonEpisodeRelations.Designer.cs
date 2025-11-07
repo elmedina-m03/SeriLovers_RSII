@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SeriLovers.API.Data;
 
@@ -11,9 +12,11 @@ using SeriLovers.API.Data;
 namespace SeriLovers.API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251107175535_AddSeasonEpisodeRelations")]
+    partial class AddSeasonEpisodeRelations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -314,42 +317,6 @@ namespace SeriLovers.API.Migrations
                     b.ToTable("Genres");
                 });
 
-            modelBuilder.Entity("SeriLovers.API.Models.Rating", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("nvarchar(2000)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<int>("Score")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SeriesId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SeriesId");
-
-                    b.HasIndex("UserId", "SeriesId")
-                        .IsUnique();
-
-                    b.ToTable("Ratings");
-                });
-
             modelBuilder.Entity("SeriLovers.API.Models.Season", b =>
                 {
                     b.Property<int>("Id")
@@ -452,35 +419,6 @@ namespace SeriLovers.API.Migrations
                     b.ToTable("SeriesGenres");
                 });
 
-            modelBuilder.Entity("SeriLovers.API.Models.Watchlist", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("AddedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<int>("SeriesId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SeriesId");
-
-                    b.HasIndex("UserId", "SeriesId")
-                        .IsUnique();
-
-                    b.ToTable("Watchlists");
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<int>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<int>", null)
@@ -543,25 +481,6 @@ namespace SeriLovers.API.Migrations
                     b.Navigation("Season");
                 });
 
-            modelBuilder.Entity("SeriLovers.API.Models.Rating", b =>
-                {
-                    b.HasOne("SeriLovers.API.Models.Series", "Series")
-                        .WithMany("Ratings")
-                        .HasForeignKey("SeriesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SeriLovers.API.Models.ApplicationUser", "User")
-                        .WithMany("Ratings")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Series");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("SeriLovers.API.Models.Season", b =>
                 {
                     b.HasOne("SeriLovers.API.Models.Series", "Series")
@@ -611,35 +530,9 @@ namespace SeriLovers.API.Migrations
                     b.Navigation("Series");
                 });
 
-            modelBuilder.Entity("SeriLovers.API.Models.Watchlist", b =>
-                {
-                    b.HasOne("SeriLovers.API.Models.Series", "Series")
-                        .WithMany("Watchlists")
-                        .HasForeignKey("SeriesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SeriLovers.API.Models.ApplicationUser", "User")
-                        .WithMany("Watchlists")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Series");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("SeriLovers.API.Models.Actor", b =>
                 {
                     b.Navigation("SeriesActors");
-                });
-
-            modelBuilder.Entity("SeriLovers.API.Models.ApplicationUser", b =>
-                {
-                    b.Navigation("Ratings");
-
-                    b.Navigation("Watchlists");
                 });
 
             modelBuilder.Entity("SeriLovers.API.Models.Genre", b =>
@@ -654,15 +547,11 @@ namespace SeriLovers.API.Migrations
 
             modelBuilder.Entity("SeriLovers.API.Models.Series", b =>
                 {
-                    b.Navigation("Ratings");
-
                     b.Navigation("Seasons");
 
                     b.Navigation("SeriesActors");
 
                     b.Navigation("SeriesGenres");
-
-                    b.Navigation("Watchlists");
                 });
 #pragma warning restore 612, 618
         }

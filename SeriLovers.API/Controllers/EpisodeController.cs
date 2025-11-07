@@ -1,8 +1,12 @@
+using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Data;
 using SeriLovers.API.Models;
+using SeriLovers.API.Models.DTOs;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SeriLovers.API.Controllers
 {
@@ -12,10 +16,12 @@ namespace SeriLovers.API.Controllers
     public class EpisodeController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly IMapper _mapper;
 
-        public EpisodeController(ApplicationDbContext context)
+        public EpisodeController(ApplicationDbContext context, IMapper mapper)
         {
             _context = context;
+            _mapper = mapper;
         }
 
         // GET: api/episode
@@ -23,9 +29,9 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetAll()
         {
             var episodes = await _context.Episodes
-                .Include(e => e.Season)
                 .ToListAsync();
-            return Ok(episodes);
+            var result = _mapper.Map<IEnumerable<EpisodeDto>>(episodes);
+            return Ok(result);
         }
 
         // GET: api/episode/{id}
@@ -33,7 +39,6 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetById(int id)
         {
             var episode = await _context.Episodes
-                .Include(e => e.Season)
                 .FirstOrDefaultAsync(e => e.Id == id);
 
             if (episode == null)
@@ -41,7 +46,8 @@ namespace SeriLovers.API.Controllers
                 return NotFound(new { message = $"Episode with ID {id} not found." });
             }
 
-            return Ok(episode);
+            var result = _mapper.Map<EpisodeDto>(episode);
+            return Ok(result);
         }
 
         // GET: api/episode/season/{seasonId}
@@ -55,81 +61,56 @@ namespace SeriLovers.API.Controllers
             }
 
             var episodes = await _context.Episodes
-                .Include(e => e.Season)
                 .Where(e => e.SeasonId == seasonId)
                 .OrderBy(e => e.EpisodeNumber)
                 .ToListAsync();
 
-            return Ok(episodes);
+            var result = _mapper.Map<IEnumerable<EpisodeDto>>(episodes);
+            return Ok(result);
         }
 
         // POST: api/episode
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Create([FromBody] Episode episode)
+        public async Task<IActionResult> Create([FromBody] EpisodeUpsertDto episodeDto)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ValidationProblem(ModelState);
             }
 
             // Validate SeasonId exists
-            var seasonExists = await _context.Seasons.AnyAsync(s => s.Id == episode.SeasonId);
+            var seasonExists = await _context.Seasons.AnyAsync(s => s.Id == episodeDto.SeasonId);
             if (!seasonExists)
             {
-                return BadRequest(new { message = $"Season with ID {episode.SeasonId} does not exist." });
+                return BadRequest(new { message = $"Season with ID {episodeDto.SeasonId} does not exist." });
             }
 
             // Validate EpisodeNumber is unique for the season
             var episodeNumberExists = await _context.Episodes
-                .AnyAsync(e => e.SeasonId == episode.SeasonId && e.EpisodeNumber == episode.EpisodeNumber);
+                .AnyAsync(e => e.SeasonId == episodeDto.SeasonId && e.EpisodeNumber == episodeDto.EpisodeNumber);
             if (episodeNumberExists)
             {
-                return BadRequest(new { message = $"Episode {episode.EpisodeNumber} already exists for this season." });
+                return BadRequest(new { message = $"Episode {episodeDto.EpisodeNumber} already exists for this season." });
             }
 
-            // Validate Title is not empty
-            if (string.IsNullOrWhiteSpace(episode.Title))
-            {
-                return BadRequest(new { message = "Title is required." });
-            }
-
-            // Validate Rating range if provided
-            if (episode.Rating.HasValue && (episode.Rating < 0 || episode.Rating > 10))
-            {
-                return BadRequest(new { message = "Rating must be between 0 and 10." });
-            }
-
-            // Validate DurationMinutes if provided
-            if (episode.DurationMinutes.HasValue && episode.DurationMinutes <= 0)
-            {
-                return BadRequest(new { message = "DurationMinutes must be greater than 0." });
-            }
+            var episode = _mapper.Map<Episode>(episodeDto);
 
             _context.Episodes.Add(episode);
             await _context.SaveChangesAsync();
 
-            // Load related data for response
-            await _context.Entry(episode)
-                .Reference(e => e.Season)
-                .LoadAsync();
-
-            return CreatedAtAction(nameof(GetById), new { id = episode.Id }, episode);
+            var result = _mapper.Map<EpisodeDto>(episode);
+            return CreatedAtAction(nameof(GetById), new { id = episode.Id }, result);
         }
 
         // PUT: api/episode/{id}
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Update(int id, [FromBody] Episode episode)
+        public async Task<IActionResult> Update(int id, [FromBody] EpisodeUpsertDto episodeDto)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
-            }
-
-            if (id != episode.Id)
-            {
-                return BadRequest(new { message = "ID mismatch between URL and request body." });
+                return ValidationProblem(ModelState);
             }
 
             var existingEpisode = await _context.Episodes.FindAsync(id);
@@ -139,48 +120,30 @@ namespace SeriLovers.API.Controllers
             }
 
             // Validate SeasonId exists
-            var seasonExists = await _context.Seasons.AnyAsync(s => s.Id == episode.SeasonId);
+            var seasonExists = await _context.Seasons.AnyAsync(s => s.Id == episodeDto.SeasonId);
             if (!seasonExists)
             {
-                return BadRequest(new { message = $"Season with ID {episode.SeasonId} does not exist." });
+                return BadRequest(new { message = $"Season with ID {episodeDto.SeasonId} does not exist." });
             }
 
             // Validate EpisodeNumber is unique for the season (excluding current episode)
             var episodeNumberExists = await _context.Episodes
-                .AnyAsync(e => e.SeasonId == episode.SeasonId 
-                    && e.EpisodeNumber == episode.EpisodeNumber 
+                .AnyAsync(e => e.SeasonId == episodeDto.SeasonId 
+                    && e.EpisodeNumber == episodeDto.EpisodeNumber 
                     && e.Id != id);
             if (episodeNumberExists)
             {
-                return BadRequest(new { message = $"Episode {episode.EpisodeNumber} already exists for this season." });
-            }
-
-            // Validate Title is not empty
-            if (string.IsNullOrWhiteSpace(episode.Title))
-            {
-                return BadRequest(new { message = "Title is required." });
-            }
-
-            // Validate Rating range if provided
-            if (episode.Rating.HasValue && (episode.Rating < 0 || episode.Rating > 10))
-            {
-                return BadRequest(new { message = "Rating must be between 0 and 10." });
-            }
-
-            // Validate DurationMinutes if provided
-            if (episode.DurationMinutes.HasValue && episode.DurationMinutes <= 0)
-            {
-                return BadRequest(new { message = "DurationMinutes must be greater than 0." });
+                return BadRequest(new { message = $"Episode {episodeDto.EpisodeNumber} already exists for this season." });
             }
 
             // Update properties
-            existingEpisode.SeasonId = episode.SeasonId;
-            existingEpisode.EpisodeNumber = episode.EpisodeNumber;
-            existingEpisode.Title = episode.Title;
-            existingEpisode.Description = episode.Description;
-            existingEpisode.AirDate = episode.AirDate;
-            existingEpisode.DurationMinutes = episode.DurationMinutes;
-            existingEpisode.Rating = episode.Rating;
+            existingEpisode.SeasonId = episodeDto.SeasonId;
+            existingEpisode.EpisodeNumber = episodeDto.EpisodeNumber;
+            existingEpisode.Title = episodeDto.Title;
+            existingEpisode.Description = episodeDto.Description;
+            existingEpisode.AirDate = episodeDto.AirDate;
+            existingEpisode.DurationMinutes = episodeDto.DurationMinutes;
+            existingEpisode.Rating = episodeDto.Rating;
 
             try
             {
@@ -195,12 +158,8 @@ namespace SeriLovers.API.Controllers
                 throw;
             }
 
-            // Load related data for response
-            await _context.Entry(existingEpisode)
-                .Reference(e => e.Season)
-                .LoadAsync();
-
-            return Ok(existingEpisode);
+            var result = _mapper.Map<EpisodeDto>(existingEpisode);
+            return Ok(result);
         }
 
         // DELETE: api/episode/{id}

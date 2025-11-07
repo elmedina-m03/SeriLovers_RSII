@@ -1,8 +1,13 @@
+using AutoMapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Data;
 using SeriLovers.API.Models;
+using SeriLovers.API.Models.DTOs;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SeriLovers.API.Controllers
 {
@@ -12,10 +17,12 @@ namespace SeriLovers.API.Controllers
     public class ActorController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
+        private readonly IMapper _mapper;
 
-        public ActorController(ApplicationDbContext context)
+        public ActorController(ApplicationDbContext context, IMapper mapper)
         {
             _context = context;
+            _mapper = mapper;
         }
 
         // GET: api/actor
@@ -23,11 +30,14 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetAll()
         {
             var actors = await _context.Actors
-                .Include(a => a.Series)
+                .Include(a => a.SeriesActors)
+                    .ThenInclude(sa => sa.Series)
                 .OrderBy(a => a.LastName)
                 .ThenBy(a => a.FirstName)
                 .ToListAsync();
-            return Ok(actors);
+
+            var result = _mapper.Map<IEnumerable<ActorDto>>(actors);
+            return Ok(result);
         }
 
         // GET: api/actor/{id}
@@ -35,7 +45,8 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetById(int id)
         {
             var actor = await _context.Actors
-                .Include(a => a.Series)
+                .Include(a => a.SeriesActors)
+                    .ThenInclude(sa => sa.Series)
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (actor == null)
@@ -43,7 +54,8 @@ namespace SeriLovers.API.Controllers
                 return NotFound(new { message = $"Actor with ID {id} not found." });
             }
 
-            return Ok(actor);
+            var result = _mapper.Map<ActorDto>(actor);
+            return Ok(result);
         }
 
         // GET: api/actor/search?name={name}
@@ -56,13 +68,15 @@ namespace SeriLovers.API.Controllers
             }
 
             var actors = await _context.Actors
-                .Include(a => a.Series)
+                .Include(a => a.SeriesActors)
+                    .ThenInclude(sa => sa.Series)
                 .Where(a => a.FirstName.Contains(name) || a.LastName.Contains(name))
                 .OrderBy(a => a.LastName)
                 .ThenBy(a => a.FirstName)
                 .ToListAsync();
 
-            return Ok(actors);
+            var result = _mapper.Map<IEnumerable<ActorDto>>(actors);
+            return Ok(result);
         }
 
         // GET: api/actor/series/{seriesId}
@@ -76,98 +90,79 @@ namespace SeriLovers.API.Controllers
             }
 
             var actors = await _context.Actors
-                .Include(a => a.Series)
-                .Where(a => a.Series.Any(s => s.Id == seriesId))
+                .Include(a => a.SeriesActors)
+                    .ThenInclude(sa => sa.Series)
+                .Where(a => a.SeriesActors.Any(sa => sa.SeriesId == seriesId))
                 .OrderBy(a => a.LastName)
                 .ThenBy(a => a.FirstName)
                 .ToListAsync();
 
-            return Ok(actors);
+            var result = _mapper.Map<IEnumerable<ActorDto>>(actors);
+            return Ok(result);
         }
 
         // POST: api/actor
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Create([FromBody] Actor actor)
+        public async Task<IActionResult> Create([FromBody] ActorUpsertDto actorDto)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
-            }
-
-            // Validate FirstName is not empty
-            if (string.IsNullOrWhiteSpace(actor.FirstName))
-            {
-                return BadRequest(new { message = "FirstName is required." });
-            }
-
-            // Validate LastName is not empty
-            if (string.IsNullOrWhiteSpace(actor.LastName))
-            {
-                return BadRequest(new { message = "LastName is required." });
+                return ValidationProblem(ModelState);
             }
 
             // Validate DateOfBirth is not in the future
-            if (actor.DateOfBirth.HasValue && actor.DateOfBirth > DateTime.Now)
+            if (actorDto.DateOfBirth.HasValue && actorDto.DateOfBirth > DateTime.UtcNow)
             {
                 return BadRequest(new { message = "DateOfBirth cannot be in the future." });
             }
+
+            var actor = _mapper.Map<Actor>(actorDto);
 
             _context.Actors.Add(actor);
             await _context.SaveChangesAsync();
 
             // Load related data for response
             await _context.Entry(actor)
-                .Collection(a => a.Series)
+                .Collection(a => a.SeriesActors)
+                .Query()
+                .Include(sa => sa.Series)
                 .LoadAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = actor.Id }, actor);
+            var result = _mapper.Map<ActorDto>(actor);
+
+            return CreatedAtAction(nameof(GetById), new { id = actor.Id }, result);
         }
 
         // PUT: api/actor/{id}
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Update(int id, [FromBody] Actor actor)
+        public async Task<IActionResult> Update(int id, [FromBody] ActorUpsertDto actorDto)
         {
             if (!ModelState.IsValid)
             {
-                return BadRequest(ModelState);
+                return ValidationProblem(ModelState);
             }
 
-            if (id != actor.Id)
-            {
-                return BadRequest(new { message = "ID mismatch between URL and request body." });
-            }
-
-            var existingActor = await _context.Actors.FindAsync(id);
+            var existingActor = await _context.Actors
+                .Include(a => a.SeriesActors)
+                .FirstOrDefaultAsync(a => a.Id == id);
             if (existingActor == null)
             {
                 return NotFound(new { message = $"Actor with ID {id} not found." });
             }
 
-            // Validate FirstName is not empty
-            if (string.IsNullOrWhiteSpace(actor.FirstName))
-            {
-                return BadRequest(new { message = "FirstName is required." });
-            }
-
-            // Validate LastName is not empty
-            if (string.IsNullOrWhiteSpace(actor.LastName))
-            {
-                return BadRequest(new { message = "LastName is required." });
-            }
-
             // Validate DateOfBirth is not in the future
-            if (actor.DateOfBirth.HasValue && actor.DateOfBirth > DateTime.Now)
+            if (actorDto.DateOfBirth.HasValue && actorDto.DateOfBirth > DateTime.UtcNow)
             {
                 return BadRequest(new { message = "DateOfBirth cannot be in the future." });
             }
 
             // Update properties
-            existingActor.FirstName = actor.FirstName;
-            existingActor.LastName = actor.LastName;
-            existingActor.DateOfBirth = actor.DateOfBirth;
-            existingActor.Biography = actor.Biography;
+            existingActor.FirstName = actorDto.FirstName;
+            existingActor.LastName = actorDto.LastName;
+            existingActor.DateOfBirth = actorDto.DateOfBirth;
+            existingActor.Biography = actorDto.Biography;
 
             try
             {
@@ -184,10 +179,13 @@ namespace SeriLovers.API.Controllers
 
             // Load related data for response
             await _context.Entry(existingActor)
-                .Collection(a => a.Series)
+                .Collection(a => a.SeriesActors)
+                .Query()
+                .Include(sa => sa.Series)
                 .LoadAsync();
 
-            return Ok(existingActor);
+            var result = _mapper.Map<ActorDto>(existingActor);
+            return Ok(result);
         }
 
         // DELETE: api/actor/{id}
@@ -195,10 +193,17 @@ namespace SeriLovers.API.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
         {
-            var actor = await _context.Actors.FindAsync(id);
+            var actor = await _context.Actors
+                .Include(a => a.SeriesActors)
+                .FirstOrDefaultAsync(a => a.Id == id);
             if (actor == null)
             {
                 return NotFound(new { message = $"Actor with ID {id} not found." });
+            }
+
+            if (actor.SeriesActors.Any())
+            {
+                return BadRequest(new { message = "Cannot delete actor because they are associated with one or more series." });
             }
 
             _context.Actors.Remove(actor);

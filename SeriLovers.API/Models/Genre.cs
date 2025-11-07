@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Linq;
 
 namespace SeriLovers.API.Models
 {
@@ -10,8 +13,13 @@ namespace SeriLovers.API.Models
         [StringLength(100, ErrorMessage = "Name cannot exceed 100 characters.")]
         public string Name { get; set; } = string.Empty;
         
-        // Many-to-many relationship with Series
-        public ICollection<Series> Series { get; set; } = new List<Series>();
+        // Navigation properties
+        public ICollection<SeriesGenre> SeriesGenres { get; set; } = new List<SeriesGenre>();
+
+        [NotMapped]
+        public IEnumerable<Series> Series => SeriesGenres
+            .Where(sg => sg.Series != null)
+            .Select(sg => sg.Series!);
     }
 }
 

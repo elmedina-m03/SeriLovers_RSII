@@ -17,6 +17,10 @@ namespace SeriLovers.API.Data
         public DbSet<Episode> Episodes { get; set; }
         public DbSet<Actor> Actors { get; set; }
         public DbSet<Genre> Genres { get; set; }
+        public DbSet<SeriesActor> SeriesActors { get; set; }
+        public DbSet<SeriesGenre> SeriesGenres { get; set; }
+        public DbSet<Rating> Ratings { get; set; }
+        public DbSet<Watchlist> Watchlists { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -76,17 +80,79 @@ namespace SeriLovers.API.Data
                 entity.HasIndex(e => e.Name).IsUnique();
             });
 
-            // Configure many-to-many: Series <-> Genre
-            modelBuilder.Entity<Series>()
-                .HasMany(s => s.Genres)
-                .WithMany(g => g.Series)
-                .UsingEntity(j => j.ToTable("SeriesGenres"));
+            // Configure many-to-many join entity: Series <-> Actor
+            modelBuilder.Entity<SeriesActor>(entity =>
+            {
+                entity.HasKey(sa => new { sa.SeriesId, sa.ActorId });
 
-            // Configure many-to-many: Series <-> Actor
-            modelBuilder.Entity<Series>()
-                .HasMany(s => s.Actors)
-                .WithMany(a => a.Series)
-                .UsingEntity(j => j.ToTable("SeriesActors"));
+                entity.Property(sa => sa.RoleName).HasMaxLength(150);
+
+                entity.HasOne(sa => sa.Series)
+                    .WithMany(s => s.SeriesActors)
+                    .HasForeignKey(sa => sa.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(sa => sa.Actor)
+                    .WithMany(a => a.SeriesActors)
+                    .HasForeignKey(sa => sa.ActorId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure many-to-many join entity: Series <-> Genre
+            modelBuilder.Entity<SeriesGenre>(entity =>
+            {
+                entity.HasKey(sg => new { sg.SeriesId, sg.GenreId });
+
+                entity.HasOne(sg => sg.Series)
+                    .WithMany(s => s.SeriesGenres)
+                    .HasForeignKey(sg => sg.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(sg => sg.Genre)
+                    .WithMany(g => g.SeriesGenres)
+                    .HasForeignKey(sg => sg.GenreId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure Rating entity
+            modelBuilder.Entity<Rating>(entity =>
+            {
+                entity.HasKey(r => r.Id);
+                entity.Property(r => r.Score).IsRequired();
+                entity.Property(r => r.Comment).HasMaxLength(2000);
+                entity.Property(r => r.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(r => new { r.UserId, r.SeriesId }).IsUnique();
+
+                entity.HasOne(r => r.User)
+                    .WithMany(u => u.Ratings)
+                    .HasForeignKey(r => r.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(r => r.Series)
+                    .WithMany(s => s.Ratings)
+                    .HasForeignKey(r => r.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure Watchlist entity
+            modelBuilder.Entity<Watchlist>(entity =>
+            {
+                entity.HasKey(w => w.Id);
+                entity.Property(w => w.AddedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(w => new { w.UserId, w.SeriesId }).IsUnique();
+
+                entity.HasOne(w => w.User)
+                    .WithMany(u => u.Watchlists)
+                    .HasForeignKey(w => w.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(w => w.Series)
+                    .WithMany(s => s.Watchlists)
+                    .HasForeignKey(w => w.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
         }
     }
 }

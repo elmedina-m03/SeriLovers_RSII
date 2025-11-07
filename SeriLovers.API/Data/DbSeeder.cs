@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Models;
 using System;
+using System.Collections.Generic;
 
 namespace SeriLovers.API.Data
 {
@@ -180,10 +181,6 @@ namespace SeriLovers.API.Data
                 Genre = "Crime Drama",
                 Rating = 9.5
             };
-            if (crimeDrama != null) breakingBad.Genres.Add(crimeDrama);
-            if (drama != null) breakingBad.Genres.Add(drama);
-            if (bryanCranston != null) breakingBad.Actors.Add(bryanCranston);
-            if (aaronPaul != null) breakingBad.Actors.Add(aaronPaul);
 
             var gameOfThrones = new Series
             {
@@ -193,10 +190,6 @@ namespace SeriLovers.API.Data
                 Genre = "Fantasy Drama",
                 Rating = 9.3
             };
-            if (fantasyDrama != null) gameOfThrones.Genres.Add(fantasyDrama);
-            if (drama != null) gameOfThrones.Genres.Add(drama);
-            if (emiliaClarke != null) gameOfThrones.Actors.Add(emiliaClarke);
-            if (kitHarington != null) gameOfThrones.Actors.Add(kitHarington);
 
             var theOffice = new Series
             {
@@ -206,9 +199,6 @@ namespace SeriLovers.API.Data
                 Genre = "Comedy",
                 Rating = 8.9
             };
-            if (comedy != null) theOffice.Genres.Add(comedy);
-            if (steveCarell != null) theOffice.Actors.Add(steveCarell);
-            if (johnKrasinski != null) theOffice.Actors.Add(johnKrasinski);
 
             var strangerThings = new Series
             {
@@ -218,10 +208,6 @@ namespace SeriLovers.API.Data
                 Genre = "Sci-Fi Horror",
                 Rating = 8.7
             };
-            if (sciFiHorror != null) strangerThings.Genres.Add(sciFiHorror);
-            if (drama != null) strangerThings.Genres.Add(drama);
-            if (millieBobbyBrown != null) strangerThings.Actors.Add(millieBobbyBrown);
-            if (davidHarbour != null) strangerThings.Actors.Add(davidHarbour);
 
             var theCrown = new Series
             {
@@ -231,10 +217,6 @@ namespace SeriLovers.API.Data
                 Genre = "Historical Drama",
                 Rating = 8.6
             };
-            if (historicalDrama != null) theCrown.Genres.Add(historicalDrama);
-            if (drama != null) theCrown.Genres.Add(drama);
-            if (claireFoy != null) theCrown.Actors.Add(claireFoy);
-            if (mattSmith != null) theCrown.Actors.Add(mattSmith);
 
             var friends = new Series
             {
@@ -244,10 +226,6 @@ namespace SeriLovers.API.Data
                 Genre = "Comedy",
                 Rating = 8.9
             };
-            if (comedy != null) friends.Genres.Add(comedy);
-            if (drama != null) friends.Genres.Add(drama);
-            if (jenniferAniston != null) friends.Actors.Add(jenniferAniston);
-            if (matthewPerry != null) friends.Actors.Add(matthewPerry);
 
             var initialSeries = new List<Series>
             {
@@ -261,6 +239,132 @@ namespace SeriLovers.API.Data
 
             await context.Series.AddRangeAsync(initialSeries);
             await context.SaveChangesAsync();
+
+            var seriesActors = new List<SeriesActor>();
+            var seriesGenres = new List<SeriesGenre>();
+            var seasons = new List<Season>();
+
+            void LinkGenre(Series series, Genre? genre)
+            {
+                if (genre != null)
+                {
+                    seriesGenres.Add(new SeriesGenre
+                    {
+                        SeriesId = series.Id,
+                        GenreId = genre.Id
+                    });
+                }
+            }
+
+            void LinkActor(Series series, Actor? actor, string roleName)
+            {
+                if (actor != null)
+                {
+                    seriesActors.Add(new SeriesActor
+                    {
+                        SeriesId = series.Id,
+                        ActorId = actor.Id,
+                        RoleName = roleName
+                    });
+                }
+            }
+
+            // Breaking Bad
+            LinkGenre(breakingBad, crimeDrama);
+            LinkGenre(breakingBad, drama);
+            LinkActor(breakingBad, bryanCranston, "Walter White");
+            LinkActor(breakingBad, aaronPaul, "Jesse Pinkman");
+
+            // Game of Thrones
+            LinkGenre(gameOfThrones, fantasyDrama);
+            LinkGenre(gameOfThrones, drama);
+            LinkActor(gameOfThrones, emiliaClarke, "Daenerys Targaryen");
+            LinkActor(gameOfThrones, kitHarington, "Jon Snow");
+
+            // The Office
+            LinkGenre(theOffice, comedy);
+            LinkActor(theOffice, steveCarell, "Michael Scott");
+            LinkActor(theOffice, johnKrasinski, "Jim Halpert");
+
+            // Stranger Things
+            LinkGenre(strangerThings, sciFiHorror);
+            LinkGenre(strangerThings, drama);
+            LinkActor(strangerThings, millieBobbyBrown, "Eleven");
+            LinkActor(strangerThings, davidHarbour, "Jim Hopper");
+
+            // The Crown
+            LinkGenre(theCrown, historicalDrama);
+            LinkGenre(theCrown, drama);
+            LinkActor(theCrown, claireFoy, "Queen Elizabeth II");
+            LinkActor(theCrown, mattSmith, "Prince Philip");
+
+            // Friends
+            LinkGenre(friends, comedy);
+            LinkGenre(friends, drama);
+            LinkActor(friends, jenniferAniston, "Rachel Green");
+            LinkActor(friends, matthewPerry, "Chandler Bing");
+
+            void AddSeasonsWithEpisodes(Series series, int numberOfSeasons = 2, int episodesPerSeason = 5)
+            {
+                for (int seasonNumber = 1; seasonNumber <= numberOfSeasons; seasonNumber++)
+                {
+                    var seasonRelease = series.ReleaseDate.AddYears(seasonNumber - 1);
+                    var season = new Season
+                    {
+                        SeriesId = series.Id,
+                        SeasonNumber = seasonNumber,
+                        Title = $"{series.Title} - Season {seasonNumber}",
+                        Description = $"Season {seasonNumber} of {series.Title}",
+                        ReleaseDate = seasonRelease,
+                        Episodes = new List<Episode>()
+                    };
+
+                    for (int episodeNumber = 1; episodeNumber <= episodesPerSeason; episodeNumber++)
+                    {
+                        var episode = new Episode
+                        {
+                            EpisodeNumber = episodeNumber,
+                            Title = $"{series.Title} S{seasonNumber:D2}E{episodeNumber:D2}",
+                            Description = $"Episode {episodeNumber} of season {seasonNumber} for {series.Title}.",
+                            AirDate = seasonRelease.AddDays(7 * (episodeNumber - 1)),
+                            DurationMinutes = 45,
+                            Rating = null
+                        };
+
+                        season.Episodes.Add(episode);
+                    }
+
+                    seasons.Add(season);
+                }
+            }
+
+            AddSeasonsWithEpisodes(breakingBad);
+            AddSeasonsWithEpisodes(gameOfThrones);
+            AddSeasonsWithEpisodes(theOffice);
+            AddSeasonsWithEpisodes(strangerThings);
+            AddSeasonsWithEpisodes(theCrown);
+            AddSeasonsWithEpisodes(friends);
+
+            if (seriesGenres.Count > 0)
+            {
+                await context.SeriesGenres.AddRangeAsync(seriesGenres);
+            }
+
+            if (seriesActors.Count > 0)
+            {
+                await context.SeriesActors.AddRangeAsync(seriesActors);
+            }
+
+            if (seriesGenres.Count > 0 || seriesActors.Count > 0)
+            {
+                await context.SaveChangesAsync();
+            }
+
+            if (seasons.Count > 0)
+            {
+                await context.Seasons.AddRangeAsync(seasons);
+                await context.SaveChangesAsync();
+            }
         }
 
         private static async Task SeedRolesAsync(RoleManager<IdentityRole<int>> roleManager)

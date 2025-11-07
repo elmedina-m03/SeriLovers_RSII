@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SeriLovers.API.Data;
 
@@ -11,9 +12,11 @@ using SeriLovers.API.Data;
 namespace SeriLovers.API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251107181930_AddRelationships")]
+    partial class AddRelationships
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -620,7 +623,7 @@ namespace SeriLovers.API.Migrations
                         .IsRequired();
 
                     b.HasOne("SeriLovers.API.Models.ApplicationUser", "User")
-                        .WithMany("Watchlists")
+                        .WithMany("WatchlistEntries")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -639,7 +642,7 @@ namespace SeriLovers.API.Migrations
                 {
                     b.Navigation("Ratings");
 
-                    b.Navigation("Watchlists");
+                    b.Navigation("WatchlistEntries");
                 });
 
             modelBuilder.Entity("SeriLovers.API.Models.Genre", b =>

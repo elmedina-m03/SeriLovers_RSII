@@ -9,6 +9,7 @@ using SeriLovers.API.Interfaces;
 using SeriLovers.API.Middleware;
 using SeriLovers.API.Models;
 using SeriLovers.API.Services;
+using SeriLovers.API.Profiles;
 using Swashbuckle.AspNetCore.Annotations;
 using System.Reflection;
 using System.Text;
@@ -44,6 +45,8 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole<int>>(options =>
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
+
+builder.Services.AddAutoMapper(typeof(AppMappingProfile).Assembly);
 
 // ============================================
 // JWT Authentication Configuration
