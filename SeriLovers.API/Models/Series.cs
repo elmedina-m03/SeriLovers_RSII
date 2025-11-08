@@ -39,5 +39,11 @@ namespace SeriLovers.API.Models
 
         [NotMapped]
         public ICollection<Actor> Actors { get; set; } = new List<Actor>();
+
+        [NotMapped]
+        public int RatingsCount { get; set; }
+
+        [NotMapped]
+        public int WatchlistsCount { get; set; }
     }
 }

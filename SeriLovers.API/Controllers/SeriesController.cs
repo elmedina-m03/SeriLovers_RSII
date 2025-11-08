@@ -5,6 +5,7 @@ using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SeriLovers.API.Controllers
 {
@@ -23,11 +24,26 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetAll()
+        public IActionResult GetAll(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? genre = null,
+            [FromQuery] double? minRating = null,
+            [FromQuery] string? search = null)
         {
-            var series = _seriesService.GetAll();
-            var result = _mapper.Map<IEnumerable<SeriesDto>>(series);
-            return Ok(result);
+            var pagedSeries = _seriesService.GetAll(page, pageSize, genre, minRating, search);
+            var items = _mapper.Map<IEnumerable<SeriesDto>>(pagedSeries.Items);
+
+            var response = new PagedResponseDto<SeriesDto>
+            {
+                Items = items.ToList(),
+                TotalItems = pagedSeries.TotalItems,
+                TotalPages = pagedSeries.TotalPages,
+                CurrentPage = pagedSeries.CurrentPage,
+                PageSize = pagedSeries.PageSize
+            };
+
+            return Ok(response);
         }
 
         [HttpGet("{id}")]

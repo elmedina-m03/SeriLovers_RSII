@@ -21,7 +21,9 @@ namespace SeriLovers.API.Profiles
 
             CreateMap<Series, SeriesDto>()
                 .ForMember(dest => dest.Genres, opt => opt.MapFrom(src => src.SeriesGenres.Select(sg => sg.Genre)))
-                .ForMember(dest => dest.Actors, opt => opt.MapFrom(src => src.SeriesActors.Select(sa => sa.Actor)));
+                .ForMember(dest => dest.Actors, opt => opt.MapFrom(src => src.SeriesActors.Select(sa => sa.Actor)))
+                .ForMember(dest => dest.RatingsCount, opt => opt.MapFrom(src => src.RatingsCount))
+                .ForMember(dest => dest.WatchlistsCount, opt => opt.MapFrom(src => src.WatchlistsCount));
 
             CreateMap<Series, SeriesDetailDto>()
                 .ForMember(dest => dest.Genres, opt => opt.MapFrom(src => src.SeriesGenres.Select(sg => sg.Genre)))

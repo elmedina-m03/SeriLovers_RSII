@@ -29,6 +29,14 @@ namespace SeriLovers.API.Models.DTOs
 
         [Required]
         public IList<ActorDto> Actors { get; set; } = new List<ActorDto>();
+
+        [Required]
+        [Range(0, int.MaxValue)]
+        public int RatingsCount { get; set; }
+
+        [Required]
+        [Range(0, int.MaxValue)]
+        public int WatchlistsCount { get; set; }
     }
 }
 

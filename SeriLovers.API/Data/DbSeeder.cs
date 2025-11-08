@@ -3,11 +3,25 @@ using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SeriLovers.API.Data
 {
     public class DbSeeder
     {
+        private static readonly Random Random = new Random();
+
+        private record SeriesSeedDefinition(
+            string Title,
+            string Description,
+            DateTime ReleaseDate,
+            string PrimaryGenre,
+            double Rating,
+            string[] Genres,
+            (string FirstName, string LastName, string RoleName)[] Actors,
+            int SeasonsToEnsure = 2);
+
         public static async Task SeedRolesAndUsersAsync(
             ApplicationDbContext context,
             UserManager<ApplicationUser> userManager,
@@ -146,225 +160,238 @@ namespace SeriLovers.API.Data
 
         public static async Task SeedSeriesAsync(ApplicationDbContext context)
         {
-            // Check if database is empty (no series records)
-            if (await context.Series.AnyAsync())
+            var seriesSeeds = new[]
             {
-                return; // Database already has data, skip seeding
-            }
-
-            // Get genres and actors for relationships
-            var crimeDrama = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Crime Drama");
-            var fantasyDrama = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Fantasy Drama");
-            var comedy = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Comedy");
-            var sciFiHorror = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Sci-Fi Horror");
-            var historicalDrama = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Historical Drama");
-            var drama = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Drama");
-
-            var bryanCranston = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Bryan" && a.LastName == "Cranston");
-            var aaronPaul = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Aaron" && a.LastName == "Paul");
-            var emiliaClarke = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Emilia" && a.LastName == "Clarke");
-            var kitHarington = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Kit" && a.LastName == "Harington");
-            var steveCarell = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Steve" && a.LastName == "Carell");
-            var johnKrasinski = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "John" && a.LastName == "Krasinski");
-            var millieBobbyBrown = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Millie Bobby" && a.LastName == "Brown");
-            var davidHarbour = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "David" && a.LastName == "Harbour");
-            var claireFoy = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Claire" && a.LastName == "Foy");
-            var mattSmith = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Matt" && a.LastName == "Smith");
-            var jenniferAniston = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Jennifer" && a.LastName == "Aniston");
-            var matthewPerry = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == "Matthew" && a.LastName == "Perry");
-
-            var breakingBad = new Series
-            {
-                Title = "Breaking Bad",
-                Description = "A high school chemistry teacher turned methamphetamine manufacturer partners with a former student to secure his family's future.",
-                ReleaseDate = new DateTime(2008, 1, 20),
-                Genre = "Crime Drama",
-                Rating = 9.5
-            };
-
-            var gameOfThrones = new Series
-            {
-                Title = "Game of Thrones",
-                Description = "Nine noble families fight for control over the lands of Westeros, while an ancient enemy returns after being dormant for millennia.",
-                ReleaseDate = new DateTime(2011, 4, 17),
-                Genre = "Fantasy Drama",
-                Rating = 9.3
-            };
-
-            var theOffice = new Series
-            {
-                Title = "The Office",
-                Description = "A mockumentary on a group of typical office workers, where the workday consists of ego clashes, inappropriate behavior, and tedium.",
-                ReleaseDate = new DateTime(2005, 3, 24),
-                Genre = "Comedy",
-                Rating = 8.9
-            };
-
-            var strangerThings = new Series
-            {
-                Title = "Stranger Things",
-                Description = "When a young boy vanishes, a small town uncovers a mystery involving secret experiments, terrifying supernatural forces and one strange little girl.",
-                ReleaseDate = new DateTime(2016, 7, 15),
-                Genre = "Sci-Fi Horror",
-                Rating = 8.7
-            };
-
-            var theCrown = new Series
-            {
-                Title = "The Crown",
-                Description = "Follows the political rivalries and romance of Queen Elizabeth II's reign and the events that shaped the second half of the 20th century.",
-                ReleaseDate = new DateTime(2016, 11, 4),
-                Genre = "Historical Drama",
-                Rating = 8.6
-            };
-
-            var friends = new Series
-            {
-                Title = "Friends",
-                Description = "Follows the personal and professional lives of six twenty to thirty-something-year-old friends living in Manhattan.",
-                ReleaseDate = new DateTime(1994, 9, 22),
-                Genre = "Comedy",
-                Rating = 8.9
-            };
-
-            var initialSeries = new List<Series>
-            {
-                breakingBad,
-                gameOfThrones,
-                theOffice,
-                strangerThings,
-                theCrown,
-                friends
-            };
-
-            await context.Series.AddRangeAsync(initialSeries);
-            await context.SaveChangesAsync();
-
-            var seriesActors = new List<SeriesActor>();
-            var seriesGenres = new List<SeriesGenre>();
-            var seasons = new List<Season>();
-
-            void LinkGenre(Series series, Genre? genre)
-            {
-                if (genre != null)
-                {
-                    seriesGenres.Add(new SeriesGenre
+                new SeriesSeedDefinition(
+                    "Breaking Bad",
+                    "A high school chemistry teacher turned methamphetamine manufacturer partners with a former student to secure his family's future.",
+                    new DateTime(2008, 1, 20),
+                    "Crime Drama",
+                    9.5,
+                    new[] { "Crime Drama", "Drama" },
+                    new[]
                     {
-                        SeriesId = series.Id,
-                        GenreId = genre.Id
-                    });
-                }
-            }
-
-            void LinkActor(Series series, Actor? actor, string roleName)
-            {
-                if (actor != null)
-                {
-                    seriesActors.Add(new SeriesActor
+                        ("Bryan", "Cranston", "Walter White"),
+                        ("Aaron", "Paul", "Jesse Pinkman")
+                    }),
+                new SeriesSeedDefinition(
+                    "Game of Thrones",
+                    "Nine noble families fight for control over the lands of Westeros, while an ancient enemy returns after being dormant for millennia.",
+                    new DateTime(2011, 4, 17),
+                    "Fantasy Drama",
+                    9.3,
+                    new[] { "Fantasy Drama", "Drama" },
+                    new[]
                     {
-                        SeriesId = series.Id,
-                        ActorId = actor.Id,
-                        RoleName = roleName
-                    });
+                        ("Emilia", "Clarke", "Daenerys Targaryen"),
+                        ("Kit", "Harington", "Jon Snow")
+                    }),
+                new SeriesSeedDefinition(
+                    "The Office",
+                    "A mockumentary on a group of typical office workers, where the workday consists of ego clashes, inappropriate behavior, and tedium.",
+                    new DateTime(2005, 3, 24),
+                    "Comedy",
+                    8.9,
+                    new[] { "Comedy" },
+                    new[]
+                    {
+                        ("Steve", "Carell", "Michael Scott"),
+                        ("John", "Krasinski", "Jim Halpert")
+                    }),
+                new SeriesSeedDefinition(
+                    "Stranger Things",
+                    "When a young boy vanishes, a small town uncovers a mystery involving secret experiments, terrifying supernatural forces and one strange little girl.",
+                    new DateTime(2016, 7, 15),
+                    "Sci-Fi Horror",
+                    8.7,
+                    new[] { "Sci-Fi Horror", "Drama" },
+                    new[]
+                    {
+                        ("Millie Bobby", "Brown", "Eleven"),
+                        ("David", "Harbour", "Jim Hopper")
+                    }),
+                new SeriesSeedDefinition(
+                    "The Crown",
+                    "Follows the political rivalries and romance of Queen Elizabeth II's reign and the events that shaped the second half of the 20th century.",
+                    new DateTime(2016, 11, 4),
+                    "Historical Drama",
+                    8.6,
+                    new[] { "Historical Drama", "Drama" },
+                    new[]
+                    {
+                        ("Claire", "Foy", "Queen Elizabeth II"),
+                        ("Matt", "Smith", "Prince Philip")
+                    }),
+                new SeriesSeedDefinition(
+                    "Friends",
+                    "Follows the personal and professional lives of six twenty to thirty-something-year-old friends living in Manhattan.",
+                    new DateTime(1994, 9, 22),
+                    "Comedy",
+                    8.9,
+                    new[] { "Comedy", "Drama" },
+                    new[]
+                    {
+                        ("Jennifer", "Aniston", "Rachel Green"),
+                        ("Matthew", "Perry", "Chandler Bing")
+                    })
+            };
+
+            var genres = await context.Genres.ToDictionaryAsync(g => g.Name, StringComparer.OrdinalIgnoreCase);
+            var actors = await context.Actors.ToDictionaryAsync(
+                a => $"{a.FirstName} {a.LastName}",
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var seed in seriesSeeds)
+            {
+                var series = await context.Series
+                    .Include(s => s.Seasons!)
+                        .ThenInclude(season => season.Episodes)
+                    .FirstOrDefaultAsync(s => s.Title == seed.Title);
+
+                if (series == null)
+                {
+                    series = new Series
+                    {
+                        Title = seed.Title,
+                        Description = seed.Description,
+                        ReleaseDate = seed.ReleaseDate,
+                        Genre = seed.PrimaryGenre,
+                        Rating = seed.Rating
+                    };
+
+                    await context.Series.AddAsync(series);
+                    await context.SaveChangesAsync();
                 }
+                else
+                {
+                    series.Description = seed.Description;
+                    series.ReleaseDate = seed.ReleaseDate;
+                    series.Genre = seed.PrimaryGenre;
+                    series.Rating = seed.Rating;
+                }
+
+                foreach (var genreName in seed.Genres.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (!genres.TryGetValue(genreName, out var genre))
+                    {
+                        continue;
+                    }
+
+                    var genreExists = await context.SeriesGenres
+                        .AnyAsync(sg => sg.SeriesId == series.Id && sg.GenreId == genre.Id);
+
+                    if (!genreExists)
+                    {
+                        await context.SeriesGenres.AddAsync(new SeriesGenre
+                        {
+                            SeriesId = series.Id,
+                            GenreId = genre.Id
+                        });
+                    }
+                }
+
+                foreach (var (firstName, lastName, roleName) in seed.Actors)
+                {
+                    var key = $"{firstName} {lastName}";
+                    if (!actors.TryGetValue(key, out var actor))
+                    {
+                        continue;
+                    }
+
+                    var actorExists = await context.SeriesActors
+                        .AnyAsync(sa => sa.SeriesId == series.Id && sa.ActorId == actor.Id);
+
+                    if (!actorExists)
+                    {
+                        await context.SeriesActors.AddAsync(new SeriesActor
+                        {
+                            SeriesId = series.Id,
+                            ActorId = actor.Id,
+                            RoleName = roleName
+                        });
+                    }
+                }
+
+                await EnsureSeasonsWithEpisodesAsync(context, series, seed.SeasonsToEnsure, 3, 5);
             }
 
-            // Breaking Bad
-            LinkGenre(breakingBad, crimeDrama);
-            LinkGenre(breakingBad, drama);
-            LinkActor(breakingBad, bryanCranston, "Walter White");
-            LinkActor(breakingBad, aaronPaul, "Jesse Pinkman");
-
-            // Game of Thrones
-            LinkGenre(gameOfThrones, fantasyDrama);
-            LinkGenre(gameOfThrones, drama);
-            LinkActor(gameOfThrones, emiliaClarke, "Daenerys Targaryen");
-            LinkActor(gameOfThrones, kitHarington, "Jon Snow");
-
-            // The Office
-            LinkGenre(theOffice, comedy);
-            LinkActor(theOffice, steveCarell, "Michael Scott");
-            LinkActor(theOffice, johnKrasinski, "Jim Halpert");
-
-            // Stranger Things
-            LinkGenre(strangerThings, sciFiHorror);
-            LinkGenre(strangerThings, drama);
-            LinkActor(strangerThings, millieBobbyBrown, "Eleven");
-            LinkActor(strangerThings, davidHarbour, "Jim Hopper");
-
-            // The Crown
-            LinkGenre(theCrown, historicalDrama);
-            LinkGenre(theCrown, drama);
-            LinkActor(theCrown, claireFoy, "Queen Elizabeth II");
-            LinkActor(theCrown, mattSmith, "Prince Philip");
-
-            // Friends
-            LinkGenre(friends, comedy);
-            LinkGenre(friends, drama);
-            LinkActor(friends, jenniferAniston, "Rachel Green");
-            LinkActor(friends, matthewPerry, "Chandler Bing");
-
-            void AddSeasonsWithEpisodes(Series series, int numberOfSeasons = 2, int episodesPerSeason = 5)
+            if (context.ChangeTracker.HasChanges())
             {
-                for (int seasonNumber = 1; seasonNumber <= numberOfSeasons; seasonNumber++)
+                await context.SaveChangesAsync();
+            }
+        }
+
+        private static async Task EnsureSeasonsWithEpisodesAsync(
+            ApplicationDbContext context,
+            Series series,
+            int minSeasonCount,
+            int minEpisodesPerSeason,
+            int maxEpisodesPerSeason)
+        {
+            var seasons = await context.Seasons
+                .Include(season => season.Episodes)
+                .Where(season => season.SeriesId == series.Id)
+                .ToListAsync();
+
+            for (int seasonNumber = 1; seasonNumber <= minSeasonCount; seasonNumber++)
+            {
+                var season = seasons.FirstOrDefault(s => s.SeasonNumber == seasonNumber);
+
+                if (season == null)
                 {
-                    var seasonRelease = series.ReleaseDate.AddYears(seasonNumber - 1);
-                    var season = new Season
+                    var releaseDate = series.ReleaseDate.AddYears(seasonNumber - 1);
+                    season = new Season
                     {
                         SeriesId = series.Id,
                         SeasonNumber = seasonNumber,
                         Title = $"{series.Title} - Season {seasonNumber}",
                         Description = $"Season {seasonNumber} of {series.Title}",
-                        ReleaseDate = seasonRelease,
+                        ReleaseDate = releaseDate,
                         Episodes = new List<Episode>()
                     };
 
-                    for (int episodeNumber = 1; episodeNumber <= episodesPerSeason; episodeNumber++)
-                    {
-                        var episode = new Episode
-                        {
-                            EpisodeNumber = episodeNumber,
-                            Title = $"{series.Title} S{seasonNumber:D2}E{episodeNumber:D2}",
-                            Description = $"Episode {episodeNumber} of season {seasonNumber} for {series.Title}.",
-                            AirDate = seasonRelease.AddDays(7 * (episodeNumber - 1)),
-                            DurationMinutes = 45,
-                            Rating = null
-                        };
+                    await context.Seasons.AddAsync(season);
+                    seasons.Add(season);
+                }
 
-                        season.Episodes.Add(episode);
+                season.Episodes ??= new List<Episode>();
+
+                var desiredEpisodeCount = Math.Max(
+                    season.Episodes.Count,
+                    Random.Next(minEpisodesPerSeason, maxEpisodesPerSeason + 1));
+
+                var releaseBase = season.ReleaseDate ?? series.ReleaseDate.AddYears(seasonNumber - 1);
+
+                for (int episodeNumber = 1; episodeNumber <= desiredEpisodeCount; episodeNumber++)
+                {
+                    if (season.Episodes.Any(e => e.EpisodeNumber == episodeNumber))
+                    {
+                        continue;
                     }
 
-                    seasons.Add(season);
+                    var episode = new Episode
+                    {
+                        SeasonId = season.Id,
+                        EpisodeNumber = episodeNumber,
+                        Title = $"{series.Title} S{seasonNumber:D2}E{episodeNumber:D2}",
+                        Description = $"Episode {episodeNumber} of season {seasonNumber} for {series.Title}.",
+                        AirDate = releaseBase.AddDays(7 * (episodeNumber - 1)),
+                        DurationMinutes = 45,
+                        Rating = null
+                    };
+
+                    if (season.Id == 0)
+                    {
+                        season.Episodes.Add(episode);
+                    }
+                    else
+                    {
+                        await context.Episodes.AddAsync(episode);
+                    }
                 }
             }
 
-            AddSeasonsWithEpisodes(breakingBad);
-            AddSeasonsWithEpisodes(gameOfThrones);
-            AddSeasonsWithEpisodes(theOffice);
-            AddSeasonsWithEpisodes(strangerThings);
-            AddSeasonsWithEpisodes(theCrown);
-            AddSeasonsWithEpisodes(friends);
-
-            if (seriesGenres.Count > 0)
-            {
-                await context.SeriesGenres.AddRangeAsync(seriesGenres);
-            }
-
-            if (seriesActors.Count > 0)
-            {
-                await context.SeriesActors.AddRangeAsync(seriesActors);
-            }
-
-            if (seriesGenres.Count > 0 || seriesActors.Count > 0)
-            {
-                await context.SaveChangesAsync();
-            }
-
-            if (seasons.Count > 0)
-            {
-                await context.Seasons.AddRangeAsync(seasons);
-                await context.SaveChangesAsync();
-            }
+            await context.SaveChangesAsync();
         }
 
         private static async Task SeedRolesAsync(RoleManager<IdentityRole<int>> roleManager)

@@ -17,42 +17,94 @@ namespace SeriLovers.API.Services
             _context = context;
         }
 
-        private IQueryable<Series> QuerySeriesWithRelationships()
+        private IQueryable<Series> QuerySeriesWithRelationships(bool includeFeedback = false)
         {
-            return _context.Series
-                           .Include(s => s.Seasons)
-                           .Include(s => s.SeriesGenres)
-                               .ThenInclude(sg => sg.Genre)
-                           .Include(s => s.SeriesActors)
-                               .ThenInclude(sa => sa.Actor)
-                           .Include(s => s.Ratings)
-                               .ThenInclude(r => r.User)
-                           .Include(s => s.Watchlists)
-                               .ThenInclude(w => w.User);
+            var query = _context.Series
+                                .AsNoTracking()
+                                .AsSplitQuery()
+                                .Include(s => s.Seasons)
+                                    .ThenInclude(season => season.Episodes)
+                                .Include(s => s.SeriesGenres)
+                                    .ThenInclude(sg => sg.Genre)
+                                .Include(s => s.SeriesActors)
+                                    .ThenInclude(sa => sa.Actor)
+                                .AsQueryable();
+
+            if (includeFeedback)
+            {
+                query = query
+                    .Include(s => s.Ratings)
+                    .Include(s => s.Watchlists);
+            }
+
+            return query;
         }
 
-        public List<Series> GetAll()
+        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, string? genre = null, double? minRating = null, string? search = null)
         {
-            var seriesList = QuerySeriesWithRelationships()
-                .OrderBy(s => s.Title)
+            page = page <= 0 ? 1 : page;
+            pageSize = pageSize <= 0 ? 10 : pageSize;
+
+            var query = QuerySeriesWithRelationships();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var keyword = search.Trim().ToLower();
+                query = query.Where(s =>
+                    s.Title.ToLower().Contains(keyword) ||
+                    (s.Description != null && s.Description.ToLower().Contains(keyword)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(genre))
+            {
+                var genreFilter = genre.Trim().ToLower();
+                query = query.Where(s =>
+                    s.SeriesGenres.Any(sg => sg.Genre != null && sg.Genre.Name.ToLower() == genreFilter) ||
+                    (s.Genre != null && s.Genre.ToLower() == genreFilter));
+            }
+
+            if (minRating.HasValue)
+            {
+                query = query.Where(s => s.Rating >= minRating.Value);
+            }
+
+            var totalItems = query.Count();
+            var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            var orderedQuery = query.OrderBy(s => s.Title);
+
+            var items = orderedQuery
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToList();
 
-            foreach (var series in seriesList)
+            foreach (var series in items)
             {
                 HydrateSeries(series);
             }
 
-            return seriesList;
+            PopulateFeedbackCounts(items);
+
+            return new PagedResult<Series>
+            {
+                Items = items,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = page,
+                PageSize = pageSize
+            };
         }
 
         public Series? GetById(int id)
         {
-            var series = QuerySeriesWithRelationships()
+            var series = QuerySeriesWithRelationships(includeFeedback: true)
                 .FirstOrDefault(s => s.Id == id);
 
             if (series != null)
             {
                 HydrateSeries(series);
+                series.RatingsCount = series.Ratings?.Count ?? 0;
+                series.WatchlistsCount = series.Watchlists?.Count ?? 0;
             }
 
             return series;
@@ -62,14 +114,25 @@ namespace SeriLovers.API.Services
         {
             if (string.IsNullOrWhiteSpace(keyword))
             {
-                return GetAll();
+                var allSeries = QuerySeriesWithRelationships()
+                    .OrderBy(s => s.Title)
+                    .ToList();
+
+                foreach (var series in allSeries)
+                {
+                    HydrateSeries(series);
+                }
+
+                PopulateFeedbackCounts(allSeries);
+
+                return allSeries;
             }
 
             var lowerKeyword = keyword.ToLower();
 
             var results = QuerySeriesWithRelationships()
                 .Where(s => s.Title.ToLower().Contains(lowerKeyword) ||
-                            s.Description.ToLower().Contains(lowerKeyword))
+                            (s.Description != null && s.Description.ToLower().Contains(lowerKeyword)))
                 .OrderBy(s => s.Title)
                 .ToList();
 
@@ -77,6 +140,8 @@ namespace SeriLovers.API.Services
             {
                 HydrateSeries(series);
             }
+
+            PopulateFeedbackCounts(results);
 
             return results;
         }
@@ -340,6 +405,39 @@ namespace SeriLovers.API.Services
             else
             {
                 series.Seasons = new List<Season>();
+            }
+
+            series.Ratings ??= new List<Rating>();
+            series.Watchlists ??= new List<Watchlist>();
+        }
+
+        private void PopulateFeedbackCounts(List<Series> seriesList)
+        {
+            if (seriesList == null || seriesList.Count == 0)
+            {
+                return;
+            }
+
+            var seriesIds = seriesList.Select(s => s.Id).ToList();
+
+            var ratingCounts = _context.Ratings
+                .AsNoTracking()
+                .Where(r => seriesIds.Contains(r.SeriesId))
+                .GroupBy(r => r.SeriesId)
+                .Select(g => new { SeriesId = g.Key, Count = g.Count() })
+                .ToDictionary(x => x.SeriesId, x => x.Count);
+
+            var watchlistCounts = _context.Watchlists
+                .AsNoTracking()
+                .Where(w => seriesIds.Contains(w.SeriesId))
+                .GroupBy(w => w.SeriesId)
+                .Select(g => new { SeriesId = g.Key, Count = g.Count() })
+                .ToDictionary(x => x.SeriesId, x => x.Count);
+
+            foreach (var series in seriesList)
+            {
+                series.RatingsCount = ratingCounts.TryGetValue(series.Id, out var ratingCount) ? ratingCount : 0;
+                series.WatchlistsCount = watchlistCounts.TryGetValue(series.Id, out var watchlistCount) ? watchlistCount : 0;
             }
         }
     }
