@@ -22,16 +22,116 @@ namespace SeriLovers.API.Data
             (string FirstName, string LastName, string RoleName)[] Actors,
             int SeasonsToEnsure = 2);
 
+        private static readonly string[] DefaultRoles = { "Admin", "User" };
+
         public static async Task SeedRolesAndUsersAsync(
             ApplicationDbContext context,
             UserManager<ApplicationUser> userManager,
             RoleManager<IdentityRole<int>> roleManager)
         {
-            // Seed Roles
-            await SeedRolesAsync(roleManager);
+            await EnsureRolesAsync(roleManager);
+            await EnsureAdminAssignedToFirstUserAsync(userManager);
+        }
 
-            // Assign Admin role to first user
-            await AssignAdminToFirstUserAsync(context, userManager);
+        private static async Task SeedFavoriteCharactersAsync(ApplicationDbContext context)
+        {
+            if (await context.FavoriteCharacters.AnyAsync())
+            {
+                return;
+            }
+
+            var userIds = await context.Users.Select(u => u.Id).ToListAsync();
+            if (userIds.Count == 0)
+            {
+                return;
+            }
+
+            var favorites = new List<(string SeriesTitle, string ActorFirst, string ActorLast)>
+            {
+                ("Breaking Bad", "Bryan", "Cranston"),
+                ("Game of Thrones", "Emilia", "Clarke"),
+                ("Stranger Things", "Millie Bobby", "Brown")
+            };
+
+            foreach (var (seriesTitle, actorFirst, actorLast) in favorites)
+            {
+                var series = await context.Series.FirstOrDefaultAsync(s => s.Title == seriesTitle);
+                if (series == null)
+                {
+                    continue;
+                }
+
+                var actor = await context.Actors.FirstOrDefaultAsync(a => a.FirstName == actorFirst && a.LastName == actorLast);
+                if (actor == null)
+                {
+                    continue;
+                }
+
+                foreach (var userId in userIds)
+                {
+                    var exists = await context.FavoriteCharacters.AnyAsync(fc =>
+                        fc.UserId == userId && fc.SeriesId == series.Id && fc.ActorId == actor.Id);
+
+                    if (!exists)
+                    {
+                        await context.FavoriteCharacters.AddAsync(new FavoriteCharacter
+                        {
+                            UserId = userId,
+                            SeriesId = series.Id,
+                            ActorId = actor.Id,
+                            CreatedAt = DateTime.UtcNow
+                        });
+                    }
+                }
+            }
+        }
+
+        private static async Task SeedRecommendationLogsAsync(ApplicationDbContext context)
+        {
+            if (await context.RecommendationLogs.AnyAsync())
+            {
+                return;
+            }
+
+            var userIds = await context.Users.Select(u => u.Id).ToListAsync();
+            if (userIds.Count == 0)
+            {
+                return;
+            }
+
+            var seriesList = await context.Series
+                .AsNoTracking()
+                .OrderByDescending(s => s.Rating)
+                .Take(5)
+                .Select(s => s.Id)
+                .ToListAsync();
+
+            if (seriesList.Count == 0)
+            {
+                return;
+            }
+
+            var random = new Random();
+
+            foreach (var userId in userIds)
+            {
+                foreach (var seriesId in seriesList)
+                {
+                    var exists = await context.RecommendationLogs.AnyAsync(log =>
+                        log.UserId == userId && log.SeriesId == seriesId);
+
+                    if (!exists)
+                    {
+                        await context.RecommendationLogs.AddAsync(new RecommendationLog
+                        {
+                            UserId = userId,
+                            SeriesId = seriesId,
+                            RecommendedAt = DateTime.UtcNow.AddDays(-random.Next(1, 30)),
+                            Watched = random.NextDouble() >= 0.5
+                        });
+                    }
+                }
+            }
         }
 
         public static async Task SeedGenresAsync(ApplicationDbContext context)
@@ -246,6 +346,8 @@ namespace SeriLovers.API.Data
                 var series = await context.Series
                     .Include(s => s.Seasons!)
                         .ThenInclude(season => season.Episodes)
+                    .Include(s => s.SeriesGenres)
+                    .Include(s => s.SeriesActors)
                     .FirstOrDefaultAsync(s => s.Title == seed.Title);
 
                 if (series == null)
@@ -282,10 +384,24 @@ namespace SeriLovers.API.Data
 
                     if (!genreExists)
                     {
-                        await context.SeriesGenres.AddAsync(new SeriesGenre
+                        var seriesGenre = new SeriesGenre
                         {
                             SeriesId = series.Id,
                             GenreId = genre.Id
+                        };
+
+                        await context.SeriesGenres.AddAsync(seriesGenre);
+
+                        series.SeriesGenres ??= new List<SeriesGenre>();
+                        series.SeriesGenres.Add(seriesGenre);
+                    }
+                    else if (series.SeriesGenres?.All(sg => sg.GenreId != genre.Id) == true)
+                    {
+                        series.SeriesGenres.Add(new SeriesGenre
+                        {
+                            SeriesId = series.Id,
+                            GenreId = genre.Id,
+                            Genre = genre
                         });
                     }
                 }
@@ -303,11 +419,26 @@ namespace SeriLovers.API.Data
 
                     if (!actorExists)
                     {
-                        await context.SeriesActors.AddAsync(new SeriesActor
+                        var seriesActor = new SeriesActor
                         {
                             SeriesId = series.Id,
                             ActorId = actor.Id,
                             RoleName = roleName
+                        };
+
+                        await context.SeriesActors.AddAsync(seriesActor);
+
+                        series.SeriesActors ??= new List<SeriesActor>();
+                        series.SeriesActors.Add(seriesActor);
+                    }
+                    else if (series.SeriesActors?.All(sa => sa.ActorId != actor.Id) == true)
+                    {
+                        series.SeriesActors.Add(new SeriesActor
+                        {
+                            SeriesId = series.Id,
+                            ActorId = actor.Id,
+                            RoleName = roleName,
+                            Actor = actor
                         });
                     }
                 }
@@ -333,6 +464,26 @@ namespace SeriLovers.API.Data
                 .Where(season => season.SeriesId == series.Id)
                 .ToListAsync();
 
+            if (seasons.Count < minSeasonCount)
+            {
+                for (int newSeasonNumber = seasons.Count + 1; newSeasonNumber <= minSeasonCount; newSeasonNumber++)
+                {
+                    var releaseDate = series.ReleaseDate.AddYears(newSeasonNumber - 1);
+                    var newSeason = new Season
+                    {
+                        SeriesId = series.Id,
+                        SeasonNumber = newSeasonNumber,
+                        Title = $"{series.Title} - Season {newSeasonNumber}",
+                        Description = $"Season {newSeasonNumber} of {series.Title}",
+                        ReleaseDate = releaseDate,
+                        Episodes = new List<Episode>()
+                    };
+
+                    await context.Seasons.AddAsync(newSeason);
+                    seasons.Add(newSeason);
+                }
+            }
+
             for (int seasonNumber = 1; seasonNumber <= minSeasonCount; seasonNumber++)
             {
                 var season = seasons.FirstOrDefault(s => s.SeasonNumber == seasonNumber);
@@ -356,9 +507,29 @@ namespace SeriLovers.API.Data
 
                 season.Episodes ??= new List<Episode>();
 
-                var desiredEpisodeCount = Math.Max(
-                    season.Episodes.Count,
-                    Random.Next(minEpisodesPerSeason, maxEpisodesPerSeason + 1));
+                var desiredEpisodeCount = Random.Next(minEpisodesPerSeason, maxEpisodesPerSeason + 1);
+
+                if (season.Episodes.Count > maxEpisodesPerSeason)
+                {
+                    var episodesToRemove = season.Episodes
+                        .OrderByDescending(e => e.EpisodeNumber)
+                        .Skip(maxEpisodesPerSeason)
+                        .ToList();
+
+                    if (episodesToRemove.Count > 0)
+                    {
+                        context.Episodes.RemoveRange(episodesToRemove);
+                        foreach (var episode in episodesToRemove)
+                        {
+                            season.Episodes.Remove(episode);
+                        }
+                    }
+                }
+
+                if (season.Episodes.Count < minEpisodesPerSeason)
+                {
+                    desiredEpisodeCount = Math.Max(desiredEpisodeCount, minEpisodesPerSeason);
+                }
 
                 var releaseBase = season.ReleaseDate ?? series.ReleaseDate.AddYears(seasonNumber - 1);
 
@@ -371,7 +542,6 @@ namespace SeriLovers.API.Data
 
                     var episode = new Episode
                     {
-                        SeasonId = season.Id,
                         EpisodeNumber = episodeNumber,
                         Title = $"{series.Title} S{seasonNumber:D2}E{episodeNumber:D2}",
                         Description = $"Episode {episodeNumber} of season {seasonNumber} for {series.Title}.",
@@ -386,7 +556,25 @@ namespace SeriLovers.API.Data
                     }
                     else
                     {
+                        episode.SeasonId = season.Id;
                         await context.Episodes.AddAsync(episode);
+                    }
+                }
+
+                if (season.Episodes.Count > desiredEpisodeCount)
+                {
+                    var episodesToRemove = season.Episodes
+                        .OrderByDescending(e => e.EpisodeNumber)
+                        .Skip(desiredEpisodeCount)
+                        .ToList();
+
+                    if (episodesToRemove.Count > 0)
+                    {
+                        context.Episodes.RemoveRange(episodesToRemove);
+                        foreach (var episode in episodesToRemove)
+                        {
+                            season.Episodes.Remove(episode);
+                        }
                     }
                 }
             }
@@ -394,36 +582,37 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
-        private static async Task SeedRolesAsync(RoleManager<IdentityRole<int>> roleManager)
+        private static async Task EnsureRolesAsync(RoleManager<IdentityRole<int>> roleManager)
         {
-            string[] roles = { "Admin", "User" };
-
-            foreach (var roleName in roles)
+            foreach (var roleName in DefaultRoles)
             {
-                var roleExists = await roleManager.RoleExistsAsync(roleName);
-                if (!roleExists)
+                if (!await roleManager.RoleExistsAsync(roleName))
                 {
-                    await roleManager.CreateAsync(new IdentityRole<int> { Name = roleName });
+                    var role = new IdentityRole<int>
+                    {
+                        Name = roleName,
+                        NormalizedName = roleName.ToUpperInvariant()
+                    };
+
+                    await roleManager.CreateAsync(role);
                 }
             }
         }
 
-        private static async Task AssignAdminToFirstUserAsync(
-            ApplicationDbContext context,
-            UserManager<ApplicationUser> userManager)
+        private static async Task EnsureAdminAssignedToFirstUserAsync(UserManager<ApplicationUser> userManager)
         {
-            // Get all users
-            var users = await userManager.Users.ToListAsync();
+            var firstUser = await userManager.Users
+                .OrderBy(u => u.Id)
+                .FirstOrDefaultAsync();
 
-            if (users.Count > 0)
+            if (firstUser == null)
             {
-                var firstUser = users[0];
-                var isInAdminRole = await userManager.IsInRoleAsync(firstUser, "Admin");
+                return;
+            }
 
-                if (!isInAdminRole)
-                {
-                    await userManager.AddToRoleAsync(firstUser, "Admin");
-                }
+            if (!await userManager.IsInRoleAsync(firstUser, "Admin"))
+            {
+                await userManager.AddToRoleAsync(firstUser, "Admin");
             }
         }
 
@@ -446,6 +635,9 @@ namespace SeriLovers.API.Data
 
             // Seed series
             await SeedSeriesAsync(context);
+
+            await SeedFavoriteCharactersAsync(context);
+            await SeedRecommendationLogsAsync(context);
         }
     }
 }

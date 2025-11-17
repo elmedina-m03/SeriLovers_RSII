@@ -7,6 +7,8 @@ namespace SeriLovers.API.Models
     {
         public ICollection<Rating> Ratings { get; set; } = new List<Rating>();
         public ICollection<Watchlist> Watchlists { get; set; } = new List<Watchlist>();
+        public ICollection<FavoriteCharacter> FavoriteCharacters { get; set; } = new List<FavoriteCharacter>();
+        public ICollection<RecommendationLog> RecommendationLogs { get; set; } = new List<RecommendationLog>();
     }
 }
 

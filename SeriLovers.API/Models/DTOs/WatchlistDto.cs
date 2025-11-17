@@ -19,9 +19,6 @@ namespace SeriLovers.API.Models.DTOs
     public class WatchlistCreateDto
     {
         [Required]
-        public int UserId { get; set; }
-
-        [Required]
         public int SeriesId { get; set; }
     }
 }

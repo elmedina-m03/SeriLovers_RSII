@@ -34,6 +34,16 @@ namespace SeriLovers.API.Profiles
 
             CreateMap<Rating, RatingDto>();
             CreateMap<Watchlist, WatchlistDto>();
+            CreateMap<FavoriteCharacter, FavoriteCharacterDto>()
+                .ForMember(dest => dest.ActorName, opt => opt.MapFrom(src => src.Actor != null ? $"{src.Actor.FirstName} {src.Actor.LastName}" : null))
+                .ForMember(dest => dest.SeriesTitle, opt => opt.MapFrom(src => src.Series != null ? src.Series.Title : null));
+            CreateMap<FavoriteCharacterCreateDto, FavoriteCharacter>();
+            CreateMap<FavoriteCharacterUpdateDto, FavoriteCharacter>();
+            CreateMap<RecommendationLog, RecommendationLogDto>()
+                .ForMember(dest => dest.UserEmail, opt => opt.MapFrom(src => src.User != null ? src.User.Email : null))
+                .ForMember(dest => dest.SeriesTitle, opt => opt.MapFrom(src => src.Series != null ? src.Series.Title : null));
+            CreateMap<RecommendationLogCreateDto, RecommendationLog>();
+            CreateMap<RecommendationLogUpdateDto, RecommendationLog>();
 
             CreateMap<SeriesUpsertDto, Series>()
                 .ForMember(dest => dest.SeriesGenres, opt => opt.MapFrom(src => src.GenreIds.Select(id => new SeriesGenre { GenreId = id })))

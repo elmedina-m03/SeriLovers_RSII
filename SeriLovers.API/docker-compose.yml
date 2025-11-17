@@ -1,0 +1,30 @@
+version: '3.9'
+
+services:
+  serilovers.api:
+    build: .
+    container_name: serilovers.api
+    ports:
+      - "5149:5149"
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ConnectionStrings__DefaultConnection: "Server=serilovers.db;Database=SeriLoversDb;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;"
+      JwtSettings__SecretKey: "YourDockerSuperSecretKeyThatIsAtLeast32Characters!"
+      JwtSettings__Issuer: "SeriLovers.API"
+      JwtSettings__Audience: "SeriLovers.API"
+    depends_on:
+      - serilovers.db
+
+  serilovers.db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: serilovers.db
+    environment:
+      SA_PASSWORD: "YourStrong!Pass"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    volumes:
+      - serilovers-data:/var/opt/mssql
+
+volumes:
+  serilovers-data:

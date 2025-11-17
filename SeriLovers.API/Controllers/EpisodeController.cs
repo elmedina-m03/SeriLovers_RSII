@@ -7,12 +7,17 @@ using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
 using System.Collections.Generic;
 using System.Linq;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace SeriLovers.API.Controllers
 {
+    /// <summary>
+    /// Provides CRUD and lookup operations for episodes.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [SwaggerTag("Episode Management")]
     public class EpisodeController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -26,6 +31,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/episode
         [HttpGet]
+        [SwaggerOperation(Summary = "List episodes", Description = "Retrieves all episodes without filtering.")]
         public async Task<IActionResult> GetAll()
         {
             var episodes = await _context.Episodes
@@ -36,6 +42,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/episode/{id}
         [HttpGet("{id}")]
+        [SwaggerOperation(Summary = "Get episode", Description = "Fetches a single episode by ID.")]
         public async Task<IActionResult> GetById(int id)
         {
             var episode = await _context.Episodes
@@ -52,6 +59,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/episode/season/{seasonId}
         [HttpGet("season/{seasonId}")]
+        [SwaggerOperation(Summary = "Episodes by season", Description = "Lists episodes for a specific season ordered by episode number.")]
         public async Task<IActionResult> GetBySeasonId(int seasonId)
         {
             var seasonExists = await _context.Seasons.AnyAsync(s => s.Id == seasonId);
@@ -72,6 +80,7 @@ namespace SeriLovers.API.Controllers
         // POST: api/episode
         [HttpPost]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Create episode", Description = "Admin only. Adds a new episode to a season.")]
         public async Task<IActionResult> Create([FromBody] EpisodeUpsertDto episodeDto)
         {
             if (!ModelState.IsValid)
@@ -106,6 +115,7 @@ namespace SeriLovers.API.Controllers
         // PUT: api/episode/{id}
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Update episode", Description = "Admin only. Updates an existing episode.")]
         public async Task<IActionResult> Update(int id, [FromBody] EpisodeUpsertDto episodeDto)
         {
             if (!ModelState.IsValid)
@@ -165,6 +175,7 @@ namespace SeriLovers.API.Controllers
         // DELETE: api/episode/{id}
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Delete episode", Description = "Admin only. Removes an episode from the catalogue.")]
         public async Task<IActionResult> Delete(int id)
         {
             var episode = await _context.Episodes.FindAsync(id);

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace SeriLovers.API.Models.DTOs
 {
     public class AuthResponseDto
@@ -10,4 +12,3 @@ namespace SeriLovers.API.Models.DTOs
         public List<string>? Errors { get; set; }
     }
 }
-

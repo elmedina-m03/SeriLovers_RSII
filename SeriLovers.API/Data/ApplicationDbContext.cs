@@ -21,6 +21,8 @@ namespace SeriLovers.API.Data
         public DbSet<SeriesGenre> SeriesGenres { get; set; }
         public DbSet<Rating> Ratings { get; set; }
         public DbSet<Watchlist> Watchlists { get; set; }
+        public DbSet<FavoriteCharacter> FavoriteCharacters { get; set; }
+        public DbSet<RecommendationLog> RecommendationLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -36,6 +38,42 @@ namespace SeriLovers.API.Data
                 entity.Property(e => e.Genre).HasMaxLength(100);
             });
 
+            modelBuilder.Entity<FavoriteCharacter>(entity =>
+            {
+                entity.HasKey(fc => fc.Id);
+                entity.HasIndex(fc => new { fc.UserId, fc.ActorId, fc.SeriesId }).IsUnique();
+
+                entity.HasOne(fc => fc.User)
+                    .WithMany(u => u.FavoriteCharacters)
+                    .HasForeignKey(fc => fc.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(fc => fc.Actor)
+                    .WithMany(a => a.FavoriteCharacters)
+                    .HasForeignKey(fc => fc.ActorId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(fc => fc.Series)
+                    .WithMany(s => s.FavoriteCharacters)
+                    .HasForeignKey(fc => fc.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<RecommendationLog>(entity =>
+            {
+                entity.HasKey(rl => rl.Id);
+                entity.HasIndex(rl => new { rl.UserId, rl.SeriesId, rl.RecommendedAt });
+
+                entity.HasOne(rl => rl.User)
+                    .WithMany(u => u.RecommendationLogs)
+                    .HasForeignKey(rl => rl.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(rl => rl.Series)
+                    .WithMany(s => s.RecommendationLogs)
+                    .HasForeignKey(rl => rl.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
             // Configure Season entity
             modelBuilder.Entity<Season>(entity =>
             {

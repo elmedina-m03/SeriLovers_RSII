@@ -25,6 +25,7 @@ namespace SeriLovers.API.Models
         
         // Navigation properties
         public ICollection<SeriesActor> SeriesActors { get; set; } = new List<SeriesActor>();
+        public ICollection<FavoriteCharacter> FavoriteCharacters { get; set; } = new List<FavoriteCharacter>();
 
         [NotMapped]
         public IEnumerable<Series> Series => SeriesActors

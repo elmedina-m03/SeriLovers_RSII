@@ -7,12 +7,17 @@ using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
 using System.Collections.Generic;
 using System.Linq;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace SeriLovers.API.Controllers
 {
+    /// <summary>
+    /// Exposes operations for managing genres and discovering series by genre.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [SwaggerTag("Genre Management")]
     public class GenreController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -26,6 +31,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/genre
         [HttpGet]
+        [SwaggerOperation(Summary = "List genres", Description = "Retrieves all genres and linked series.")]
         public async Task<IActionResult> GetAll()
         {
             var genres = await _context.Genres
@@ -39,6 +45,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/genre/{id}
         [HttpGet("{id}")]
+        [SwaggerOperation(Summary = "Get genre", Description = "Fetches a single genre with related series.")]
         public async Task<IActionResult> GetById(int id)
         {
             var genre = await _context.Genres
@@ -57,6 +64,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/genre/search?name={name}
         [HttpGet("search")]
+        [SwaggerOperation(Summary = "Search genres", Description = "Search for genres by name.")]
         public async Task<IActionResult> Search([FromQuery] string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -77,6 +85,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/genre/series/{seriesId}
         [HttpGet("series/{seriesId}")]
+        [SwaggerOperation(Summary = "Genres by series", Description = "Lists genres associated with the given series.")]
         public async Task<IActionResult> GetBySeriesId(int seriesId)
         {
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == seriesId);
@@ -99,6 +108,7 @@ namespace SeriLovers.API.Controllers
         // POST: api/genre
         [HttpPost]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Create genre", Description = "Admin only. Adds a new genre entry.")]
         public async Task<IActionResult> Create([FromBody] GenreUpsertDto genreDto)
         {
             if (!ModelState.IsValid)
@@ -157,6 +167,7 @@ namespace SeriLovers.API.Controllers
         // PUT: api/genre/{id}
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Update genre", Description = "Admin only. Updates the name of an existing genre.")]
         public async Task<IActionResult> Update(int id, [FromBody] GenreUpsertDto genreDto)
         {
             if (!ModelState.IsValid)
@@ -228,6 +239,7 @@ namespace SeriLovers.API.Controllers
         // DELETE: api/genre/{id}
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Delete genre", Description = "Admin only. Deletes a genre that is not associated with any series.")]
         public async Task<IActionResult> Delete(int id)
         {
             var genre = await _context.Genres

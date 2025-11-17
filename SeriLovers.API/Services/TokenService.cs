@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
@@ -10,14 +11,18 @@ namespace SeriLovers.API.Services
     public class TokenService : ITokenService
     {
         private readonly IConfiguration _configuration;
+        private readonly ILogger<TokenService> _logger;
 
-        public TokenService(IConfiguration configuration)
+        public TokenService(IConfiguration configuration, ILogger<TokenService> logger)
         {
             _configuration = configuration;
+            _logger = logger;
         }
 
         public string GenerateToken(ApplicationUser user, IList<string> roles)
         {
+            _logger.LogInformation("Generating JWT for user {UserId} with roles {Roles}", user.Id, string.Join(",", roles));
+
             var jwtSettings = _configuration.GetSection("JwtSettings");
             var secretKey = jwtSettings["SecretKey"];
             var issuer = jwtSettings["Issuer"];
@@ -35,7 +40,6 @@ namespace SeriLovers.API.Services
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
             };
 
-            // Add roles to claims
             foreach (var role in roles)
             {
                 claims.Add(new Claim(ClaimTypes.Role, role));
@@ -49,7 +53,9 @@ namespace SeriLovers.API.Services
                 signingCredentials: credentials
             );
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+            _logger.LogInformation("Generated JWT for user {UserId} expiring at {Expiration}", user.Id, token.ValidTo);
+            return tokenString;
         }
     }
 }

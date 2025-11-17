@@ -1,31 +1,47 @@
 using AutoMapper;
-using System;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Data;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace SeriLovers.API.Controllers
 {
+    /// <summary>
+    /// Provides endpoints for managing personal watchlists.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [SwaggerTag("Watchlists")]
     public class WatchlistController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
+        private readonly UserManager<ApplicationUser> _userManager;
 
-        public WatchlistController(ApplicationDbContext context, IMapper mapper)
+        public WatchlistController(ApplicationDbContext context, IMapper mapper, UserManager<ApplicationUser> userManager)
         {
             _context = context;
             _mapper = mapper;
+            _userManager = userManager;
+        }
+
+        private async Task<int?> GetCurrentUserIdAsync()
+        {
+            var user = await _userManager.GetUserAsync(User);
+            return user?.Id;
         }
 
         [HttpGet]
+        [SwaggerOperation(Summary = "List watchlist entries", Description = "Retrieves all watchlist entries with associated users and series.")]
         public async Task<IActionResult> GetAll()
         {
             var watchlistEntries = await _context.Watchlists
@@ -40,6 +56,7 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet("{id}")]
+        [SwaggerOperation(Summary = "Get watchlist entry", Description = "Fetches a single watchlist entry by identifier.")]
         public async Task<IActionResult> GetById(int id)
         {
             var entry = await _context.Watchlists
@@ -58,6 +75,7 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet("user/{userId}")]
+        [SwaggerOperation(Summary = "Watchlist by user", Description = "Retrieves watchlist items for the specified user.")]
         public async Task<IActionResult> GetByUser(int userId)
         {
             var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
@@ -78,6 +96,7 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet("series/{seriesId}")]
+        [SwaggerOperation(Summary = "Watchlist by series", Description = "Retrieves watchlist entries containing the specified series.")]
         public async Task<IActionResult> GetBySeries(int seriesId)
         {
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == seriesId);
@@ -98,17 +117,18 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpPost]
+        [SwaggerOperation(Summary = "Add to watchlist", Description = "Adds the specified series to the current user's watchlist.")]
         public async Task<IActionResult> Create([FromBody] WatchlistCreateDto watchlistDto)
         {
+            var currentUserId = await GetCurrentUserIdAsync();
+            if (!currentUserId.HasValue)
+            {
+                return Unauthorized(new { message = "Unable to identify current user." });
+            }
+
             if (!ModelState.IsValid)
             {
                 return ValidationProblem(ModelState);
-            }
-
-            var userExists = await _context.Users.AnyAsync(u => u.Id == watchlistDto.UserId);
-            if (!userExists)
-            {
-                return BadRequest(new { message = $"User with ID {watchlistDto.UserId} does not exist." });
             }
 
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == watchlistDto.SeriesId);
@@ -118,14 +138,17 @@ namespace SeriLovers.API.Controllers
             }
 
             var existingEntry = await _context.Watchlists
-                .FirstOrDefaultAsync(w => w.UserId == watchlistDto.UserId && w.SeriesId == watchlistDto.SeriesId);
+                .FirstOrDefaultAsync(w => w.UserId == currentUserId.Value && w.SeriesId == watchlistDto.SeriesId);
             if (existingEntry != null)
             {
-                return Conflict(new { message = "Series is already in the user's watchlist." });
+                await _context.Entry(existingEntry).Reference(w => w.Series).LoadAsync();
+                var existingResult = _mapper.Map<WatchlistDto>(existingEntry);
+                return Ok(new { message = "series already in watchlist", watchlist = existingResult });
             }
 
             var watchlist = _mapper.Map<Watchlist>(watchlistDto);
             watchlist.AddedAt = DateTime.UtcNow;
+            watchlist.UserId = currentUserId.Value;
 
             _context.Watchlists.Add(watchlist);
             await _context.SaveChangesAsync();
@@ -135,22 +158,30 @@ namespace SeriLovers.API.Controllers
 
             var result = _mapper.Map<WatchlistDto>(watchlist);
 
-            return CreatedAtAction(nameof(GetById), new { id = watchlist.Id }, result);
+            return CreatedAtAction(nameof(GetById), new { id = watchlist.Id }, new { message = "added to watchlist", watchlist = result });
         }
 
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> Delete(int id)
+        [HttpDelete("{seriesId}")]
+        [SwaggerOperation(Summary = "Remove from watchlist", Description = "Removes the specified series from the current user's watchlist.")]
+        public async Task<IActionResult> Delete(int seriesId)
         {
-            var entry = await _context.Watchlists.FindAsync(id);
+            var currentUserId = await GetCurrentUserIdAsync();
+            if (!currentUserId.HasValue)
+            {
+                return Unauthorized(new { message = "Unable to identify current user." });
+            }
+
+            var entry = await _context.Watchlists
+                .FirstOrDefaultAsync(w => w.UserId == currentUserId.Value && w.SeriesId == seriesId);
             if (entry == null)
             {
-                return NotFound(new { message = $"Watchlist entry with ID {id} not found." });
+                return NotFound(new { message = "Series not found in your watchlist." });
             }
 
             _context.Watchlists.Remove(entry);
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return Ok(new { message = "removed from watchlist" });
         }
     }
 }

@@ -37,4 +37,3 @@ namespace SeriLovers.API.Models.DTOs
         public string? Biography { get; set; }
     }
 }
-

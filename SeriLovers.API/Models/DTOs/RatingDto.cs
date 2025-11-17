@@ -24,9 +24,6 @@ namespace SeriLovers.API.Models.DTOs
     public class RatingCreateDto
     {
         [Required]
-        public int UserId { get; set; }
-
-        [Required]
         public int SeriesId { get; set; }
 
         [Required]

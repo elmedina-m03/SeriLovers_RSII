@@ -8,12 +8,17 @@ using SeriLovers.API.Models.DTOs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Swashbuckle.AspNetCore.Annotations;
 
 namespace SeriLovers.API.Controllers
 {
+    /// <summary>
+    /// Provides CRUD and lookup operations for actors.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    [SwaggerTag("Actor Management")]
     public class ActorController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -27,6 +32,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/actor
         [HttpGet]
+        [SwaggerOperation(Summary = "List actors", Description = "Retrieves all actors ordered alphabetically with their associated series.")]
         public async Task<IActionResult> GetAll()
         {
             var actors = await _context.Actors
@@ -42,6 +48,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/actor/{id}
         [HttpGet("{id}")]
+        [SwaggerOperation(Summary = "Get actor", Description = "Retrieves a single actor and related series information.")]
         public async Task<IActionResult> GetById(int id)
         {
             var actor = await _context.Actors
@@ -60,6 +67,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/actor/search?name={name}
         [HttpGet("search")]
+        [SwaggerOperation(Summary = "Search actors", Description = "Search for actors by first or last name.")]
         public async Task<IActionResult> Search([FromQuery] string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -81,6 +89,7 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/actor/series/{seriesId}
         [HttpGet("series/{seriesId}")]
+        [SwaggerOperation(Summary = "Actors by series", Description = "Lists actors that participated in the specified series.")]
         public async Task<IActionResult> GetBySeriesId(int seriesId)
         {
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == seriesId);
@@ -104,6 +113,7 @@ namespace SeriLovers.API.Controllers
         // POST: api/actor
         [HttpPost]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Create actor", Description = "Admin only. Adds a new actor entry.")]
         public async Task<IActionResult> Create([FromBody] ActorUpsertDto actorDto)
         {
             if (!ModelState.IsValid)
@@ -137,6 +147,7 @@ namespace SeriLovers.API.Controllers
         // PUT: api/actor/{id}
         [HttpPut("{id}")]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Update actor", Description = "Admin only. Updates actor biography data.")]
         public async Task<IActionResult> Update(int id, [FromBody] ActorUpsertDto actorDto)
         {
             if (!ModelState.IsValid)
@@ -191,6 +202,7 @@ namespace SeriLovers.API.Controllers
         // DELETE: api/actor/{id}
         [HttpDelete("{id}")]
         [Authorize(Roles = "Admin")]
+        [SwaggerOperation(Summary = "Delete actor", Description = "Admin only. Deletes an actor if not linked to any series.")]
         public async Task<IActionResult> Delete(int id)
         {
             var actor = await _context.Actors

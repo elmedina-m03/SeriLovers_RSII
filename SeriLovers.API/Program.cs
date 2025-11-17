@@ -1,20 +1,32 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using EasyNetQ;
 using SeriLovers.API.Data;
+using SeriLovers.API.Filters;
+using SeriLovers.API.HostedServices;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Middleware;
 using SeriLovers.API.Models;
+using SeriLovers.API.Security;
 using SeriLovers.API.Services;
 using SeriLovers.API.Profiles;
 using Swashbuckle.AspNetCore.Annotations;
 using System.Reflection;
 using System.Text;
+using QuestPDF.Infrastructure;
+
+const string ExternalCookieScheme = "ExternalCookie";
 
 var builder = WebApplication.CreateBuilder(args);
+
+QuestPDF.Settings.License = LicenseType.Community;
 
 // ============================================
 // Database Configuration
@@ -77,7 +89,25 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = audience,
         IssuerSigningKey = key
     };
-});
+})
+.AddCookie(ExternalCookieScheme, options =>
+{
+    options.Cookie.Name = "SeriLovers.External";
+    options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+    options.SlidingExpiration = true;
+})
+.AddGoogle("Google", options =>
+{
+    options.SignInScheme = ExternalCookieScheme;
+    var googleAuthSection = builder.Configuration.GetSection("Authentication:Google");
+    options.ClientId = googleAuthSection["ClientId"] ?? string.Empty;
+    options.ClientSecret = googleAuthSection["ClientSecret"] ?? string.Empty;
+    options.SaveTokens = true;
+    options.Scope.Add("email");
+    options.Scope.Add("profile");
+    options.CallbackPath = "/signin-google";
+})
+.AddScheme<AuthenticationSchemeOptions, BasicAuthHandler>("Basic", options => { });
 
 // ============================================
 // Service Registrations
@@ -86,11 +116,42 @@ builder.Services.AddScoped<ISeriesService, SeriesService>();
 builder.Services.AddScoped<IActorService, ActorService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+// RabbitMQ connection - made resilient to prevent blocking startup
+builder.Services.AddSingleton<IBus>(sp =>
+{
+    var connectionString = builder.Configuration["RabbitMq:Connection"];
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+    
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        logger.LogWarning("RabbitMQ connection string is not configured. Message bus will not be available.");
+        return null!; // Return null, will be handled gracefully
+    }
+    
+    try
+    {
+        logger.LogInformation("Attempting to connect to RabbitMQ...");
+        var bus = RabbitHutch.CreateBus(connectionString);
+        logger.LogInformation("Successfully connected to RabbitMQ.");
+        return bus;
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to connect to RabbitMQ. The application will continue without message bus functionality.");
+        return null!; // Return null, will be handled gracefully
+    }
+});
+builder.Services.AddSingleton<IMessageBusService, MessageBusService>();
+builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
 
 // ============================================
 // Controllers Configuration
 // ============================================
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<GlobalExceptionFilter>();
+});
+builder.Services.AddHttpClient();
 
 // ============================================
 // Swagger/OpenAPI Configuration

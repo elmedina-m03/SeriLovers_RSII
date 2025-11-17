@@ -1,20 +1,25 @@
-﻿using SeriLovers.API.Data;
+﻿using Microsoft.EntityFrameworkCore;
+using SeriLovers.API.Data;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
-using Microsoft.EntityFrameworkCore;
+using SeriLovers.API.Models.DTOs;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace SeriLovers.API.Services
 {
     public class SeriesService : ISeriesService
     {
         private readonly ApplicationDbContext _context;
+        private readonly ILogger<SeriesService> _logger;
 
-        public SeriesService(ApplicationDbContext context)
+        public SeriesService(ApplicationDbContext context, ILogger<SeriesService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         private IQueryable<Series> QuerySeriesWithRelationships(bool includeFeedback = false)
@@ -42,6 +47,8 @@ namespace SeriLovers.API.Services
 
         public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, string? genre = null, double? minRating = null, string? search = null)
         {
+            _logger.LogDebug("Retrieving paged series list. Page: {Page}, PageSize: {PageSize}, Genre: {Genre}, MinRating: {MinRating}, Search: {Search}", page, pageSize, genre, minRating, search);
+
             page = page <= 0 ? 1 : page;
             pageSize = pageSize <= 0 ? 10 : pageSize;
 
@@ -97,6 +104,7 @@ namespace SeriLovers.API.Services
 
         public Series? GetById(int id)
         {
+            _logger.LogDebug("Fetching series with id {SeriesId}", id);
             var series = QuerySeriesWithRelationships(includeFeedback: true)
                 .FirstOrDefault(s => s.Id == id);
 
@@ -114,6 +122,7 @@ namespace SeriLovers.API.Services
         {
             if (string.IsNullOrWhiteSpace(keyword))
             {
+                _logger.LogDebug("Search keyword empty; returning all series.");
                 var allSeries = QuerySeriesWithRelationships()
                     .OrderBy(s => s.Title)
                     .ToList();
@@ -128,6 +137,7 @@ namespace SeriLovers.API.Services
                 return allSeries;
             }
 
+            _logger.LogDebug("Searching series with keyword {Keyword}", keyword);
             var lowerKeyword = keyword.ToLower();
 
             var results = QuerySeriesWithRelationships()
@@ -150,6 +160,8 @@ namespace SeriLovers.API.Services
         {
             if (series == null)
                 throw new ArgumentNullException(nameof(series));
+
+            _logger.LogInformation("Creating series {Title}", series.Title);
 
             if (string.IsNullOrWhiteSpace(series.Title))
                 throw new ArgumentException("Series title cannot be empty.", nameof(series));
@@ -207,6 +219,8 @@ namespace SeriLovers.API.Services
                 .Load();
 
             HydrateSeries(series);
+
+            _logger.LogInformation("Series {Title} created with id {SeriesId}.", series.Title, series.Id);
         }
 
         public void Update(Series series)
@@ -214,13 +228,18 @@ namespace SeriLovers.API.Services
             if (series == null)
                 throw new ArgumentNullException(nameof(series));
 
+            _logger.LogInformation("Updating series {SeriesId}", series.Id);
+
             var existing = _context.Series
                                   .Include(s => s.SeriesGenres)
                                   .Include(s => s.SeriesActors)
                                   .FirstOrDefault(s => s.Id == series.Id);
 
             if (existing == null)
+            {
+                _logger.LogWarning("Series {SeriesId} not found for update.", series.Id);
                 throw new KeyNotFoundException($"Series with ID {series.Id} not found.");
+            }
 
             if (string.IsNullOrWhiteSpace(series.Title))
                 throw new ArgumentException("Series title cannot be empty.", nameof(series));
@@ -285,20 +304,113 @@ namespace SeriLovers.API.Services
             series.SeriesActors = existing.SeriesActors.ToList();
             series.Genres = existing.Genres.ToList();
             series.Actors = existing.Actors.ToList();
+
+            _logger.LogInformation("Series {SeriesId} updated successfully.", series.Id);
         }
 
         public void Delete(int id)
         {
+            _logger.LogInformation("Deleting series {SeriesId}", id);
             var series = _context.Series
                                .Include(s => s.Seasons)
                                .FirstOrDefault(s => s.Id == id);
 
             if (series == null)
+            {
+                _logger.LogWarning("Series {SeriesId} not found for deletion.", id);
                 throw new KeyNotFoundException($"Series with ID {id} not found.");
+            }
 
             // Note: Seasons will be cascade deleted due to foreign key relationship
             _context.Series.Remove(series);
             _context.SaveChanges();
+            _logger.LogInformation("Series {SeriesId} deleted successfully.", id);
+        }
+
+        public async Task<List<SeriesRecommendationDto>> GetRecommendationsAsync(int userId, int maxResults = 10)
+        {
+            _logger.LogInformation("Generating recommendations for user {UserId} with max results {MaxResults}.", userId, maxResults);
+
+            if (maxResults <= 0)
+            {
+                maxResults = 10;
+            }
+
+            var userRatings = await _context.Ratings
+                .AsNoTracking()
+                .Where(r => r.UserId == userId)
+                .ToListAsync();
+
+            if (userRatings.Count == 0)
+            {
+                _logger.LogInformation("No ratings found for user {UserId}; returning empty recommendations.", userId);
+                return new List<SeriesRecommendationDto>();
+            }
+
+            var highRatedSeriesIds = userRatings
+                .Where(r => r.Score >= 8)
+                .Select(r => r.SeriesId)
+                .Distinct()
+                .ToList();
+
+            if (highRatedSeriesIds.Count == 0)
+            {
+                _logger.LogInformation("User {UserId} has no high-rated series; returning empty recommendations.", userId);
+                return new List<SeriesRecommendationDto>();
+            }
+
+            var ratedSeriesIds = userRatings
+                .Select(r => r.SeriesId)
+                .Distinct()
+                .ToList();
+
+            var favoriteGenreIds = await _context.SeriesGenres
+                .AsNoTracking()
+                .Where(sg => highRatedSeriesIds.Contains(sg.SeriesId))
+                .GroupBy(sg => sg.GenreId)
+                .Select(g => new { GenreId = g.Key, Count = g.Count() })
+                .OrderByDescending(g => g.Count)
+                .Select(g => g.GenreId)
+                .ToListAsync();
+
+            if (favoriteGenreIds.Count == 0)
+            {
+                _logger.LogInformation("No dominant genres found for user {UserId}.", userId);
+                return new List<SeriesRecommendationDto>();
+            }
+
+            var recommendationData = await _context.Series
+                .AsNoTracking()
+                .Where(s =>
+                    s.SeriesGenres.Any(sg => favoriteGenreIds.Contains(sg.GenreId)) &&
+                    !ratedSeriesIds.Contains(s.Id))
+                .Select(s => new
+                {
+                    s.Title,
+                    Genres = s.SeriesGenres.Select(sg => sg.Genre != null ? sg.Genre.Name : null),
+                    AverageRating = s.Ratings.Select(r => (double?)r.Score).Average()
+                })
+                .OrderByDescending(s => s.AverageRating ?? 0)
+                .ThenBy(s => s.Title)
+                .Take(maxResults)
+                .ToListAsync();
+
+            var recommendations = recommendationData
+                .Select(s => new SeriesRecommendationDto
+                {
+                    Title = s.Title,
+                    Genres = s.Genres
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .Select(name => name!)
+                        .Distinct()
+                        .ToList(),
+                    AverageRating = Math.Round(s.AverageRating ?? 0, 2)
+                })
+                .ToList();
+
+            _logger.LogInformation("Generated {Count} recommendations for user {UserId}.", recommendations.Count, userId);
+
+            return recommendations;
         }
 
         private List<int> ExtractGenreIds(Series series)

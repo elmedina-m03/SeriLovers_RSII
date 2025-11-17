@@ -33,6 +33,8 @@ namespace SeriLovers.API.Models
         public ICollection<SeriesActor> SeriesActors { get; set; } = new List<SeriesActor>();
         public ICollection<Rating> Ratings { get; set; } = new List<Rating>();
         public ICollection<Watchlist> Watchlists { get; set; } = new List<Watchlist>();
+        public ICollection<FavoriteCharacter> FavoriteCharacters { get; set; } = new List<FavoriteCharacter>();
+        public ICollection<RecommendationLog> RecommendationLogs { get; set; } = new List<RecommendationLog>();
 
         [NotMapped]
         public ICollection<Genre> Genres { get; set; } = new List<Genre>();

@@ -1,4 +1,7 @@
 ﻿using SeriLovers.API.Models;
+using SeriLovers.API.Models.DTOs;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace SeriLovers.API.Interfaces
 {
@@ -10,5 +13,6 @@ namespace SeriLovers.API.Interfaces
         void Add(Series series);
         void Update(Series series);
         void Delete(int id);
+        Task<List<SeriesRecommendationDto>> GetRecommendationsAsync(int userId, int maxResults = 10);
     }
 }
