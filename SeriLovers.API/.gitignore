@@ -1,7 +1,10 @@
 bin/
 obj/
 .vs/
+appsettings.json
 appsettings.Development.json
+appsettings.*.json
+!appsettings.example.json
 secrets.json
 *.db
 *.log
