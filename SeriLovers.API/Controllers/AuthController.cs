@@ -329,6 +329,7 @@ namespace SeriLovers.API.Controllers
 
             if (user == null)
             {
+                _logger.LogWarning("Login attempt failed: User not found for email {Email}", loginDto.Email);
                 return Unauthorized(new AuthResponseDto
                 {
                     Success = false,
@@ -336,35 +337,10 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
-            var result = await _signInManager.PasswordSignInAsync(
-                user.UserName!,
-                loginDto.Password,
-                loginDto.RememberMe,
-                lockoutOnFailure: true);
-
-            if (result.Succeeded)
+            // Check if account is locked out
+            if (await _userManager.IsLockedOutAsync(user))
             {
-                _logger.LogInformation("User logged in.");
-
-                // Get user roles
-                var roles = await _userManager.GetRolesAsync(user);
-
-                // Generate JWT token
-                var token = _tokenService.GenerateToken(user, roles);
-
-                return Ok(new AuthResponseDto
-                {
-                    Success = true,
-                    Message = "Login successful",
-                    Token = token,
-                    UserId = user.Id.ToString(),
-                    Email = user.Email
-                });
-            }
-
-            if (result.IsLockedOut)
-            {
-                _logger.LogWarning("User account locked out.");
+                _logger.LogWarning("User account locked out for email {Email}", loginDto.Email);
                 return Unauthorized(new AuthResponseDto
                 {
                     Success = false,
@@ -372,8 +348,29 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
-            if (result.IsNotAllowed)
+            // Verify password directly using CheckPasswordAsync
+            var isPasswordValid = await _userManager.CheckPasswordAsync(user, loginDto.Password);
+
+            if (!isPasswordValid)
             {
+                // Increment access failed count for lockout tracking
+                await _userManager.AccessFailedAsync(user);
+                
+                _logger.LogWarning("Invalid password attempt for email {Email}", loginDto.Email);
+                return Unauthorized(new AuthResponseDto
+                {
+                    Success = false,
+                    Message = "Invalid login attempt"
+                });
+            }
+
+            // Password is valid - reset access failed count and proceed
+            await _userManager.ResetAccessFailedCountAsync(user);
+
+            // Check if user is allowed to sign in
+            if (!await _signInManager.CanSignInAsync(user))
+            {
+                _logger.LogWarning("User is not allowed to sign in for email {Email}", loginDto.Email);
                 return Unauthorized(new AuthResponseDto
                 {
                     Success = false,
@@ -381,10 +378,21 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
-            return Unauthorized(new AuthResponseDto
+            _logger.LogInformation("User logged in successfully for email {Email}", loginDto.Email);
+
+            // Get user roles
+            var roles = await _userManager.GetRolesAsync(user);
+
+            // Generate JWT token
+            var token = _tokenService.GenerateToken(user, roles);
+
+            return Ok(new AuthResponseDto
             {
-                Success = false,
-                Message = "Invalid login attempt"
+                Success = true,
+                Message = "Login successful",
+                Token = token,
+                UserId = user.Id.ToString(),
+                Email = user.Email
             });
         }
     }

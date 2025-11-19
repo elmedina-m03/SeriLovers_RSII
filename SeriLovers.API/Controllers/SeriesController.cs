@@ -35,15 +35,15 @@ namespace SeriLovers.API.Controllers
         [HttpGet]
         [SwaggerOperation(
             Summary = "List series",
-            Description = "Retrieves a paginated list of series with optional filtering by genre, rating, and keyword.")]
+            Description = "Retrieves a paginated list of series with optional filtering by genre ID, rating, and keyword.")]
         public IActionResult GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
-            [FromQuery] string? genre = null,
+            [FromQuery] int? genreId = null,
             [FromQuery] double? minRating = null,
             [FromQuery] string? search = null)
         {
-            var pagedSeries = _seriesService.GetAll(page, pageSize, genre, minRating, search);
+            var pagedSeries = _seriesService.GetAll(page, pageSize, genreId, minRating, search);
             var items = _mapper.Map<IEnumerable<SeriesDto>>(pagedSeries.Items);
 
             var response = new PagedResponseDto<SeriesDto>

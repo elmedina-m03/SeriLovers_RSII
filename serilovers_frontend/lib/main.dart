@@ -1,6 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'providers/auth_provider.dart';
+import 'providers/series_provider.dart';
+import 'providers/watchlist_provider.dart';
+import 'services/auth_service.dart';
+import 'services/api_service.dart';
+import 'screens/login_screen.dart';
+import 'screens/series_list_screen.dart';
+import 'screens/series_detail_screen.dart';
+import 'screens/watchlist_screen.dart';
+import 'screens/main_tab_screen.dart';
+import 'models/series.dart';
+import 'core/theme/app_theme.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
+  
   runApp(const MyApp());
 }
 
@@ -10,27 +29,90 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+    // Create service instances
+    final apiService = ApiService();
+    final authService = AuthService(apiService: apiService);
+    
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) {
+            final provider = AuthProvider(authService: authService);
+            // Initialize asynchronously (token loading)
+            provider.initialize();
+            return provider;
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, SeriesProvider>(
+          create: (_) {
+            // Create a temporary instance - will be updated in update method
+            final tempAuth = AuthProvider(authService: authService);
+            return SeriesProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            // Update the existing SeriesProvider with the correct AuthProvider
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            // Create new instance if previous doesn't exist
+            return SeriesProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, WatchlistProvider>(
+          create: (_) {
+            // Create a temporary instance - will be updated in update method
+            final tempAuth = AuthProvider(authService: authService);
+            return WatchlistProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            // Update the existing WatchlistProvider with the correct AuthProvider
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            // Create new instance if previous doesn't exist
+            return WatchlistProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+      ],
+      child: MaterialApp(
+        title: 'SeriLovers',
+        theme: AppTheme.build(),
+        initialRoute: '/login',
+        routes: {
+          '/login': (context) => const LoginScreen(),
+          '/main': (context) => const MainTabScreen(),
+          '/watchlist': (context) => const WatchlistScreen(),
+        },
+        onGenerateRoute: (settings) {
+          // Handle series detail route with Series argument
+          if (settings.name == '/series_detail') {
+            final series = settings.arguments as Series?;
+            if (series != null) {
+              return MaterialPageRoute(
+                builder: (context) => SeriesDetailScreen(series: series),
+              );
+            }
+          }
+          // Default route (fallback)
+          return MaterialPageRoute(
+            builder: (context) => const LoginScreen(),
+          );
+        },
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
@@ -102,7 +184,7 @@ class _MyHomePageState extends State<MyHomePage> {
           // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
           // action in the IDE, or press "p" in the console), to see the
           // wireframe for each widget.
-          mainAxisAlignment: .center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             const Text('You have pushed the button this many times:'),
             Text(

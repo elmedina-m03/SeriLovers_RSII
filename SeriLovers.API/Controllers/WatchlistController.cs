@@ -46,9 +46,47 @@ namespace SeriLovers.API.Controllers
         {
             var watchlistEntries = await _context.Watchlists
                 .Include(w => w.Series)
+                    .ThenInclude(s => s.SeriesGenres)
+                        .ThenInclude(sg => sg.Genre)
+                .Include(w => w.Series)
+                    .ThenInclude(s => s.SeriesActors)
+                        .ThenInclude(sa => sa.Actor)
                 .Include(w => w.User)
                 .OrderByDescending(w => w.AddedAt)
                 .ToListAsync();
+
+            // Get unique series IDs
+            var seriesIds = watchlistEntries
+                .Where(w => w.Series != null)
+                .Select(w => w.Series!.Id)
+                .Distinct()
+                .ToList();
+
+            // Efficiently populate feedback counts for all series at once
+            if (seriesIds.Any())
+            {
+                var ratingCounts = await _context.Ratings
+                    .Where(r => seriesIds.Contains(r.SeriesId))
+                    .GroupBy(r => r.SeriesId)
+                    .Select(g => new { SeriesId = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.SeriesId, x => x.Count);
+
+                var watchlistCounts = await _context.Watchlists
+                    .Where(w => seriesIds.Contains(w.SeriesId))
+                    .GroupBy(w => w.SeriesId)
+                    .Select(g => new { SeriesId = g.Key, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.SeriesId, x => x.Count);
+
+                // Set counts on each series
+                foreach (var entry in watchlistEntries)
+                {
+                    if (entry.Series != null)
+                    {
+                        entry.Series.RatingsCount = ratingCounts.TryGetValue(entry.Series.Id, out var ratingCount) ? ratingCount : 0;
+                        entry.Series.WatchlistsCount = watchlistCounts.TryGetValue(entry.Series.Id, out var watchlistCount) ? watchlistCount : 0;
+                    }
+                }
+            }
 
             var result = _mapper.Map<IEnumerable<WatchlistDto>>(watchlistEntries);
 

@@ -14,6 +14,11 @@ namespace SeriLovers.API.Models.DTOs
         [Required]
         [DataType(DataType.DateTime)]
         public DateTime AddedAt { get; set; }
+        
+        /// <summary>
+        /// Full Series data mapped to SeriesDto
+        /// </summary>
+        public SeriesDto? Series { get; set; }
     }
 
     public class WatchlistCreateDto

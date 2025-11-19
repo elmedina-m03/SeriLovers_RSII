@@ -45,9 +45,9 @@ namespace SeriLovers.API.Services
             return query;
         }
 
-        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, string? genre = null, double? minRating = null, string? search = null)
+        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null)
         {
-            _logger.LogDebug("Retrieving paged series list. Page: {Page}, PageSize: {PageSize}, Genre: {Genre}, MinRating: {MinRating}, Search: {Search}", page, pageSize, genre, minRating, search);
+            _logger.LogDebug("Retrieving paged series list. Page: {Page}, PageSize: {PageSize}, GenreId: {GenreId}, MinRating: {MinRating}, Search: {Search}", page, pageSize, genreId, minRating, search);
 
             page = page <= 0 ? 1 : page;
             pageSize = pageSize <= 0 ? 10 : pageSize;
@@ -62,12 +62,10 @@ namespace SeriLovers.API.Services
                     (s.Description != null && s.Description.ToLower().Contains(keyword)));
             }
 
-            if (!string.IsNullOrWhiteSpace(genre))
+            if (genreId.HasValue)
             {
-                var genreFilter = genre.Trim().ToLower();
                 query = query.Where(s =>
-                    s.SeriesGenres.Any(sg => sg.Genre != null && sg.Genre.Name.ToLower() == genreFilter) ||
-                    (s.Genre != null && s.Genre.ToLower() == genreFilter));
+                    s.SeriesGenres.Any(sg => sg.Genre != null && sg.Genre.Id == genreId.Value));
             }
 
             if (minRating.HasValue)

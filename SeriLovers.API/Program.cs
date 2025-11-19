@@ -116,33 +116,33 @@ builder.Services.AddScoped<ISeriesService, SeriesService>();
 builder.Services.AddScoped<IActorService, ActorService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
-// RabbitMQ connection - made resilient to prevent blocking startup
-builder.Services.AddSingleton<IBus>(sp =>
-{
-    var connectionString = builder.Configuration["RabbitMq:Connection"];
-    var logger = sp.GetRequiredService<ILogger<Program>>();
-    
-    if (string.IsNullOrWhiteSpace(connectionString))
-    {
-        logger.LogWarning("RabbitMQ connection string is not configured. Message bus will not be available.");
-        return null!; // Return null, will be handled gracefully
-    }
-    
-    try
-    {
-        logger.LogInformation("Attempting to connect to RabbitMQ...");
-        var bus = RabbitHutch.CreateBus(connectionString);
-        logger.LogInformation("Successfully connected to RabbitMQ.");
-        return bus;
-    }
-    catch (Exception ex)
-    {
-        logger.LogWarning(ex, "Failed to connect to RabbitMQ. The application will continue without message bus functionality.");
-        return null!; // Return null, will be handled gracefully
-    }
-});
-builder.Services.AddSingleton<IMessageBusService, MessageBusService>();
-builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
+// RabbitMQ connection - DISABLED
+// builder.Services.AddSingleton<IBus>(sp =>
+// {
+//     var connectionString = builder.Configuration["RabbitMq:Connection"];
+//     var logger = sp.GetRequiredService<ILogger<Program>>();
+//     
+//     if (string.IsNullOrWhiteSpace(connectionString))
+//     {
+//         logger.LogWarning("RabbitMQ connection string is not configured. Message bus will not be available.");
+//         return null!; // Return null, will be handled gracefully
+//     }
+//     
+//     try
+//     {
+//         logger.LogInformation("Attempting to connect to RabbitMQ...");
+//         var bus = RabbitHutch.CreateBus(connectionString);
+//         logger.LogInformation("Successfully connected to RabbitMQ.");
+//         return bus;
+//     }
+//     catch (Exception ex)
+//     {
+//         logger.LogWarning(ex, "Failed to connect to RabbitMQ. The application will continue without message bus functionality.");
+//         return null!; // Return null, will be handled gracefully
+//     }
+// });
+// builder.Services.AddSingleton<IMessageBusService, MessageBusService>();
+// builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
 
 // ============================================
 // Controllers Configuration
@@ -152,6 +152,20 @@ builder.Services.AddControllers(options =>
     options.Filters.Add<GlobalExceptionFilter>();
 });
 builder.Services.AddHttpClient();
+
+// ============================================
+// CORS Configuration
+// ============================================
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFlutterApp", policy =>
+    {
+        // Allow all origins for development (Flutter desktop/web apps)
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
 // ============================================
 // Swagger/OpenAPI Configuration
@@ -236,6 +250,9 @@ var app = builder.Build();
 
 // Global exception handling middleware (must be early in pipeline)
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+
+// CORS (must be before UseAuthentication and UseAuthorization)
+app.UseCors("AllowFlutterApp");
 
 // Swagger UI
 app.UseSwagger();
