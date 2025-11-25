@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -45,7 +47,13 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       if (success) {
-        Navigator.pushReplacementNamed(context, '/main');
+        // Check if desktop/web to navigate to admin panel
+        final isDesktop = kIsWeb || Platform.isWindows;
+        if (isDesktop) {
+          Navigator.pushReplacementNamed(context, '/admin');
+        } else {
+          Navigator.pushReplacementNamed(context, '/main');
+        }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

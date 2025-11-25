@@ -45,42 +45,101 @@ namespace SeriLovers.API.Services
             return query;
         }
 
-        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null)
+        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null, int? year = null, string? sortBy = null, string? sortOrder = null)
         {
-            _logger.LogDebug("Retrieving paged series list. Page: {Page}, PageSize: {PageSize}, GenreId: {GenreId}, MinRating: {MinRating}, Search: {Search}", page, pageSize, genreId, minRating, search);
+            _logger.LogDebug("Retrieving paged series list. Page: {Page}, PageSize: {PageSize}, GenreId: {GenreId}, MinRating: {MinRating}, Search: {Search}, Year: {Year}", page, pageSize, genreId, minRating, search, year);
 
             page = page <= 0 ? 1 : page;
             pageSize = pageSize <= 0 ? 10 : pageSize;
 
-            var query = QuerySeriesWithRelationships();
+            // Start with base query - we'll add includes later for the final fetch
+            var baseQuery = _context.Series.AsQueryable();
 
+            // Apply search filter (including actor names)
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var keyword = search.Trim().ToLower();
-                query = query.Where(s =>
+                // Use a subquery to find series with matching actors
+                var matchingSeriesIds = _context.SeriesActors
+                    .Where(sa => sa.Actor != null && (
+                        sa.Actor.FirstName.ToLower().Contains(keyword) ||
+                        sa.Actor.LastName.ToLower().Contains(keyword) ||
+                        sa.Actor.FullName.ToLower().Contains(keyword)
+                    ))
+                    .Select(sa => sa.SeriesId)
+                    .Distinct();
+
+                baseQuery = baseQuery.Where(s =>
                     s.Title.ToLower().Contains(keyword) ||
-                    (s.Description != null && s.Description.ToLower().Contains(keyword)));
+                    (s.Description != null && s.Description.ToLower().Contains(keyword)) ||
+                    matchingSeriesIds.Contains(s.Id));
             }
 
+            // Apply genre filter
             if (genreId.HasValue)
             {
-                query = query.Where(s =>
-                    s.SeriesGenres.Any(sg => sg.Genre != null && sg.Genre.Id == genreId.Value));
+                baseQuery = baseQuery.Where(s =>
+                    _context.SeriesGenres
+                        .Any(sg => sg.SeriesId == s.Id && sg.GenreId == genreId.Value));
             }
 
+            // Apply rating filter
             if (minRating.HasValue)
             {
-                query = query.Where(s => s.Rating >= minRating.Value);
+                baseQuery = baseQuery.Where(s => s.Rating >= minRating.Value);
             }
 
-            var totalItems = query.Count();
+            // Apply year filter
+            if (year.HasValue)
+            {
+                baseQuery = baseQuery.Where(s => s.ReleaseDate.Year == year.Value);
+            }
+
+            // Get total count before pagination
+            var totalItems = baseQuery.Count();
             var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
 
-            var orderedQuery = query.OrderBy(s => s.Title);
+            // Apply sorting
+            IOrderedQueryable<Series> orderedQuery;
+            var isAscending = string.IsNullOrEmpty(sortOrder) || sortOrder.ToLower() == "asc";
+            
+            switch (sortBy?.ToLower())
+            {
+                case "year":
+                    orderedQuery = isAscending 
+                        ? baseQuery.OrderBy(s => s.ReleaseDate.Year)
+                        : baseQuery.OrderByDescending(s => s.ReleaseDate.Year);
+                    break;
+                case "rating":
+                    orderedQuery = isAscending 
+                        ? baseQuery.OrderBy(s => s.Rating)
+                        : baseQuery.OrderByDescending(s => s.Rating);
+                    break;
+                case "title":
+                default:
+                    orderedQuery = isAscending 
+                        ? baseQuery.OrderBy(s => s.Title)
+                        : baseQuery.OrderByDescending(s => s.Title);
+                    break;
+            }
 
-            var items = orderedQuery
+            // Get the IDs of series to fetch
+            var seriesIds = orderedQuery
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
+                .Select(s => s.Id)
+                .ToList();
+
+            // Now fetch the full series with relationships
+            var items = QuerySeriesWithRelationships()
+                .Where(s => seriesIds.Contains(s.Id))
+                .ToList();
+
+            // Reorder items to match the original sort order
+            var itemsDict = items.ToDictionary(s => s.Id);
+            items = seriesIds
+                .Where(id => itemsDict.ContainsKey(id))
+                .Select(id => itemsDict[id])
                 .ToList();
 
             foreach (var series in items)

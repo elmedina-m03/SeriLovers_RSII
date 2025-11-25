@@ -136,7 +136,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                 children: widget.series.genres.map((genre) {
                   return Chip(
                     label: Text(
-                      genre.name,
+                      genre,
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,

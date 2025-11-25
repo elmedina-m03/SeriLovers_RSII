@@ -90,7 +90,7 @@ class SeriesCard extends StatelessWidget {
                   children: series.genres.map((genre) {
                     return Chip(
                       label: Text(
-                        genre.name,
+                        genre,
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,

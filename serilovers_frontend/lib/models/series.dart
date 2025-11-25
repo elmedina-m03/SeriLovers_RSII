@@ -5,7 +5,7 @@ class Series {
   final String? description;
   final DateTime releaseDate;
   final double rating;
-  final List<Genre> genres;
+  final List<String> genres;
   final List<Actor> actors;
   final int ratingsCount;
   final int watchlistsCount;
@@ -22,6 +22,7 @@ class Series {
     required this.watchlistsCount,
   });
 
+
   /// Creates a Series instance from JSON
   factory Series.fromJson(Map<String, dynamic> json) {
     return Series(
@@ -30,10 +31,7 @@ class Series {
       description: json['description'] as String?,
       releaseDate: DateTime.parse(json['releaseDate'] as String),
       rating: (json['rating'] as num).toDouble(),
-      genres: (json['genres'] as List<dynamic>?)
-              ?.map((g) => Genre.fromJson(g as Map<String, dynamic>))
-              .toList() ??
-          [],
+      genres: (json['genres'] as List?)?.map((e) => e.toString()).toList() ?? [],
       actors: (json['actors'] as List<dynamic>?)
               ?.map((a) => Actor.fromJson(a as Map<String, dynamic>))
               .toList() ??
@@ -51,7 +49,7 @@ class Series {
       'description': description,
       'releaseDate': releaseDate.toIso8601String(),
       'rating': rating,
-      'genres': genres.map((g) => g.toJson()).toList(),
+      'genres': genres,
       'actors': actors.map((a) => a.toJson()).toList(),
       'ratingsCount': ratingsCount,
       'watchlistsCount': watchlistsCount,
@@ -90,12 +88,18 @@ class Actor {
   final String firstName;
   final String lastName;
   final String fullName;
+  final DateTime? dateOfBirth;
+  final int? age;
+  final int seriesCount;
 
   Actor({
     required this.id,
     required this.firstName,
     required this.lastName,
     required this.fullName,
+    this.dateOfBirth,
+    this.age,
+    this.seriesCount = 0,
   });
 
   factory Actor.fromJson(Map<String, dynamic> json) {
@@ -103,8 +107,27 @@ class Actor {
       id: json['id'] as int,
       firstName: json['firstName'] as String,
       lastName: json['lastName'] as String,
-      fullName: json['fullName'] as String,
+      fullName: json['fullName'] as String? ?? '${json['firstName']} ${json['lastName']}',
+      dateOfBirth: json['dateOfBirth'] != null
+          ? DateTime.parse(json['dateOfBirth'] as String)
+          : null,
+      age: json['age'] as int?,
+      seriesCount: (json['series'] as List<dynamic>?)?.length ?? 
+                   (json['seriesCount'] as int?) ?? 0,
     );
+  }
+  
+  /// Calculate age from date of birth if not provided
+  int? get calculatedAge {
+    if (age != null) return age;
+    if (dateOfBirth == null) return null;
+    final now = DateTime.now();
+    int calculated = now.year - dateOfBirth!.year;
+    if (now.month < dateOfBirth!.month || 
+        (now.month == dateOfBirth!.month && now.day < dateOfBirth!.day)) {
+      calculated--;
+    }
+    return calculated;
   }
 
   Map<String, dynamic> toJson() {
@@ -113,6 +136,8 @@ class Actor {
       'firstName': firstName,
       'lastName': lastName,
       'fullName': fullName,
+      'dateOfBirth': dateOfBirth?.toIso8601String(),
+      'seriesCount': seriesCount,
     };
   }
 }

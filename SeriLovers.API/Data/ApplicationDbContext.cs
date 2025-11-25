@@ -23,6 +23,9 @@ namespace SeriLovers.API.Data
         public DbSet<Watchlist> Watchlists { get; set; }
         public DbSet<FavoriteCharacter> FavoriteCharacters { get; set; }
         public DbSet<RecommendationLog> RecommendationLogs { get; set; }
+        public DbSet<Challenge> Challenges { get; set; }
+        public DbSet<ChallengeProgress> ChallengeProgresses { get; set; }
+        public DbSet<ViewingEvent> ViewingEvents { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -189,6 +192,55 @@ namespace SeriLovers.API.Data
                 entity.HasOne(w => w.Series)
                     .WithMany(s => s.Watchlists)
                     .HasForeignKey(w => w.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure Challenge entity
+            modelBuilder.Entity<Challenge>(entity =>
+            {
+                entity.HasKey(c => c.Id);
+                entity.Property(c => c.Name).IsRequired().HasMaxLength(200);
+                entity.Property(c => c.Description).HasMaxLength(2000);
+                entity.Property(c => c.Difficulty).IsRequired();
+                entity.Property(c => c.TargetCount).IsRequired();
+                entity.Property(c => c.ParticipantsCount).HasDefaultValue(0);
+                entity.Property(c => c.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            });
+
+            // Configure ChallengeProgress entity
+            modelBuilder.Entity<ChallengeProgress>(entity =>
+            {
+                entity.HasKey(cp => cp.Id);
+                entity.Property(cp => cp.ProgressCount).IsRequired().HasDefaultValue(0);
+                entity.Property(cp => cp.Status).IsRequired().HasDefaultValue(ChallengeProgressStatus.InProgress);
+                entity.HasIndex(cp => new { cp.ChallengeId, cp.UserId }).IsUnique();
+
+                entity.HasOne(cp => cp.Challenge)
+                    .WithMany()
+                    .HasForeignKey(cp => cp.ChallengeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(cp => cp.User)
+                    .WithMany()
+                    .HasForeignKey(cp => cp.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Configure ViewingEvent entity
+            modelBuilder.Entity<ViewingEvent>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.ViewedAt).IsRequired();
+                entity.HasIndex(e => new { e.UserId, e.SeriesId, e.ViewedAt });
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.Series)
+                    .WithMany()
+                    .HasForeignKey(e => e.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }

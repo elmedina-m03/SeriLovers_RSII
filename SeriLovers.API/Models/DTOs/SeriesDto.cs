@@ -25,7 +25,7 @@ namespace SeriLovers.API.Models.DTOs
         public double Rating { get; set; }
 
         [Required]
-        public IList<GenreDto> Genres { get; set; } = new List<GenreDto>();
+        public IList<string> Genres { get; set; } = new List<string>();
 
         [Required]
         public IList<ActorDto> Actors { get; set; } = new List<ActorDto>();

@@ -638,6 +638,598 @@ namespace SeriLovers.API.Data
 
             await SeedFavoriteCharactersAsync(context);
             await SeedRecommendationLogsAsync(context);
+
+            // Add simple test data
+            await SeedTestUsersAsync(userManager);
+            await SeedTestActorsAsync(context);
+            await SeedTestSeriesAsync(context);
+            await SeedTestRatingsAsync(context);
+            await SeedTestWatchlistsAsync(context);
+
+            // Seed challenges
+            await SeedChallengesAsync(context);
+
+            // Seed challenge progress
+            await SeedChallengeProgressAsync(context);
+
+            // Seed dummy users (testuser1..testuser8@gmail.com)
+            await SeedDummyUsersAsync(userManager);
+
+            // Seed ratings and watchlists
+            await SeedRatingsAndWatchlistsAsync(context);
+
+            // Seed viewing events for monthly watching statistics
+            await SeedViewingEventsAsync(context);
+
+            // Seed dummy users with activity for statistics
+            await SeedDummyUsersWithActivityAsync(context, userManager);
+        }
+
+        /// <summary>
+        /// Seeds 10 dummy users with ratings and watchlist entries across different months
+        /// to populate monthly statistics and top-rated series data
+        /// </summary>
+        private static async Task SeedDummyUsersWithActivityAsync(
+            ApplicationDbContext context,
+            UserManager<ApplicationUser> userManager)
+        {
+            // Check if dummy users already exist
+            if (await context.Users.AnyAsync(u => u.Email != null && u.Email.StartsWith("dummyuser")))
+            {
+                return; // Already seeded
+            }
+
+            var series = await context.Series.Take(10).ToListAsync();
+            if (series.Count == 0)
+            {
+                return; // No series to add activity for
+            }
+
+            var users = new List<ApplicationUser>();
+            var ratings = new List<Rating>();
+            var watchlists = new List<Watchlist>();
+
+            // Create 10 dummy users
+            for (int i = 1; i <= 10; i++)
+            {
+                var email = $"dummyuser{i}@test.com";
+                if (await userManager.FindByEmailAsync(email) == null)
+                {
+                    var user = new ApplicationUser
+                    {
+                        UserName = email,
+                        Email = email,
+                        EmailConfirmed = true,
+                        DateCreated = DateTime.UtcNow.AddDays(-Random.Next(1, 90)) // Random creation date
+                    };
+                    var result = await userManager.CreateAsync(user, "Dummy123!");
+                    if (result.Succeeded)
+                    {
+                        await userManager.AddToRoleAsync(user, "User");
+                        users.Add(user);
+                    }
+                }
+            }
+
+            await context.SaveChangesAsync();
+
+            // Get the created users
+            var createdUsers = await context.Users
+                .Where(u => u.Email != null && u.Email.StartsWith("dummyuser"))
+                .ToListAsync();
+
+            if (createdUsers.Count == 0 || series.Count == 0)
+            {
+                return;
+            }
+
+            // Generate activity across last 12 months
+            var now = DateTime.UtcNow;
+            var months = Enumerable.Range(0, 12)
+                .Select(m => now.AddMonths(-m))
+                .ToList();
+
+            foreach (var user in createdUsers)
+            {
+                // Each user rates and adds to watchlist 3-5 random series
+                var userSeries = series.OrderBy(x => Random.Next()).Take(Random.Next(3, 6)).ToList();
+
+                foreach (var s in userSeries)
+                {
+                    // Random month from last 12 months
+                    var activityMonth = months[Random.Next(months.Count)];
+                    var activityDate = activityMonth.AddDays(Random.Next(0, 28)); // Random day in month
+
+                    // Add rating if not exists
+                    if (!await context.Ratings.AnyAsync(r => r.UserId == user.Id && r.SeriesId == s.Id))
+                    {
+                        ratings.Add(new Rating
+                        {
+                            UserId = user.Id,
+                            SeriesId = s.Id,
+                            Score = Random.Next(5, 11), // Rating between 5-10
+                            CreatedAt = activityDate
+                        });
+                    }
+
+                    // Add to watchlist if not exists
+                    if (!await context.Watchlists.AnyAsync(w => w.UserId == user.Id && w.SeriesId == s.Id))
+                    {
+                        watchlists.Add(new Watchlist
+                        {
+                            UserId = user.Id,
+                            SeriesId = s.Id,
+                            AddedAt = activityDate
+                        });
+                    }
+                }
+            }
+
+            // Bulk insert ratings and watchlists
+            if (ratings.Any())
+            {
+                await context.Ratings.AddRangeAsync(ratings);
+            }
+
+            if (watchlists.Any())
+            {
+                await context.Watchlists.AddRangeAsync(watchlists);
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        private static async Task SeedTestUsersAsync(UserManager<ApplicationUser> userManager)
+        {
+            if (await userManager.FindByEmailAsync("admin@test.com") == null)
+            {
+                var admin = new ApplicationUser { UserName = "admin@test.com", Email = "admin@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(admin, "Admin123!");
+                await userManager.AddToRoleAsync(admin, "Admin");
+            }
+
+            if (await userManager.FindByEmailAsync("user1@test.com") == null)
+            {
+                var user1 = new ApplicationUser { UserName = "user1@test.com", Email = "user1@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(user1, "User123!");
+                await userManager.AddToRoleAsync(user1, "User");
+            }
+
+            if (await userManager.FindByEmailAsync("user2@test.com") == null)
+            {
+                var user2 = new ApplicationUser { UserName = "user2@test.com", Email = "user2@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(user2, "User123!");
+                await userManager.AddToRoleAsync(user2, "User");
+            }
+        }
+
+        private static async Task SeedTestActorsAsync(ApplicationDbContext context)
+        {
+            if (!await context.Actors.AnyAsync(a => a.FirstName == "Test" && a.LastName == "Actor1"))
+            {
+                context.Actors.Add(new Actor { FirstName = "Test", LastName = "Actor1", DateOfBirth = new DateTime(1980, 1, 1) });
+            }
+            if (!await context.Actors.AnyAsync(a => a.FirstName == "Test" && a.LastName == "Actor2"))
+            {
+                context.Actors.Add(new Actor { FirstName = "Test", LastName = "Actor2", DateOfBirth = new DateTime(1985, 5, 15) });
+            }
+            if (!await context.Actors.AnyAsync(a => a.FirstName == "Test" && a.LastName == "Actor3"))
+            {
+                context.Actors.Add(new Actor { FirstName = "Test", LastName = "Actor3", DateOfBirth = new DateTime(1990, 10, 20) });
+            }
+            await context.SaveChangesAsync();
+        }
+
+        private static async Task SeedTestSeriesAsync(ApplicationDbContext context)
+        {
+            if (!await context.Series.AnyAsync(s => s.Title == "Test Series 1"))
+            {
+                var dramaGenre = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Drama");
+                if (dramaGenre != null)
+                {
+                    var series1 = new Series { Title = "Test Series 1", Description = "Test description 1", ReleaseDate = new DateTime(2020, 1, 1), Genre = "Drama", Rating = 8.5 };
+                    context.Series.Add(series1);
+                    await context.SaveChangesAsync();
+                    context.SeriesGenres.Add(new SeriesGenre { SeriesId = series1.Id, GenreId = dramaGenre.Id });
+                    await context.SaveChangesAsync();
+                }
+            }
+
+            if (!await context.Series.AnyAsync(s => s.Title == "Test Series 2"))
+            {
+                var comedyGenre = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Comedy");
+                if (comedyGenre != null)
+                {
+                    var series2 = new Series { Title = "Test Series 2", Description = "Test description 2", ReleaseDate = new DateTime(2021, 6, 1), Genre = "Comedy", Rating = 7.8 };
+                    context.Series.Add(series2);
+                    await context.SaveChangesAsync();
+                    context.SeriesGenres.Add(new SeriesGenre { SeriesId = series2.Id, GenreId = comedyGenre.Id });
+                    await context.SaveChangesAsync();
+                }
+            }
+
+            if (!await context.Series.AnyAsync(s => s.Title == "Test Series 3"))
+            {
+                var actionGenre = await context.Genres.FirstOrDefaultAsync(g => g.Name == "Action");
+                if (actionGenre != null)
+                {
+                    var series3 = new Series { Title = "Test Series 3", Description = "Test description 3", ReleaseDate = new DateTime(2022, 3, 15), Genre = "Action", Rating = 9.0 };
+                    context.Series.Add(series3);
+                    await context.SaveChangesAsync();
+                    context.SeriesGenres.Add(new SeriesGenre { SeriesId = series3.Id, GenreId = actionGenre.Id });
+                    await context.SaveChangesAsync();
+                }
+            }
+        }
+
+        private static async Task SeedTestRatingsAsync(ApplicationDbContext context)
+        {
+            var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Email == "admin@test.com");
+            var user1 = await context.Users.FirstOrDefaultAsync(u => u.Email == "user1@test.com");
+            var testSeries1 = await context.Series.FirstOrDefaultAsync(s => s.Title == "Test Series 1");
+            var testSeries2 = await context.Series.FirstOrDefaultAsync(s => s.Title == "Test Series 2");
+            var testSeries3 = await context.Series.FirstOrDefaultAsync(s => s.Title == "Test Series 3");
+
+            if (adminUser != null && testSeries1 != null && !await context.Ratings.AnyAsync(r => r.UserId == adminUser.Id && r.SeriesId == testSeries1.Id))
+            {
+                context.Ratings.Add(new Rating { UserId = adminUser.Id, SeriesId = testSeries1.Id, Score = 9, CreatedAt = DateTime.UtcNow });
+            }
+
+            if (user1 != null && testSeries2 != null && !await context.Ratings.AnyAsync(r => r.UserId == user1.Id && r.SeriesId == testSeries2.Id))
+            {
+                context.Ratings.Add(new Rating { UserId = user1.Id, SeriesId = testSeries2.Id, Score = 8, CreatedAt = DateTime.UtcNow });
+            }
+
+            if (adminUser != null && testSeries3 != null && !await context.Ratings.AnyAsync(r => r.UserId == adminUser.Id && r.SeriesId == testSeries3.Id))
+            {
+                context.Ratings.Add(new Rating { UserId = adminUser.Id, SeriesId = testSeries3.Id, Score = 7, CreatedAt = DateTime.UtcNow });
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        private static async Task SeedTestWatchlistsAsync(ApplicationDbContext context)
+        {
+            var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Email == "admin@test.com");
+            var user1 = await context.Users.FirstOrDefaultAsync(u => u.Email == "user1@test.com");
+            var testSeries1 = await context.Series.FirstOrDefaultAsync(s => s.Title == "Test Series 1");
+            var testSeries2 = await context.Series.FirstOrDefaultAsync(s => s.Title == "Test Series 2");
+            var testSeries3 = await context.Series.FirstOrDefaultAsync(s => s.Title == "Test Series 3");
+
+            if (adminUser != null && testSeries1 != null && !await context.Watchlists.AnyAsync(w => w.UserId == adminUser.Id && w.SeriesId == testSeries1.Id))
+            {
+                context.Watchlists.Add(new Watchlist { UserId = adminUser.Id, SeriesId = testSeries1.Id, AddedAt = DateTime.UtcNow });
+            }
+
+            if (user1 != null && testSeries2 != null && !await context.Watchlists.AnyAsync(w => w.UserId == user1.Id && w.SeriesId == testSeries2.Id))
+            {
+                context.Watchlists.Add(new Watchlist { UserId = user1.Id, SeriesId = testSeries2.Id, AddedAt = DateTime.UtcNow });
+            }
+
+            if (adminUser != null && testSeries3 != null && !await context.Watchlists.AnyAsync(w => w.UserId == adminUser.Id && w.SeriesId == testSeries3.Id))
+            {
+                context.Watchlists.Add(new Watchlist { UserId = adminUser.Id, SeriesId = testSeries3.Id, AddedAt = DateTime.UtcNow });
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds 6 dummy users (1 admin + 5 normal users) with emails testuser1..testuser6@gmail.com
+        /// Assigns roles: 1 Admin, 5 Users
+        /// </summary>
+        private static async Task SeedDummyUsersAsync(UserManager<ApplicationUser> userManager)
+        {
+            // Check if dummy users already exist
+            if (await userManager.FindByEmailAsync("testuser1@gmail.com") != null)
+            {
+                return; // Already seeded
+            }
+
+            var users = new List<(string Email, string Role)>
+            {
+                ("testuser1@gmail.com", "Admin"),
+                ("testuser2@gmail.com", "User"),
+                ("testuser3@gmail.com", "User"),
+                ("testuser4@gmail.com", "User"),
+                ("testuser5@gmail.com", "User"),
+                ("testuser6@gmail.com", "User")
+            };
+
+            foreach (var (email, role) in users)
+            {
+                if (await userManager.FindByEmailAsync(email) == null)
+                {
+                    var user = new ApplicationUser
+                    {
+                        UserName = email,
+                        Email = email,
+                        EmailConfirmed = true,
+                        DateCreated = DateTime.UtcNow.AddDays(-Random.Next(1, 60))
+                    };
+
+                    var result = await userManager.CreateAsync(user, "Test123!");
+                    if (result.Succeeded)
+                    {
+                        await userManager.AddToRoleAsync(user, role);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Seeds ratings and watchlist entries for several series
+        /// Creates high ratings for some series to populate statistics
+        /// </summary>
+        private static async Task SeedRatingsAndWatchlistsAsync(ApplicationDbContext context)
+        {
+            // Get all users and series
+            var users = await context.Users.ToListAsync();
+            var series = await context.Series.Take(10).ToListAsync();
+
+            if (users.Count == 0 || series.Count == 0)
+            {
+                return; // No users or series to seed
+            }
+
+            var ratings = new List<Rating>();
+            var watchlists = new List<Watchlist>();
+
+            // Create ratings with random scores (1-10) for all series
+            foreach (var s in series)
+            {
+                // Each series gets ratings from multiple users
+                var usersForSeries = users.Take(Random.Next(3, 6)).ToList();
+                foreach (var user in usersForSeries)
+                {
+                    // Check if rating already exists
+                    if (!await context.Ratings.AnyAsync(r => r.UserId == user.Id && r.SeriesId == s.Id))
+                    {
+                        // Random ratings (1-10)
+                        var score = Random.Next(1, 11);
+                        ratings.Add(new Rating
+                        {
+                            UserId = user.Id,
+                            SeriesId = s.Id,
+                            Score = score,
+                            CreatedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 90))
+                        });
+                    }
+                }
+            }
+
+            // Create watchlist entries
+            foreach (var user in users)
+            {
+                // Each user adds 3-5 series to watchlist
+                var userSeries = series.OrderBy(x => Random.Next()).Take(Random.Next(3, 6));
+                foreach (var s in userSeries)
+                {
+                    if (!await context.Watchlists.AnyAsync(w => w.UserId == user.Id && w.SeriesId == s.Id))
+                    {
+                        watchlists.Add(new Watchlist
+                        {
+                            UserId = user.Id,
+                            SeriesId = s.Id,
+                            AddedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 90))
+                        });
+                    }
+                }
+            }
+
+            if (ratings.Any())
+            {
+                await context.Ratings.AddRangeAsync(ratings);
+            }
+
+            if (watchlists.Any())
+            {
+                await context.Watchlists.AddRangeAsync(watchlists);
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds viewing events to populate monthly watching statistics and view counts
+        /// Creates viewing events across the last 12 months for users and series
+        /// </summary>
+        private static async Task SeedViewingEventsAsync(ApplicationDbContext context)
+        {
+            // Check if viewing events already exist
+            if (await context.ViewingEvents.AnyAsync())
+            {
+                return; // Already seeded
+            }
+
+            var users = await context.Users.ToListAsync();
+            var series = await context.Series.Take(10).ToListAsync();
+
+            if (users.Count == 0 || series.Count == 0)
+            {
+                return; // No users or series to seed
+            }
+
+            var viewingEvents = new List<ViewingEvent>();
+            var now = DateTime.UtcNow;
+            var twelveMonthsAgo = now.AddMonths(-12);
+
+            // Generate viewing events across last 12 months
+            foreach (var user in users.Take(8)) // Use up to 8 users
+            {
+                // Each user views 5-10 random series
+                var userSeries = series.OrderBy(x => Random.Next()).Take(Random.Next(5, 11)).ToList();
+
+                foreach (var s in userSeries)
+                {
+                    // Create 1-3 viewing events per user-series pair across different months
+                    var eventCount = Random.Next(1, 4);
+                    for (int i = 0; i < eventCount; i++)
+                    {
+                        // Random date within last 12 months
+                        var daysAgo = Random.Next(0, 365);
+                        var viewedAt = now.AddDays(-daysAgo);
+
+                        viewingEvents.Add(new ViewingEvent
+                        {
+                            UserId = user.Id,
+                            SeriesId = s.Id,
+                            ViewedAt = viewedAt
+                        });
+                    }
+                }
+            }
+
+            if (viewingEvents.Any())
+            {
+                await context.ViewingEvents.AddRangeAsync(viewingEvents);
+                await context.SaveChangesAsync();
+            }
+        }
+
+        /// <summary>
+        /// Seeds example challenges
+        /// </summary>
+        private static async Task SeedChallengesAsync(ApplicationDbContext context)
+        {
+            // Check if challenges already exist
+            if (await context.Challenges.AnyAsync())
+            {
+                return; // Already seeded
+            }
+
+            var challenges = new List<Challenge>
+            {
+                new Challenge
+                {
+                    Name = "Watch 10 Series",
+                    Description = "Complete watching 10 different series. Track your progress and discover new shows!",
+                    Difficulty = ChallengeDifficulty.Easy,
+                    TargetCount = 10,
+                    ParticipantsCount = 0,
+                    CreatedAt = DateTime.UtcNow.AddDays(-30)
+                },
+                new Challenge
+                {
+                    Name = "Rate 50 Episodes",
+                    Description = "Rate at least 50 episodes across different series. Share your opinions and help others discover great content!",
+                    Difficulty = ChallengeDifficulty.Medium,
+                    TargetCount = 50,
+                    ParticipantsCount = 0,
+                    CreatedAt = DateTime.UtcNow.AddDays(-25)
+                },
+                new Challenge
+                {
+                    Name = "Complete 5 Drama Series",
+                    Description = "Finish watching 5 complete drama series from start to finish. Immerse yourself in compelling storylines!",
+                    Difficulty = ChallengeDifficulty.Medium,
+                    TargetCount = 5,
+                    ParticipantsCount = 0,
+                    CreatedAt = DateTime.UtcNow.AddDays(-20)
+                },
+                new Challenge
+                {
+                    Name = "Explore 3 New Genres",
+                    Description = "Watch and rate series from 3 different genres you haven't explored before. Expand your viewing horizons!",
+                    Difficulty = ChallengeDifficulty.Hard,
+                    TargetCount = 3,
+                    ParticipantsCount = 0,
+                    CreatedAt = DateTime.UtcNow.AddDays(-15)
+                },
+                new Challenge
+                {
+                    Name = "100 Series Master",
+                    Description = "The ultimate challenge! Watch and complete 100 different series. Are you up for the challenge?",
+                    Difficulty = ChallengeDifficulty.Expert,
+                    TargetCount = 100,
+                    ParticipantsCount = 0,
+                    CreatedAt = DateTime.UtcNow.AddDays(-10)
+                }
+            };
+
+            await context.Challenges.AddRangeAsync(challenges);
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds challenge progress entries for users
+        /// </summary>
+        private static async Task SeedChallengeProgressAsync(ApplicationDbContext context)
+        {
+            try
+            {
+                // Check if challenge progress already exists
+                // Use try-catch in case table doesn't exist yet
+                if (await context.ChallengeProgresses.AnyAsync())
+                {
+                    return; // Already seeded
+                }
+            }
+            catch (Exception)
+            {
+                // Table might not exist yet, continue to create entries
+                // The migration should create the table before this runs
+            }
+
+            var challenges = await context.Challenges.ToListAsync();
+            var users = await context.Users.Take(8).ToListAsync();
+
+            if (challenges.Count == 0 || users.Count == 0)
+            {
+                return; // No challenges or users to seed
+            }
+
+            var progressEntries = new List<ChallengeProgress>();
+
+            // Assign random challenges to users with random progress
+            foreach (var user in users)
+            {
+                // Each user participates in 1-3 random challenges
+                var userChallenges = challenges.OrderBy(x => Random.Next()).Take(Random.Next(1, 4)).ToList();
+
+                foreach (var challenge in userChallenges)
+                {
+                    // Check if progress entry already exists for this user-challenge pair
+                    var exists = await context.ChallengeProgresses
+                        .AnyAsync(cp => cp.UserId == user.Id && cp.ChallengeId == challenge.Id);
+                    
+                    if (exists)
+                    {
+                        continue; // Skip if already exists
+                    }
+
+                    var progressCount = Random.Next(0, challenge.TargetCount + 1);
+                    var status = progressCount >= challenge.TargetCount
+                        ? ChallengeProgressStatus.Completed
+                        : ChallengeProgressStatus.InProgress;
+
+                    progressEntries.Add(new ChallengeProgress
+                    {
+                        ChallengeId = challenge.Id,
+                        UserId = user.Id,
+                        ProgressCount = progressCount,
+                        Status = status,
+                        CompletedAt = status == ChallengeProgressStatus.Completed
+                            ? DateTime.UtcNow.AddDays(-Random.Next(1, 30))
+                            : null
+                    });
+                }
+            }
+
+            if (progressEntries.Any())
+            {
+                await context.ChallengeProgresses.AddRangeAsync(progressEntries);
+                await context.SaveChangesAsync();
+
+                // Update ParticipantsCount for each challenge
+                foreach (var challenge in challenges)
+                {
+                    var participantCount = await context.ChallengeProgresses
+                        .CountAsync(cp => cp.ChallengeId == challenge.Id);
+                    challenge.ParticipantsCount = participantCount;
+                }
+                await context.SaveChangesAsync();
+            }
         }
     }
 }

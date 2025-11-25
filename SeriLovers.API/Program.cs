@@ -18,8 +18,11 @@ using SeriLovers.API.Security;
 using SeriLovers.API.Services;
 using SeriLovers.API.Profiles;
 using Swashbuckle.AspNetCore.Annotations;
+using System.Linq;
 using System.Reflection;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.Tasks;
 using QuestPDF.Infrastructure;
 
 const string ExternalCookieScheme = "ExternalCookie";
@@ -87,7 +90,35 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = issuer,
         ValidAudience = audience,
-        IssuerSigningKey = key
+        IssuerSigningKey = key,
+        // Map role claims from JWT token to ASP.NET Core claim types
+        RoleClaimType = ClaimTypes.Role,
+        NameClaimType = ClaimTypes.NameIdentifier
+    };
+    
+    // Map JWT "role" claim to ASP.NET Core Role claim type
+    options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+    {
+        OnTokenValidated = context =>
+        {
+            // Ensure role claims are properly mapped
+            if (context.Principal != null)
+            {
+                var roleClaims = context.Principal.FindAll("role").ToList();
+                var identity = context.Principal.Identity as System.Security.Claims.ClaimsIdentity;
+                if (identity != null)
+                {
+                    foreach (var roleClaim in roleClaims)
+                    {
+                        if (!identity.HasClaim(ClaimTypes.Role, roleClaim.Value))
+                        {
+                            identity.AddClaim(new Claim(ClaimTypes.Role, roleClaim.Value));
+                        }
+                    }
+                }
+            }
+            return Task.CompletedTask;
+        }
     };
 })
 .AddCookie(ExternalCookieScheme, options =>
@@ -116,6 +147,7 @@ builder.Services.AddScoped<ISeriesService, SeriesService>();
 builder.Services.AddScoped<IActorService, ActorService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddScoped<IAdminStatisticsService, AdminStatisticsService>();
 // RabbitMQ connection - DISABLED
 // builder.Services.AddSingleton<IBus>(sp =>
 // {
@@ -158,12 +190,34 @@ builder.Services.AddHttpClient();
 // ============================================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFlutterApp", policy =>
+    options.AddPolicy("DevCors", policy =>
     {
-        // Allow all origins for development (Flutter desktop/web apps)
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        // Get allowed origins from configuration or use AllowAnyOrigin for development
+        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        var isDevelopment = builder.Environment.IsDevelopment();
+
+        if (isDevelopment && (allowedOrigins == null || allowedOrigins.Length == 0))
+        {
+            // Development fallback: allow any origin
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
+        else if (allowedOrigins != null && allowedOrigins.Length > 0)
+        {
+            // Use configured origins
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials(); // Allow credentials when using specific origins
+        }
+        else
+        {
+            // Production fallback: allow any origin (can be restricted further)
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        }
     });
 });
 
@@ -252,7 +306,7 @@ var app = builder.Build();
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
 // CORS (must be before UseAuthentication and UseAuthorization)
-app.UseCors("AllowFlutterApp");
+app.UseCors("DevCors");
 
 // Swagger UI
 app.UseSwagger();
@@ -275,12 +329,15 @@ app.UseAuthorization();
 app.MapControllers();
 
 // ============================================
-// Database Seeding
+// Database Seeding (Development only)
 // ============================================
-using (var scope = app.Services.CreateScope())
+if (app.Environment.IsDevelopment())
 {
-    var services = scope.ServiceProvider;
-    await DbSeeder.Seed(services);
+    using (var scope = app.Services.CreateScope())
+    {
+        var services = scope.ServiceProvider;
+        await DbSeeder.Seed(services);
+    }
 }
 
 // ============================================

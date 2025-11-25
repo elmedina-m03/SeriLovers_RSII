@@ -32,16 +32,59 @@ namespace SeriLovers.API.Controllers
 
         // GET: api/actor
         [HttpGet]
-        [SwaggerOperation(Summary = "List actors", Description = "Retrieves all actors ordered alphabetically with their associated series.")]
-        public async Task<IActionResult> GetAll()
+        [SwaggerOperation(Summary = "List actors", Description = "Retrieves all actors with optional search and filtering.")]
+        public async Task<IActionResult> GetAll(
+            [FromQuery] string? search = null,
+            [FromQuery] int? age = null,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = "asc")
         {
-            var actors = await _context.Actors
+            var query = _context.Actors
                 .Include(a => a.SeriesActors)
                     .ThenInclude(sa => sa.Series)
-                .OrderBy(a => a.LastName)
-                .ThenBy(a => a.FirstName)
-                .ToListAsync();
+                .AsQueryable();
 
+            // Search by name
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var searchLower = search.ToLower();
+                query = query.Where(a => 
+                    a.FirstName.ToLower().Contains(searchLower) ||
+                    a.LastName.ToLower().Contains(searchLower) ||
+                    a.FullName.ToLower().Contains(searchLower));
+            }
+
+            // Filter by age
+            if (age.HasValue)
+            {
+                var today = DateTime.UtcNow;
+                var birthYear = today.Year - age.Value;
+                var minDate = new DateTime(birthYear - 1, 12, 31);
+                var maxDate = new DateTime(birthYear + 1, 1, 1);
+                query = query.Where(a => 
+                    a.DateOfBirth.HasValue &&
+                    a.DateOfBirth >= minDate &&
+                    a.DateOfBirth < maxDate);
+            }
+
+            // Apply sorting
+            var isAscending = sortOrder?.ToLower() == "asc";
+            switch (sortBy?.ToLower())
+            {
+                case "age":
+                    query = isAscending
+                        ? query.OrderBy(a => a.DateOfBirth ?? DateTime.MaxValue)
+                        : query.OrderByDescending(a => a.DateOfBirth ?? DateTime.MinValue);
+                    break;
+                case "lastname":
+                default:
+                    query = isAscending
+                        ? query.OrderBy(a => a.LastName).ThenBy(a => a.FirstName)
+                        : query.OrderByDescending(a => a.LastName).ThenByDescending(a => a.FirstName);
+                    break;
+            }
+
+            var actors = await query.ToListAsync();
             var result = _mapper.Map<IEnumerable<ActorDto>>(actors);
             return Ok(result);
         }

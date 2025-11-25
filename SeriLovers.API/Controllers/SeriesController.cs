@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -24,26 +25,43 @@ namespace SeriLovers.API.Controllers
         private readonly ISeriesService _seriesService;
         private readonly IMapper _mapper;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly IGenreService _genreService;
 
-        public SeriesController(ISeriesService seriesService, IMapper mapper, UserManager<ApplicationUser> userManager)
+        public SeriesController(ISeriesService seriesService, IMapper mapper, UserManager<ApplicationUser> userManager, IGenreService genreService)
         {
             _seriesService = seriesService;
             _mapper = mapper;
             _userManager = userManager;
+            _genreService = genreService;
         }
 
         [HttpGet]
         [SwaggerOperation(
             Summary = "List series",
-            Description = "Retrieves a paginated list of series with optional filtering by genre ID, rating, and keyword.")]
+            Description = "Retrieves a paginated list of series with optional filtering by genre ID or name, rating, and keyword.")]
         public IActionResult GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] int? genreId = null,
+            [FromQuery] string? genre = null,
             [FromQuery] double? minRating = null,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] int? year = null,
+            [FromQuery] string? sortBy = null,
+            [FromQuery] string? sortOrder = null)
         {
-            var pagedSeries = _seriesService.GetAll(page, pageSize, genreId, minRating, search);
+            // Convert genre name to ID if genre name is provided
+            if (genreId == null && !string.IsNullOrEmpty(genre))
+            {
+                var genres = _genreService.GetAll();
+                var foundGenre = genres.FirstOrDefault(g => g.Name.Equals(genre, StringComparison.OrdinalIgnoreCase));
+                if (foundGenre != null)
+                {
+                    genreId = foundGenre.Id;
+                }
+            }
+
+            var pagedSeries = _seriesService.GetAll(page, pageSize, genreId, minRating, search, year, sortBy, sortOrder);
             var items = _mapper.Map<IEnumerable<SeriesDto>>(pagedSeries.Items);
 
             var response = new PagedResponseDto<SeriesDto>
@@ -174,6 +192,16 @@ namespace SeriLovers.API.Controllers
                 return ValidationProblem(ModelState);
             }
 
+            // Convert genre names to IDs if Genres is provided
+            if (seriesDto.Genres != null && seriesDto.Genres.Any() && !seriesDto.GenreIds.Any())
+            {
+                var genres = _genreService.GetAll();
+                seriesDto.GenreIds = seriesDto.Genres
+                    .Select(genreName => genres.FirstOrDefault(g => g.Name == genreName)?.Id ?? 0)
+                    .Where(id => id > 0)
+                    .ToList();
+            }
+
             var series = _mapper.Map<Series>(seriesDto);
             _seriesService.Add(series);
 
@@ -199,6 +227,16 @@ namespace SeriLovers.API.Controllers
             if (existing == null)
             {
                 return NotFound();
+            }
+
+            // Convert genre names to IDs if Genres is provided
+            if (seriesDto.Genres != null && seriesDto.Genres.Any() && !seriesDto.GenreIds.Any())
+            {
+                var genres = _genreService.GetAll();
+                seriesDto.GenreIds = seriesDto.Genres
+                    .Select(genreName => genres.FirstOrDefault(g => g.Name == genreName)?.Id ?? 0)
+                    .Where(id => id > 0)
+                    .ToList();
             }
 
             var series = _mapper.Map<Series>(seriesDto);

@@ -18,6 +18,12 @@ namespace SeriLovers.API.Models.DTOs
 
         [Required]
         public string FullName { get; set; } = string.Empty;
+
+        public DateTime? DateOfBirth { get; set; }
+
+        public int? Age { get; set; }
+
+        public int SeriesCount { get; set; }
     }
 
     public class ActorUpsertDto

@@ -40,9 +40,11 @@ namespace SeriLovers.API.Services
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
             };
 
+            // Add roles using both standard JWT claim name and ASP.NET Core claim type
             foreach (var role in roles)
             {
-                claims.Add(new Claim(ClaimTypes.Role, role));
+                claims.Add(new Claim("role", role)); // Standard JWT claim name
+                claims.Add(new Claim(ClaimTypes.Role, role)); // ASP.NET Core claim type
             }
 
             var token = new JwtSecurityToken(

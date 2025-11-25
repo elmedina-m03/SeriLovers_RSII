@@ -21,10 +21,10 @@ namespace SeriLovers.API.Models.DTOs
         [Range(0.0, 10.0)]
         public double Rating { get; set; }
 
-        [Required]
-        public IList<int> GenreIds { get; set; } = new List<int>();
+        public List<int> GenreIds { get; set; } = new List<int>();
+        public IList<string> Genres { get; set; } = new List<string>();
 
-        [Required]
+        public List<int> ActorIds { get; set; } = new List<int>();
         public IList<SeriesActorInputDto> Actors { get; set; } = new List<SeriesActorInputDto>();
     }
 

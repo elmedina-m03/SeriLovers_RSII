@@ -10,7 +10,14 @@ namespace SeriLovers.API.Profiles
     {
         public AppMappingProfile()
         {
-            CreateMap<Actor, ActorDto>();
+            CreateMap<Actor, ActorDto>()
+                .ForMember(dest => dest.Age, opt => opt.MapFrom(src => 
+                    src.DateOfBirth.HasValue 
+                        ? (int?)(DateTime.UtcNow.Year - src.DateOfBirth.Value.Year - 
+                            (DateTime.UtcNow.DayOfYear < src.DateOfBirth.Value.DayOfYear ? 1 : 0))
+                        : null))
+                .ForMember(dest => dest.SeriesCount, opt => opt.MapFrom(src => 
+                    src.SeriesActors != null ? src.SeriesActors.Count() : 0));
             CreateMap<ActorUpsertDto, Actor>();
             CreateMap<Genre, GenreDto>();
             CreateMap<GenreUpsertDto, Genre>();
@@ -20,13 +27,13 @@ namespace SeriLovers.API.Profiles
             CreateMap<SeasonUpsertDto, Season>();
 
             CreateMap<Series, SeriesDto>()
-                .ForMember(dest => dest.Genres, opt => opt.MapFrom(src => src.SeriesGenres.Select(sg => sg.Genre)))
+                .ForMember(dest => dest.Genres, opt => opt.MapFrom(src => src.SeriesGenres.Select(sg => sg.Genre.Name)))
                 .ForMember(dest => dest.Actors, opt => opt.MapFrom(src => src.SeriesActors.Select(sa => sa.Actor)))
                 .ForMember(dest => dest.RatingsCount, opt => opt.MapFrom(src => src.RatingsCount))
                 .ForMember(dest => dest.WatchlistsCount, opt => opt.MapFrom(src => src.WatchlistsCount));
 
             CreateMap<Series, SeriesDetailDto>()
-                .ForMember(dest => dest.Genres, opt => opt.MapFrom(src => src.SeriesGenres.Select(sg => sg.Genre)))
+                .ForMember(dest => dest.Genres, opt => opt.MapFrom(src => src.SeriesGenres.Select(sg => sg.Genre != null ? sg.Genre.Name : string.Empty).Where(name => !string.IsNullOrEmpty(name))))
                 .ForMember(dest => dest.Actors, opt => opt.MapFrom(src => src.SeriesActors.Select(sa => sa.Actor)))
                 .ForMember(dest => dest.Seasons, opt => opt.MapFrom(src => src.Seasons ?? new List<Season>()))
                 .ForMember(dest => dest.Ratings, opt => opt.MapFrom(src => src.Ratings ?? new List<Rating>()))
@@ -47,10 +54,41 @@ namespace SeriLovers.API.Profiles
             CreateMap<RecommendationLogUpdateDto, RecommendationLog>();
 
             CreateMap<SeriesUpsertDto, Series>()
-                .ForMember(dest => dest.SeriesGenres, opt => opt.MapFrom(src => src.GenreIds.Select(id => new SeriesGenre { GenreId = id })))
-                .ForMember(dest => dest.SeriesActors, opt => opt.MapFrom(src => src.Actors.Select(a => new SeriesActor { ActorId = a.ActorId, RoleName = a.RoleName })))
+                .ForMember(dest => dest.SeriesGenres, opt => opt.MapFrom(src => 
+                    src.GenreIds != null && src.GenreIds.Any() 
+                        ? src.GenreIds.Select(id => new SeriesGenre { GenreId = id }).ToList()
+                        : new List<SeriesGenre>()))
+                .ForMember(dest => dest.SeriesActors, opt => opt.Ignore())
                 .ForMember(dest => dest.Genres, opt => opt.Ignore())
-                .ForMember(dest => dest.Actors, opt => opt.Ignore());
+                .ForMember(dest => dest.Actors, opt => opt.Ignore())
+                .AfterMap((src, dest) =>
+                {
+                    // Build SeriesActors from ActorIds and Actors list
+                    var actorDict = new Dictionary<int, SeriesActor>();
+                    
+                    // First add ActorIds (without role names)
+                    if (src.ActorIds != null && src.ActorIds.Any())
+                    {
+                        foreach (var id in src.ActorIds)
+                        {
+                            if (!actorDict.ContainsKey(id))
+                            {
+                                actorDict[id] = new SeriesActor { ActorId = id, RoleName = null };
+                            }
+                        }
+                    }
+                    
+                    // Then add/update with Actors list (which may have role names)
+                    if (src.Actors != null && src.Actors.Any())
+                    {
+                        foreach (var a in src.Actors)
+                        {
+                            actorDict[a.ActorId] = new SeriesActor { ActorId = a.ActorId, RoleName = a.RoleName };
+                        }
+                    }
+                    
+                    dest.SeriesActors = actorDict.Values.ToList();
+                });
 
             CreateMap<RatingCreateDto, Rating>();
             CreateMap<WatchlistCreateDto, Watchlist>();

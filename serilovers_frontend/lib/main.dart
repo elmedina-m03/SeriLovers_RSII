@@ -4,6 +4,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'providers/auth_provider.dart';
 import 'providers/series_provider.dart';
 import 'providers/watchlist_provider.dart';
+import 'providers/admin_user_provider.dart';
+import 'providers/actor_provider.dart';
+import 'providers/admin_stats_provider.dart';
+import 'admin/providers/admin_series_provider.dart';
+import 'admin/providers/admin_actor_provider.dart';
+import 'admin/providers/admin_statistics_provider.dart';
+import 'admin/providers/admin_challenge_provider.dart';
 import 'services/auth_service.dart';
 import 'services/api_service.dart';
 import 'screens/login_screen.dart';
@@ -11,6 +18,7 @@ import 'screens/series_list_screen.dart';
 import 'screens/series_detail_screen.dart';
 import 'screens/watchlist_screen.dart';
 import 'screens/main_tab_screen.dart';
+import 'admin/screens/admin_screen.dart';
 import 'models/series.dart';
 import 'core/theme/app_theme.dart';
 
@@ -21,6 +29,9 @@ void main() async {
   await dotenv.load(fileName: ".env");
   
   runApp(const MyApp());
+  
+  // Debug log
+  print("THEME ACTIVE");
 }
 
 class MyApp extends StatelessWidget {
@@ -87,14 +98,149 @@ class MyApp extends StatelessWidget {
             );
           },
         ),
+        ChangeNotifierProxyProvider<AuthProvider, AdminUserProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return AdminUserProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return AdminUserProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, ActorProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return ActorProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return ActorProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AdminStatsProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return AdminStatsProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return AdminStatsProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AdminSeriesProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return AdminSeriesProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return AdminSeriesProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AdminActorProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return AdminActorProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return AdminActorProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AdminStatisticsProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return AdminStatisticsProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return AdminStatisticsProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, AdminChallengeProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return AdminChallengeProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return AdminChallengeProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
       ],
       child: MaterialApp(
         title: 'SeriLovers',
-        theme: AppTheme.build(),
+        theme: AppTheme.lightTheme,
+        debugShowCheckedModeBanner: false,
         initialRoute: '/login',
         routes: {
           '/login': (context) => const LoginScreen(),
           '/main': (context) => const MainTabScreen(),
+          '/admin': (context) => const AdminScreen(),
           '/watchlist': (context) => const WatchlistScreen(),
         },
         onGenerateRoute: (settings) {
