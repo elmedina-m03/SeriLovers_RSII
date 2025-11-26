@@ -19,6 +19,11 @@ import 'screens/series_detail_screen.dart';
 import 'screens/watchlist_screen.dart';
 import 'screens/main_tab_screen.dart';
 import 'admin/screens/admin_screen.dart';
+import 'mobile/mobile_main_screen.dart';
+import 'mobile/providers/mobile_navigation_provider.dart';
+import 'mobile/screens/mobile_login_screen.dart';
+import 'mobile/screens/mobile_home_screen.dart';
+import 'mobile/screens/mobile_series_detail_screen.dart';
 import 'models/series.dart';
 import 'core/theme/app_theme.dart';
 
@@ -231,31 +236,62 @@ class MyApp extends StatelessWidget {
             );
           },
         ),
+        ChangeNotifierProvider(
+          create: (_) => MobileNavigationProvider(),
+        ),
       ],
-      child: MaterialApp(
-        title: 'SeriLovers',
-        theme: AppTheme.lightTheme,
-        debugShowCheckedModeBanner: false,
-        initialRoute: '/login',
-        routes: {
-          '/login': (context) => const LoginScreen(),
-          '/main': (context) => const MainTabScreen(),
-          '/admin': (context) => const AdminScreen(),
-          '/watchlist': (context) => const WatchlistScreen(),
-        },
-        onGenerateRoute: (settings) {
-          // Handle series detail route with Series argument
-          if (settings.name == '/series_detail') {
-            final series = settings.arguments as Series?;
-            if (series != null) {
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Determine initial route based on screen width
+          final isSmallScreen = constraints.maxWidth < 900;
+          final initialRoute = isSmallScreen ? '/mobile_login' : '/login';
+
+          return MaterialApp(
+            title: 'SeriLovers',
+            theme: AppTheme.lightTheme,
+            debugShowCheckedModeBanner: false,
+            initialRoute: initialRoute,
+            routes: {
+              '/login': (context) => const LoginScreen(),
+              '/main': (context) => const MainTabScreen(),
+              '/admin': (context) => const AdminScreen(),
+              '/mobile': (context) => const MobileMainScreen(),
+              '/mobile_login': (context) => const MobileLoginScreen(),
+              '/mobile_home': (context) => const MobileHomeScreen(),
+              '/watchlist': (context) => const WatchlistScreen(),
+            },
+            onGenerateRoute: (settings) {
+              // Handle series detail route with Series argument
+              if (settings.name == '/series_detail') {
+                final series = settings.arguments as Series?;
+                if (series != null) {
+                  // Check screen width to determine which detail screen to use
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  if (screenWidth < 900) {
+                    // Mobile: use mobile series detail screen
+                    return MaterialPageRoute(
+                      builder: (context) => MobileSeriesDetailScreen(series: series),
+                    );
+                  } else {
+                    // Desktop: use regular series detail screen
+                    return MaterialPageRoute(
+                      builder: (context) => SeriesDetailScreen(series: series),
+                    );
+                  }
+                }
+              }
+
+              // Default route (fallback) - check screen size
+              final screenWidth = MediaQuery.of(context).size.width;
+              if (screenWidth < 900) {
+                return MaterialPageRoute(
+                  builder: (context) => const MobileLoginScreen(),
+                );
+              }
               return MaterialPageRoute(
-                builder: (context) => SeriesDetailScreen(series: series),
+                builder: (context) => const LoginScreen(),
               );
-            }
-          }
-          // Default route (fallback)
-          return MaterialPageRoute(
-            builder: (context) => const LoginScreen(),
+            },
           );
         },
       ),

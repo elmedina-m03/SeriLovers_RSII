@@ -47,12 +47,14 @@ class _LoginScreenState extends State<LoginScreen> {
       });
 
       if (success) {
-        // Check if desktop/web to navigate to admin panel
-        final isDesktop = kIsWeb || Platform.isWindows;
-        if (isDesktop) {
-          Navigator.pushReplacementNamed(context, '/admin');
+        // Check screen width to determine navigation
+        final screenWidth = MediaQuery.of(context).size.width;
+        if (screenWidth < 900) {
+          // Mobile layout - navigate to mobile screen
+          Navigator.pushReplacementNamed(context, '/mobile');
         } else {
-          Navigator.pushReplacementNamed(context, '/main');
+          // Desktop layout - navigate to admin panel
+          Navigator.pushReplacementNamed(context, '/admin');
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
