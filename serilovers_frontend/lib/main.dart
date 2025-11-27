@@ -7,6 +7,7 @@ import 'providers/watchlist_provider.dart';
 import 'providers/admin_user_provider.dart';
 import 'providers/actor_provider.dart';
 import 'providers/admin_stats_provider.dart';
+import 'providers/theme_provider.dart';
 import 'admin/providers/admin_series_provider.dart';
 import 'admin/providers/admin_actor_provider.dart';
 import 'admin/providers/admin_statistics_provider.dart';
@@ -24,6 +25,7 @@ import 'mobile/providers/mobile_navigation_provider.dart';
 import 'mobile/screens/mobile_login_screen.dart';
 import 'mobile/screens/mobile_home_screen.dart';
 import 'mobile/screens/mobile_series_detail_screen.dart';
+import 'mobile/screens/mobile_edit_profile_screen.dart';
 import 'models/series.dart';
 import 'core/theme/app_theme.dart';
 
@@ -239,17 +241,22 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => MobileNavigationProvider(),
         ),
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider(),
+        ),
       ],
       child: LayoutBuilder(
         builder: (context, constraints) {
           // Determine initial route based on screen width
-          final isSmallScreen = constraints.maxWidth < 900;
-          final initialRoute = isSmallScreen ? '/mobile_login' : '/login';
+          final screenWidth = constraints.maxWidth;
+          final initialRoute = screenWidth > 900 ? '/admin' : '/mobile_login';
 
-          return MaterialApp(
-            title: 'SeriLovers',
-            theme: AppTheme.lightTheme,
-            debugShowCheckedModeBanner: false,
+          return Consumer<ThemeProvider>(
+            builder: (context, themeProvider, child) {
+              return MaterialApp(
+                title: 'SeriLovers',
+                theme: themeProvider.currentTheme,
+                debugShowCheckedModeBanner: false,
             initialRoute: initialRoute,
             routes: {
               '/login': (context) => const LoginScreen(),
@@ -258,6 +265,7 @@ class MyApp extends StatelessWidget {
               '/mobile': (context) => const MobileMainScreen(),
               '/mobile_login': (context) => const MobileLoginScreen(),
               '/mobile_home': (context) => const MobileHomeScreen(),
+              '/mobile_edit_profile': (context) => const MobileEditProfileScreen(),
               '/watchlist': (context) => const WatchlistScreen(),
             },
             onGenerateRoute: (settings) {
@@ -291,6 +299,8 @@ class MyApp extends StatelessWidget {
               return MaterialPageRoute(
                 builder: (context) => const LoginScreen(),
               );
+            },
+          );
             },
           );
         },

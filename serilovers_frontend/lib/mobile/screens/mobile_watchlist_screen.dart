@@ -70,7 +70,7 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${series.title} removed from watchlist'),
+            content: const Text('Removed from Watchlist'),
             backgroundColor: AppColors.successColor,
             duration: const Duration(seconds: 2),
             action: SnackBarAction(
@@ -174,50 +174,70 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
 
   /// Builds a watchlist card with poster thumbnail, title, and delete button
   Widget _buildWatchlistCard(Series series, BuildContext context, ThemeData theme) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppDim.paddingMedium),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-      ),
-      elevation: 2,
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(AppDim.paddingSmall),
-        leading: _buildPosterThumbnail(series),
-        title: Text(
-          series.title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.bold,
-          ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: series.description != null
-            ? Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  series.description!,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )
-            : null,
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline),
+    return Dismissible(
+      key: Key('watchlist_${series.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: AppDim.paddingMedium),
+        decoration: BoxDecoration(
           color: AppColors.dangerColor,
-          onPressed: () => _handleDelete(series),
-          tooltip: 'Remove from watchlist',
+          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
         ),
-        onTap: () {
-          Navigator.pushNamed(
-            context,
-            '/series_detail',
-            arguments: series,
-          );
-        },
+        child: const Icon(
+          Icons.delete,
+          color: AppColors.textLight,
+          size: 28,
+        ),
+      ),
+      onDismissed: (direction) {
+        _handleDelete(series);
+      },
+      child: Card(
+        margin: const EdgeInsets.only(bottom: AppDim.paddingMedium),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+        ),
+        elevation: 2,
+        child: ListTile(
+          contentPadding: const EdgeInsets.all(AppDim.paddingSmall),
+          leading: _buildPosterThumbnail(series),
+          title: Text(
+            series.title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.bold,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: series.description != null
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    series.description!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              : null,
+          trailing: IconButton(
+            icon: const Icon(Icons.delete_outline),
+            color: AppColors.dangerColor,
+            onPressed: () => _handleDelete(series),
+            tooltip: 'Remove from watchlist',
+          ),
+          onTap: () {
+            Navigator.pushNamed(
+              context,
+              '/series_detail',
+              arguments: series,
+            );
+          },
+        ),
       ),
     );
   }

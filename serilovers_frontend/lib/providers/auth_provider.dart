@@ -114,5 +114,28 @@ class AuthProvider extends ChangeNotifier {
     }
     return {};
   }
+
+  /// Updates the current user's profile
+  /// 
+  /// [updateData] - Map containing fields to update (name, email, currentPassword, newPassword, avatar, avatarFileName)
+  /// 
+  /// Returns true if update successful, false otherwise
+  /// Notifies listeners on success
+  Future<bool> updateUser(Map<String, dynamic> updateData) async {
+    try {
+      await _authService.updateUser(updateData);
+      
+      // Reload token from storage (in case it was refreshed)
+      token = await _authService.getToken();
+      isAuthenticated = token != null && token!.isNotEmpty;
+      
+      notifyListeners();
+      return true;
+    } catch (e) {
+      // Update failed, notify listeners anyway
+      notifyListeners();
+      rethrow;
+    }
+  }
 }
 

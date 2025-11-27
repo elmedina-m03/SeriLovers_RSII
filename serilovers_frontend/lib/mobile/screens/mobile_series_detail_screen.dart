@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/series.dart';
+import '../../providers/series_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -20,14 +21,26 @@ class MobileSeriesDetailScreen extends StatefulWidget {
 }
 
 class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
+  late Series _series;
+
   @override
   void initState() {
     super.initState();
+    _series = widget.series;
     // Load watchlist to check if series is already added
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final token = authProvider.token;
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+
+      // Try to refresh series details from provider if available
+      final updated = seriesProvider.getById(widget.series.id);
+      if (updated != null) {
+        setState(() {
+          _series = updated;
+        });
+      }
       
       if (token != null && token.isNotEmpty && watchlistProvider.items.isEmpty) {
         watchlistProvider.fetchWatchlist(token).catchError((error) {
@@ -62,9 +75,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         // Remove from watchlist
         await watchlistProvider.removeFromWatchlist(widget.series.id, token);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${widget.series.title} removed from watchlist'),
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${_series.title} removed from watchlist'),
               backgroundColor: AppColors.successColor,
               duration: const Duration(seconds: 2),
             ),
@@ -74,9 +87,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         // Add to watchlist
         await watchlistProvider.addToWatchlist(widget.series.id);
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${widget.series.title} added to watchlist'),
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${_series.title} added to watchlist'),
               backgroundColor: AppColors.successColor,
               duration: const Duration(seconds: 2),
             ),
@@ -128,7 +141,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                 children: [
                   // Title
                   Text(
-                    widget.series.title,
+                    _series.title,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       color: AppColors.textPrimary,
                       fontWeight: FontWeight.bold,
@@ -138,11 +151,11 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                   const SizedBox(height: AppDim.paddingSmall),
 
                   // Genres as Chips
-                  if (widget.series.genres.isNotEmpty)
+                  if (_series.genres.isNotEmpty)
                     Wrap(
                       spacing: AppDim.paddingSmall,
                       runSpacing: AppDim.paddingSmall,
-                      children: widget.series.genres.map((genre) {
+                      children: _series.genres.map((genre) {
                         return Chip(
                           label: Text(
                             genre,
@@ -187,7 +200,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              widget.series.rating.toStringAsFixed(1),
+                              _series.rating.toStringAsFixed(1),
                               style: const TextStyle(
                                 color: AppColors.textLight,
                                 fontWeight: FontWeight.bold,
@@ -198,9 +211,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                         ),
                       ),
                       const SizedBox(width: AppDim.paddingMedium),
-                      if (widget.series.ratingsCount > 0)
+                      if (_series.ratingsCount > 0)
                         Text(
-                          '${widget.series.ratingsCount} ratings',
+                          '${_series.ratingsCount} ratings',
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: AppColors.textSecondary,
                           ),
@@ -211,7 +224,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                   const SizedBox(height: AppDim.paddingLarge),
 
                   // Description
-                  if (widget.series.description != null && widget.series.description!.isNotEmpty) ...[
+                  if (_series.description != null && _series.description!.isNotEmpty) ...[
                     Text(
                       'Description',
                       style: theme.textTheme.titleLarge?.copyWith(
@@ -221,7 +234,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                     ),
                     const SizedBox(height: AppDim.paddingSmall),
                     Text(
-                      widget.series.description!,
+                      _series.description!,
                       style: theme.textTheme.bodyLarge?.copyWith(
                         color: AppColors.textSecondary,
                         height: 1.5,
@@ -231,7 +244,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                   ],
 
                   // Actors Section
-                  if (widget.series.actors.isNotEmpty) ...[
+                  if (_series.actors.isNotEmpty) ...[
                     Text(
                       'Cast',
                       style: theme.textTheme.titleLarge?.copyWith(
@@ -244,9 +257,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                       height: 100,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
-                        itemCount: widget.series.actors.length,
+                        itemCount: _series.actors.length,
                         itemBuilder: (context, index) {
-                          final actor = widget.series.actors[index];
+                          final actor = _series.actors[index];
                           return _buildActorCard(actor, context, theme);
                         },
                       ),

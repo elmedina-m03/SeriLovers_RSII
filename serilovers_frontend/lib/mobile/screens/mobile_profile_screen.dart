@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/theme_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 
 /// Mobile profile screen showing user info and logout button
-class MobileProfileScreen extends StatelessWidget {
+class MobileProfileScreen extends StatefulWidget {
   const MobileProfileScreen({super.key});
 
+  @override
+  State<MobileProfileScreen> createState() => _MobileProfileScreenState();
+}
+
+class _MobileProfileScreenState extends State<MobileProfileScreen> {
   /// Get user info from JWT token
   Map<String, String> _getUserInfo(String? token) {
     if (token == null || token.isEmpty) {
@@ -36,6 +43,28 @@ class MobileProfileScreen extends StatelessWidget {
     } catch (e) {
       return {'email': 'Unknown', 'name': 'Unknown User'};
     }
+  }
+
+  /// Try to read joined date from JWT token if available
+  DateTime? _getJoinedDate(String? token) {
+    if (token == null || token.isEmpty) return null;
+    try {
+      final decoded = JwtDecoder.decode(token);
+      final raw = decoded['dateCreated'] ?? decoded['createdAt'];
+      if (raw == null) return null;
+
+      if (raw is String) {
+        // Expecting ISO 8601 string
+        return DateTime.tryParse(raw);
+      }
+      if (raw is int) {
+        // Assume seconds since epoch
+        return DateTime.fromMillisecondsSinceEpoch(raw * 1000, isUtc: true).toLocal();
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
   }
 
   /// Get initials from email or name
@@ -114,6 +143,7 @@ class MobileProfileScreen extends StatelessWidget {
           builder: (context, authProvider, child) {
             final userInfo = _getUserInfo(authProvider.token);
             final initials = _getInitials(userInfo['email']!);
+            final joinedDate = _getJoinedDate(authProvider.token);
 
             return SingleChildScrollView(
               padding: const EdgeInsets.all(AppDim.paddingLarge),
@@ -156,7 +186,99 @@ class MobileProfileScreen extends StatelessWidget {
                     ),
                   ),
 
-                  const SizedBox(height: AppDim.paddingLarge * 2),
+                  const SizedBox(height: AppDim.paddingLarge),
+
+                  // Joined date card (if available)
+                  if (joinedDate != null)
+                    Card(
+                      color: AppColors.cardBackground,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                      ),
+                      elevation: 2,
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.event_available,
+                          color: AppColors.primaryColor,
+                        ),
+                        title: const Text('Joined'),
+                        subtitle: Text(
+                          DateFormat('MMM d, yyyy').format(joinedDate),
+                        ),
+                      ),
+                    ),
+
+                  const SizedBox(height: AppDim.paddingLarge),
+
+                  // Dark Mode Toggle
+                  Consumer<ThemeProvider>(
+                    builder: (context, themeProvider, child) {
+                      return Card(
+                        color: AppColors.cardBackground,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                        ),
+                        elevation: 2,
+                        child: ListTile(
+                          leading: Icon(
+                            themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                            color: AppColors.primaryColor,
+                          ),
+                          title: const Text('Dark Mode'),
+                          subtitle: Text(
+                            themeProvider.isDarkMode ? 'Enabled' : 'Disabled',
+                          ),
+                          trailing: Switch(
+                            value: themeProvider.isDarkMode,
+                            onChanged: (value) {
+                              themeProvider.toggleDarkMode();
+                            },
+                            activeColor: AppColors.primaryColor,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: AppDim.paddingMedium),
+
+                  // Edit Profile Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final result = await Navigator.pushNamed(
+                          context,
+                          '/mobile_edit_profile',
+                        );
+                        if (result == true && mounted) {
+                          // Refresh the screen if profile was updated
+                          setState(() {});
+                        }
+                      },
+                      icon: const Icon(Icons.edit),
+                      label: const Text(
+                        'Edit Profile',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        foregroundColor: AppColors.textLight,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: AppDim.paddingMedium,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                        ),
+                        elevation: 4,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: AppDim.paddingMedium),
 
                   // Logout Button
                   SizedBox(

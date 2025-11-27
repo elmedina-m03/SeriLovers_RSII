@@ -14,6 +14,12 @@ class SeriesProvider extends ChangeNotifier {
   /// List of series items
   List<Series> items = [];
 
+  /// List of available genres
+  List<Genre> genres = [];
+
+  /// Whether genres are currently being loaded
+  bool isGenresLoading = false;
+
   /// Whether data is currently being loaded
   bool isLoading = false;
 
@@ -167,6 +173,77 @@ class SeriesProvider extends ChangeNotifier {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Searches series by query string.
+  ///
+  /// Convenience wrapper around [fetchSeries] that sets the [search] parameter
+  /// and resets to the first page.
+  Future<void> searchSeries(String query) async {
+    await fetchSeries(
+      page: 1,
+      pageSize: 20,
+      search: query,
+    );
+  }
+
+  /// Fetches all genres from the API
+  ///
+  /// Populates [genres] list and updates [isGenresLoading].
+  Future<void> fetchGenres() async {
+    isGenresLoading = true;
+    notifyListeners();
+
+    try {
+      final token = _authProvider.token;
+      final response = await _apiService.get(
+        '/Genre',
+        token: token,
+      );
+
+      if (response is List) {
+        genres = response
+            .whereType<Map<String, dynamic>>()
+            .map((json) => Genre.fromJson(json))
+            .toList();
+      } else {
+        genres = [];
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error fetching genres: $e');
+      print('Stack trace: $stackTrace');
+      genres = [];
+    } finally {
+      isGenresLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Fetches series by genre without mutating [items].
+  ///
+  /// Useful for category detail screens that need independent data.
+  Future<List<Series>> fetchSeriesByGenre(int genreId) async {
+    try {
+      final token = _authProvider.token;
+      final queryString = 'page=1&pageSize=50&genreId=$genreId';
+      final apiPath = '/Series?$queryString';
+      final response = await _apiService.get(
+        apiPath,
+        token: token,
+      );
+
+      if (response is Map<String, dynamic>) {
+        final itemsList = response['items'] as List<dynamic>? ?? [];
+        return itemsList
+            .whereType<Map<String, dynamic>>()
+            .map((item) => Series.fromJson(item))
+            .toList();
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error fetching series by genre: $e');
+      print('Stack trace: $stackTrace');
+    }
+    return [];
   }
 }
 

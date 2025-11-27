@@ -136,6 +136,54 @@ class AuthService {
     }
   }
 
+  /// Updates the current user's profile
+  /// 
+  /// [updateData] - Map containing fields to update (name, email, currentPassword, newPassword, avatar, avatarFileName)
+  /// 
+  /// Returns a Map containing the API response
+  /// 
+  /// Throws [ApiException] or [AuthException] on failure
+  Future<Map<String, dynamic>> updateUser(Map<String, dynamic> updateData) async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) {
+        throw AuthException('Authentication required');
+      }
+
+      final response = await _apiService.put(
+        '/Auth/profile',
+        updateData,
+        token: token,
+      );
+
+      // Ensure response is a Map
+      if (response is! Map<String, dynamic>) {
+        throw AuthException('Invalid response format from server');
+      }
+
+      // If response contains a new token, save it
+      final newToken = response['token'] ?? 
+                      response['accessToken'] ?? 
+                      response['access_token'] ?? 
+                      response['jwt'];
+
+      if (newToken != null && newToken is String) {
+        await saveToken(newToken);
+      }
+
+      return response;
+    } on ApiException catch (e) {
+      // Convert API exceptions to user-friendly auth exceptions
+      throw AuthException(
+        _getFriendlyErrorMessage(e.statusCode, e.message),
+        e.statusCode,
+      );
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      throw AuthException('Profile update failed: ${e.toString()}');
+    }
+  }
+
   /// Converts API error codes to user-friendly messages
   String _getFriendlyErrorMessage(int? statusCode, String originalMessage) {
     switch (statusCode) {

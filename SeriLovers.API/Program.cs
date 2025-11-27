@@ -192,31 +192,32 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
-        // Get allowed origins from configuration or use AllowAnyOrigin for development
-        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
         var isDevelopment = builder.Environment.IsDevelopment();
 
-        if (isDevelopment && (allowedOrigins == null || allowedOrigins.Length == 0))
+        if (isDevelopment)
         {
-            // Development fallback: allow any origin
+            // Development: allow everything to make local frontend work from any port
             policy.AllowAnyOrigin()
                   .AllowAnyMethod()
                   .AllowAnyHeader();
-        }
-        else if (allowedOrigins != null && allowedOrigins.Length > 0)
-        {
-            // Use configured origins
-            policy.WithOrigins(allowedOrigins)
-                  .AllowAnyMethod()
-                  .AllowAnyHeader()
-                  .AllowCredentials(); // Allow credentials when using specific origins
         }
         else
         {
-            // Production fallback: allow any origin (can be restricted further)
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
+            // Production/staging: use configured allowed origins if present, otherwise fallback
+            var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+
+            if (allowedOrigins != null && allowedOrigins.Length > 0)
+            {
+                policy.WithOrigins(allowedOrigins)
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            }
+            else
+            {
+                policy.AllowAnyOrigin()
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+            }
         }
     });
 });
@@ -333,11 +334,9 @@ app.MapControllers();
 // ============================================
 if (app.Environment.IsDevelopment())
 {
-    using (var scope = app.Services.CreateScope())
-    {
-        var services = scope.ServiceProvider;
-        await DbSeeder.Seed(services);
-    }
+    using var scope = app.Services.CreateScope();
+    var services = scope.ServiceProvider;
+    await DbSeeder.Seed(services);
 }
 
 // ============================================
