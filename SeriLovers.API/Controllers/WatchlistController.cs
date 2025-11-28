@@ -45,6 +45,7 @@ namespace SeriLovers.API.Controllers
         public async Task<IActionResult> GetAll()
         {
             var watchlistEntries = await _context.Watchlists
+                .AsSplitQuery()
                 .Include(w => w.Series)
                     .ThenInclude(s => s.SeriesGenres)
                         .ThenInclude(sg => sg.Genre)

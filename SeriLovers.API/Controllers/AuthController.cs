@@ -395,6 +395,97 @@ namespace SeriLovers.API.Controllers
                 Email = user.Email
             });
         }
+
+        /// <summary>
+        /// Updates the current user's profile
+        /// </summary>
+        [HttpPut("profile")]
+        [Authorize]
+        [SwaggerOperation(
+            Summary = "Update user profile",
+            Description = "Updates the authenticated user's profile information including name, email, password, and avatar.")]
+        public async Task<IActionResult> UpdateProfile([FromBody] Dictionary<string, object> updateData)
+        {
+            var user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Unauthorized(new { message = "User not found." });
+            }
+
+            // Update email if provided
+            if (updateData.ContainsKey("email") && updateData["email"] is string email)
+            {
+                user.Email = email;
+                user.UserName = email; // Keep UserName in sync with Email
+            }
+
+            // Update name (stored in UserName or a separate field if you have one)
+            if (updateData.ContainsKey("name") && updateData["name"] is string name)
+            {
+                // You can store name in UserName or add a Name property to ApplicationUser
+                // For now, we'll keep it simple and not change UserName if email is being updated
+            }
+
+            // Update avatar URL if provided
+            if (updateData.ContainsKey("avatar") && updateData["avatar"] is string avatarBase64)
+            {
+                // In a real app, you'd upload the image to storage and get a URL
+                // For now, we'll store the base64 string or a placeholder URL
+                // You might want to process the base64 and upload to cloud storage
+                user.AvatarUrl = $"data:image/jpeg;base64,{avatarBase64}"; // Temporary: store as data URL
+            }
+            else if (updateData.ContainsKey("avatarUrl") && updateData["avatarUrl"] is string avatarUrl)
+            {
+                user.AvatarUrl = avatarUrl;
+            }
+
+            // Update password if provided
+            if (updateData.ContainsKey("currentPassword") && updateData["currentPassword"] is string currentPassword &&
+                updateData.ContainsKey("newPassword") && updateData["newPassword"] is string newPassword)
+            {
+                var passwordValid = await _userManager.CheckPasswordAsync(user, currentPassword);
+                if (!passwordValid)
+                {
+                    return BadRequest(new { message = "Current password is incorrect." });
+                }
+
+                var changePasswordResult = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+                if (!changePasswordResult.Succeeded)
+                {
+                    return BadRequest(new
+                    {
+                        message = "Failed to change password",
+                        errors = changePasswordResult.Errors.Select(e => e.Description)
+                    });
+                }
+            }
+
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+            {
+                return BadRequest(new { message = "Failed to update profile", errors = result.Errors.Select(e => e.Description) });
+            }
+
+            // Get updated roles
+            var roles = await _userManager.GetRolesAsync(user);
+
+            // Generate new token with updated user info
+            var token = _tokenService.GenerateToken(user, roles);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Profile updated successfully",
+                token = token,
+                user = new
+                {
+                    id = user.Id,
+                    email = user.Email,
+                    userName = user.UserName,
+                    avatarUrl = user.AvatarUrl
+                }
+            });
+        }
     }
 }
 

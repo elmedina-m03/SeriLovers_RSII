@@ -175,6 +175,10 @@ namespace SeriLovers.API.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("LastName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -195,6 +199,9 @@ namespace SeriLovers.API.Migrations
 
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
+
+                    b.Property<string>("AvatarUrl")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
@@ -543,6 +550,10 @@ namespace SeriLovers.API.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<double>("Rating")
                         .HasPrecision(3, 2)
                         .HasColumnType("float(3)");
@@ -633,6 +644,9 @@ namespace SeriLovers.API.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<int?>("CollectionId")
+                        .HasColumnType("int");
+
                     b.Property<int>("SeriesId")
                         .HasColumnType("int");
 
@@ -641,12 +655,48 @@ namespace SeriLovers.API.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CollectionId");
+
                     b.HasIndex("SeriesId");
 
-                    b.HasIndex("UserId", "SeriesId")
-                        .IsUnique();
+                    b.HasIndex("UserId", "SeriesId", "CollectionId")
+                        .IsUnique()
+                        .HasFilter("[CollectionId] IS NOT NULL");
 
                     b.ToTable("Watchlists");
+                });
+
+            modelBuilder.Entity("SeriLovers.API.Models.WatchlistCollection", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("WatchlistCollections");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<int>", b =>
@@ -865,6 +915,11 @@ namespace SeriLovers.API.Migrations
 
             modelBuilder.Entity("SeriLovers.API.Models.Watchlist", b =>
                 {
+                    b.HasOne("SeriLovers.API.Models.WatchlistCollection", "Collection")
+                        .WithMany("Watchlists")
+                        .HasForeignKey("CollectionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("SeriLovers.API.Models.Series", "Series")
                         .WithMany("Watchlists")
                         .HasForeignKey("SeriesId")
@@ -877,7 +932,20 @@ namespace SeriLovers.API.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("Collection");
+
                     b.Navigation("Series");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SeriLovers.API.Models.WatchlistCollection", b =>
+                {
+                    b.HasOne("SeriLovers.API.Models.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });
@@ -924,6 +992,11 @@ namespace SeriLovers.API.Migrations
 
                     b.Navigation("SeriesGenres");
 
+                    b.Navigation("Watchlists");
+                });
+
+            modelBuilder.Entity("SeriLovers.API.Models.WatchlistCollection", b =>
+                {
                     b.Navigation("Watchlists");
                 });
 #pragma warning restore 612, 618

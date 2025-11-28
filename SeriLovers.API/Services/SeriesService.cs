@@ -307,6 +307,7 @@ namespace SeriLovers.API.Services
             existing.ReleaseDate = series.ReleaseDate;
             existing.Genre = series.Genre;
             existing.Rating = series.Rating;
+            existing.ImageUrl = series.ImageUrl;
 
             var incomingGenreIds = ExtractGenreIds(series);
             var incomingActorLinks = ExtractActorLinks(series);

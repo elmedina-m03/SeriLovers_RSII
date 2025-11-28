@@ -26,6 +26,9 @@ namespace SeriLovers.API.Models.DTOs
 
         public List<int> ActorIds { get; set; } = new List<int>();
         public IList<SeriesActorInputDto> Actors { get; set; } = new List<SeriesActorInputDto>();
+
+        [StringLength(500)]
+        public string? ImageUrl { get; set; }
     }
 
     public class SeriesActorInputDto

@@ -40,6 +40,7 @@ namespace SeriLovers.API.Controllers
             [FromQuery] string? sortOrder = "asc")
         {
             var query = _context.Actors
+                .AsSplitQuery()
                 .Include(a => a.SeriesActors)
                     .ThenInclude(sa => sa.Series)
                 .AsQueryable();
@@ -51,7 +52,7 @@ namespace SeriLovers.API.Controllers
                 query = query.Where(a => 
                     a.FirstName.ToLower().Contains(searchLower) ||
                     a.LastName.ToLower().Contains(searchLower) ||
-                    a.FullName.ToLower().Contains(searchLower));
+                    (a.FirstName + " " + a.LastName).ToLower().Contains(searchLower));
             }
 
             // Filter by age

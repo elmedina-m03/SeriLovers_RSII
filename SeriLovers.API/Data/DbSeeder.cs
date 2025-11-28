@@ -344,6 +344,7 @@ namespace SeriLovers.API.Data
             foreach (var seed in seriesSeeds)
             {
                 var series = await context.Series
+                    .AsSplitQuery()
                     .Include(s => s.Seasons!)
                         .ThenInclude(season => season.Episodes)
                     .Include(s => s.SeriesGenres)

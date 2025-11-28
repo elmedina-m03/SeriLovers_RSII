@@ -7,6 +7,7 @@ namespace SeriLovers.API.Models
     public class ApplicationUser : IdentityUser<int>
     {
         public string? Country { get; set; }
+        public string? AvatarUrl { get; set; }
         public DateTime DateCreated { get; set; } = DateTime.UtcNow;
 
         public ICollection<Rating> Ratings { get; set; } = new List<Rating>();

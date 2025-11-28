@@ -148,6 +148,7 @@ builder.Services.AddScoped<IActorService, ActorService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAdminStatisticsService, AdminStatisticsService>();
+builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
 // RabbitMQ connection - DISABLED
 // builder.Services.AddSingleton<IBus>(sp =>
 // {
@@ -324,6 +325,10 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseHttpsRedirection();
+
+// Enable static file serving for uploaded images
+app.UseStaticFiles();
+
 app.UseAuthentication();
 app.UseAuthorization();
 

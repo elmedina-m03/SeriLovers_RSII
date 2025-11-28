@@ -24,6 +24,9 @@ namespace SeriLovers.API.Models.DTOs
         public IList<SeasonDto> Seasons { get; set; } = new List<SeasonDto>();
         public IList<RatingDto> Ratings { get; set; } = new List<RatingDto>();
         public IList<WatchlistDto> Watchlists { get; set; } = new List<WatchlistDto>();
+
+        [StringLength(500)]
+        public string? ImageUrl { get; set; }
     }
 }
 

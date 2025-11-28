@@ -23,6 +23,7 @@ namespace SeriLovers.API.Services
         {
             _logger.LogDebug("Retrieving all actors.");
             return _context.Actors
+                           .AsSplitQuery()
                            .Include(a => a.SeriesActors)
                                .ThenInclude(sa => sa.Series)
                            .OrderBy(a => a.LastName)
@@ -34,6 +35,7 @@ namespace SeriLovers.API.Services
         {
             _logger.LogDebug("Retrieving actor with id {ActorId}", id);
             return _context.Actors
+                           .AsSplitQuery()
                            .Include(a => a.SeriesActors)
                                .ThenInclude(sa => sa.Series)
                            .FirstOrDefault(a => a.Id == id);
@@ -70,6 +72,7 @@ namespace SeriLovers.API.Services
             existing.LastName = actor.LastName;
             existing.DateOfBirth = actor.DateOfBirth;
             existing.Biography = actor.Biography;
+            existing.ImageUrl = actor.ImageUrl;
 
             _context.SaveChanges();
             _logger.LogInformation("Actor {ActorId} updated successfully.", actor.Id);

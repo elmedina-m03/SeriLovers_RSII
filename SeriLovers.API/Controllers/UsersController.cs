@@ -100,11 +100,100 @@ namespace SeriLovers.API.Controllers
                     country = user.Country,
                     dateCreated = user.DateCreated,
                     isActive = isActive,
-                    role = roles.FirstOrDefault() ?? "User"
+                    role = roles.FirstOrDefault() ?? "User",
+                    avatarUrl = user.AvatarUrl
                 });
             }
 
             return Ok(result);
+        }
+
+        [HttpPut("{id}")]
+        [SwaggerOperation(
+            Summary = "Update user",
+            Description = "Updates a user's information. Admin only.")]
+        public async Task<IActionResult> Update(int id, [FromBody] Dictionary<string, object> updateData)
+        {
+            var user = await _userManager.FindByIdAsync(id.ToString());
+            if (user == null)
+            {
+                return NotFound(new { message = $"User with ID {id} not found." });
+            }
+
+            // Update email if provided
+            if (updateData.ContainsKey("email") && updateData["email"] is string email)
+            {
+                user.Email = email;
+                user.UserName = email; // Keep UserName in sync with Email
+            }
+
+            // Update phone number if provided
+            if (updateData.ContainsKey("phoneNumber") && updateData["phoneNumber"] is string phoneNumber)
+            {
+                user.PhoneNumber = phoneNumber;
+            }
+
+            // Update country if provided
+            if (updateData.ContainsKey("country") && updateData["country"] is string country)
+            {
+                user.Country = country;
+            }
+
+            // Update avatar URL if provided
+            if (updateData.ContainsKey("avatarUrl") && updateData["avatarUrl"] is string avatarUrl)
+            {
+                user.AvatarUrl = avatarUrl;
+            }
+
+            // Update lockout status (isActive)
+            if (updateData.ContainsKey("isActive") && updateData["isActive"] is bool isActive)
+            {
+                user.LockoutEnabled = !isActive;
+                if (!isActive)
+                {
+                    user.LockoutEnd = DateTimeOffset.UtcNow.AddYears(100); // Effectively lock the account
+                }
+                else
+                {
+                    user.LockoutEnd = null; // Unlock the account
+                }
+            }
+
+            // Update role if provided
+            if (updateData.ContainsKey("role") && updateData["role"] is string role)
+            {
+                var currentRoles = await _userManager.GetRolesAsync(user);
+                await _userManager.RemoveFromRolesAsync(user, currentRoles);
+                await _userManager.AddToRoleAsync(user, role);
+            }
+
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+            {
+                return BadRequest(new { message = "Failed to update user", errors = result.Errors.Select(e => e.Description) });
+            }
+
+            // Reload user to get updated data
+            user = await _userManager.FindByIdAsync(id.ToString());
+            if (user == null)
+            {
+                return NotFound(new { error = $"User with ID {id} not found." });
+            }
+            var roles = await _userManager.GetRolesAsync(user);
+            var isActiveStatus = !user.LockoutEnabled || (user.LockoutEnd == null || user.LockoutEnd <= DateTimeOffset.UtcNow);
+
+            return Ok(new
+            {
+                id = user.Id,
+                email = user.Email,
+                userName = user.UserName,
+                phoneNumber = user.PhoneNumber,
+                country = user.Country,
+                dateCreated = user.DateCreated,
+                isActive = isActiveStatus,
+                role = roles.FirstOrDefault() ?? "User",
+                avatarUrl = user.AvatarUrl
+            });
         }
     }
 }

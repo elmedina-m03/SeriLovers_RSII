@@ -27,6 +27,9 @@ namespace SeriLovers.API.Models
         [StringLength(100, ErrorMessage = "Genre cannot exceed 100 characters.")]
         public string Genre { get; set; } = string.Empty;
 
+        [StringLength(500, ErrorMessage = "ImageUrl cannot exceed 500 characters.")]
+        public string? ImageUrl { get; set; }
+
         // Navigation properties
         public ICollection<Season> Seasons { get; set; } = new List<Season>();
         public ICollection<SeriesGenre> SeriesGenres { get; set; } = new List<SeriesGenre>();

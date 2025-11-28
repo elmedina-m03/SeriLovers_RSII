@@ -21,6 +21,7 @@ namespace SeriLovers.API.Data
         public DbSet<SeriesGenre> SeriesGenres { get; set; }
         public DbSet<Rating> Ratings { get; set; }
         public DbSet<Watchlist> Watchlists { get; set; }
+        public DbSet<WatchlistCollection> WatchlistCollections { get; set; }
         public DbSet<FavoriteCharacter> FavoriteCharacters { get; set; }
         public DbSet<RecommendationLog> RecommendationLogs { get; set; }
         public DbSet<Challenge> Challenges { get; set; }
@@ -176,13 +177,31 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+            // Configure WatchlistCollection entity
+            modelBuilder.Entity<WatchlistCollection>(entity =>
+            {
+                entity.HasKey(wc => wc.Id);
+                entity.Property(wc => wc.Name).IsRequired().HasMaxLength(100);
+                entity.Property(wc => wc.Description).HasMaxLength(500);
+                entity.Property(wc => wc.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+
+                entity.HasIndex(wc => new { wc.UserId, wc.Name }).IsUnique();
+
+                entity.HasOne(wc => wc.User)
+                    .WithMany()
+                    .HasForeignKey(wc => wc.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
             // Configure Watchlist entity
             modelBuilder.Entity<Watchlist>(entity =>
             {
                 entity.HasKey(w => w.Id);
                 entity.Property(w => w.AddedAt).HasDefaultValueSql("GETUTCDATE()");
 
-                entity.HasIndex(w => new { w.UserId, w.SeriesId }).IsUnique();
+                // Unique constraint: User can't have same series in same collection twice
+                // But can have same series in different collections
+                entity.HasIndex(w => new { w.UserId, w.SeriesId, w.CollectionId }).IsUnique();
 
                 entity.HasOne(w => w.User)
                     .WithMany(u => u.Watchlists)
@@ -193,6 +212,11 @@ namespace SeriLovers.API.Data
                     .WithMany(s => s.Watchlists)
                     .HasForeignKey(w => w.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(w => w.Collection)
+                    .WithMany(c => c.Watchlists)
+                    .HasForeignKey(w => w.CollectionId)
+                    .OnDelete(DeleteBehavior.SetNull); // If collection is deleted, set to null (default watchlist)
             });
 
             // Configure Challenge entity

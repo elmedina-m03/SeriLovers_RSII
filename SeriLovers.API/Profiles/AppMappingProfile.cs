@@ -93,6 +93,16 @@ namespace SeriLovers.API.Profiles
             CreateMap<RatingCreateDto, Rating>();
             CreateMap<WatchlistCreateDto, Watchlist>();
             CreateMap<EpisodeUpsertDto, Episode>();
+
+            // WatchlistCollection mappings
+            CreateMap<WatchlistCollection, WatchlistCollectionDto>()
+                .ForMember(dest => dest.SeriesCount, opt => opt.MapFrom(src => src.Watchlists != null ? src.Watchlists.Count : 0));
+            CreateMap<WatchlistCollection, WatchlistCollectionDetailDto>()
+                .ForMember(dest => dest.SeriesCount, opt => opt.MapFrom(src => src.Watchlists != null ? src.Watchlists.Count : 0))
+                .ForMember(dest => dest.Watchlists, opt => opt.MapFrom(src => src.Watchlists ?? new List<Watchlist>()));
+            CreateMap<WatchlistCollectionCreateDto, WatchlistCollection>();
+            CreateMap<WatchlistCollectionUpdateDto, WatchlistCollection>()
+                .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
         }
     }
 }

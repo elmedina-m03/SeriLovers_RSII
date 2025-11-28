@@ -22,6 +22,9 @@ namespace SeriLovers.API.Models
 
         [StringLength(2000, ErrorMessage = "Biography cannot exceed 2000 characters.")]
         public string? Biography { get; set; }
+
+        [StringLength(500, ErrorMessage = "ImageUrl cannot exceed 500 characters.")]
+        public string? ImageUrl { get; set; }
         
         // Navigation properties
         public ICollection<SeriesActor> SeriesActors { get; set; } = new List<SeriesActor>();

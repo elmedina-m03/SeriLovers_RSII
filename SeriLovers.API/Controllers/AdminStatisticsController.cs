@@ -40,7 +40,7 @@ namespace SeriLovers.API.Controllers
                 // Service already handles fallback for empty database, so we can safely return 200
                 return Ok(result);
             }
-            catch (System.Exception ex)
+            catch (System.Exception)
             {
                 // Return empty result structure on error (graceful fallback)
                 var fallbackResult = new AdminStatisticsDto

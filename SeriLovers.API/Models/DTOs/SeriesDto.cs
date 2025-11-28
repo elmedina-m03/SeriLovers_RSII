@@ -37,6 +37,9 @@ namespace SeriLovers.API.Models.DTOs
         [Required]
         [Range(0, int.MaxValue)]
         public int WatchlistsCount { get; set; }
+
+        [StringLength(500)]
+        public string? ImageUrl { get; set; }
     }
 }
 

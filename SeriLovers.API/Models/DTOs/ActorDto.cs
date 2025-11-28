@@ -24,6 +24,9 @@ namespace SeriLovers.API.Models.DTOs
         public int? Age { get; set; }
 
         public int SeriesCount { get; set; }
+
+        [StringLength(500)]
+        public string? ImageUrl { get; set; }
     }
 
     public class ActorUpsertDto
@@ -41,5 +44,8 @@ namespace SeriLovers.API.Models.DTOs
 
         [StringLength(2000)]
         public string? Biography { get; set; }
+
+        [StringLength(500)]
+        public string? ImageUrl { get; set; }
     }
 }
