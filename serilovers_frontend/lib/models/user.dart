@@ -8,6 +8,7 @@ class User {
   final String? phoneNumber;
   final String? country;
   final DateTime? dateCreated;
+  final String? avatarUrl;
 
   User({
     required this.id,
@@ -18,6 +19,7 @@ class User {
     this.phoneNumber,
     this.country,
     this.dateCreated,
+    this.avatarUrl,
   });
 
   /// Creates a User instance from JSON
@@ -33,6 +35,7 @@ class User {
       dateCreated: json['dateCreated'] != null 
           ? DateTime.parse(json['dateCreated'] as String)
           : null,
+      avatarUrl: json['avatarUrl'] as String?,
     );
   }
 
@@ -47,6 +50,7 @@ class User {
       'phoneNumber': phoneNumber,
       'country': country,
       'dateCreated': dateCreated?.toIso8601String(),
+      'avatarUrl': avatarUrl,
     };
   }
 

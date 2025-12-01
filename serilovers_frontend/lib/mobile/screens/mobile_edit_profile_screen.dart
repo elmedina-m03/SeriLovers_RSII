@@ -1,13 +1,13 @@
-import 'dart:html' as html;
 import 'dart:typed_data';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../services/api_service.dart';
+import '../../utils/file_picker_helper.dart';
 
 /// Mobile edit profile screen with name, email, password, and avatar upload
 class MobileEditProfileScreen extends StatefulWidget {
@@ -29,8 +29,8 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
   bool _obscureCurrentPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
-  Uint8List? _avatarBytes;
-  String? _avatarFileName;
+  String? _uploadedAvatarUrl; // Store uploaded avatar URL
+  bool _isUploadingAvatar = false;
 
   @override
   void initState() {
@@ -72,47 +72,102 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
     }
   }
 
-  Future<void> _pickAvatar() async {
-    if (!kIsWeb) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Avatar upload is only available on web'),
-          backgroundColor: AppColors.dangerColor,
-        ),
-      );
-      return;
+  /// Constructs the full image URL, removing /api from base URL for static files
+  String _getImageUrl(String imageUrl) {
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
     }
+    
+    var baseUrl = ApiService().baseUrl;
+    if (baseUrl.isNotEmpty) {
+      // Remove /api from the end of base URL if present (static files are at root, not /api)
+      if (baseUrl.endsWith('/api')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+      } else if (baseUrl.endsWith('/api/')) {
+        baseUrl = baseUrl.substring(0, baseUrl.length - 5);
+      }
+      return '$baseUrl$imageUrl';
+    }
+    return imageUrl;
+  }
 
+  Future<void> _pickAvatar() async {
     try {
-      final input = html.FileUploadInputElement()..accept = 'image/*';
-      input.click();
+      final result = await FilePickerHelper.pickImage();
+      if (result == null) return; // User cancelled
 
-      input.onChange.listen((e) {
-        final files = input.files;
-        if (files == null || files.isEmpty) return;
+      setState(() {
+        _isUploadingAvatar = true;
+      });
 
-        final file = files[0];
-        final reader = html.FileReader();
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final apiService = ApiService();
+      final token = authProvider.token;
 
-        reader.onLoadEnd.listen((e) {
-          if (reader.result != null) {
-            setState(() {
-              _avatarBytes = reader.result as Uint8List;
-              _avatarFileName = file.name;
-            });
-          }
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      dynamic uploadResponse;
+
+      if (FilePickerHelper.isWeb) {
+        // Web: use bytes
+        final bytes = FilePickerHelper.getBytes(result);
+        final fileName = FilePickerHelper.getFileName(result);
+        if (bytes == null || fileName == null) {
+          throw Exception('Failed to read file');
+        }
+        uploadResponse = await apiService.uploadFileFromBytes(
+          '/ImageUpload/upload',
+          bytes,
+          fileName,
+          folder: 'avatars',
+          token: token,
+        );
+      } else {
+        // Desktop/Mobile: use File
+        final file = FilePickerHelper.getFile(result);
+        if (file == null) {
+          throw Exception('Failed to read file');
+        }
+        uploadResponse = await apiService.uploadFile(
+          '/ImageUpload/upload',
+          file,
+          folder: 'avatars',
+          token: token,
+        );
+      }
+
+      if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
+        setState(() {
+          _uploadedAvatarUrl = uploadResponse['imageUrl'] as String;
+          _isUploadingAvatar = false;
         });
 
-        reader.readAsArrayBuffer(file);
-      });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Avatar uploaded successfully'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Invalid response from server');
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error picking file: $e'),
-          backgroundColor: AppColors.dangerColor,
-        ),
-      );
+      print('Error uploading avatar: $e');
+      if (mounted) {
+        setState(() {
+          _isUploadingAvatar = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error picking image: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
     }
   }
 
@@ -196,12 +251,9 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
         updateData['newPassword'] = _newPasswordController.text;
       }
 
-      // Add avatar if selected
-      if (_avatarBytes != null && _avatarFileName != null) {
-        // Convert to base64 for sending
-        final base64Avatar = base64Encode(_avatarBytes!);
-        updateData['avatar'] = base64Avatar;
-        updateData['avatarFileName'] = _avatarFileName;
+      // Add avatar URL if uploaded
+      if (_uploadedAvatarUrl != null) {
+        updateData['avatarUrl'] = _uploadedAvatarUrl;
       }
 
       await authProvider.updateUser(updateData);
@@ -276,10 +328,10 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                           CircleAvatar(
                             radius: 60,
                             backgroundColor: AppColors.primaryColor,
-                            backgroundImage: _avatarBytes != null
-                                ? MemoryImage(_avatarBytes!)
+                            backgroundImage: _uploadedAvatarUrl != null
+                                ? NetworkImage(_getImageUrl(_uploadedAvatarUrl!))
                                 : null,
-                            child: _avatarBytes == null
+                            child: _uploadedAvatarUrl == null
                                 ? Text(
                                     _nameController.text.isNotEmpty
                                         ? _nameController.text[0].toUpperCase()
@@ -292,36 +344,46 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                                   )
                                 : null,
                           ),
-                          if (kIsWeb)
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: CircleAvatar(
-                                radius: 18,
-                                backgroundColor: AppColors.primaryColor,
-                                child: IconButton(
-                                  icon: const Icon(
-                                    Icons.camera_alt,
-                                    size: 18,
-                                    color: AppColors.textLight,
-                                  ),
-                                  onPressed: _pickAvatar,
-                                  padding: EdgeInsets.zero,
-                                ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: CircleAvatar(
+                              radius: 18,
+                              backgroundColor: AppColors.primaryColor,
+                              child: IconButton(
+                                icon: _isUploadingAvatar
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(AppColors.textLight),
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.camera_alt,
+                                        size: 18,
+                                        color: AppColors.textLight,
+                                      ),
+                                onPressed: _isUploadingAvatar ? null : _pickAvatar,
+                                padding: EdgeInsets.zero,
                               ),
                             ),
+                          ),
                         ],
                       ),
-                      if (kIsWeb) ...[
-                        const SizedBox(height: AppDim.paddingSmall),
-                        TextButton(
-                          onPressed: _pickAvatar,
-                          child: Text(
-                            _avatarFileName ?? 'Upload Avatar',
-                            style: TextStyle(color: AppColors.primaryColor),
-                          ),
+                      const SizedBox(height: AppDim.paddingSmall),
+                      TextButton(
+                        onPressed: _isUploadingAvatar ? null : _pickAvatar,
+                        child: Text(
+                          _isUploadingAvatar
+                              ? 'Uploading...'
+                              : _uploadedAvatarUrl != null
+                                  ? 'Change Avatar'
+                                  : 'Upload Avatar',
+                          style: TextStyle(color: AppColors.primaryColor),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),

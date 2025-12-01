@@ -5,17 +5,17 @@ import '../../../core/theme/app_dim.dart';
 import '../../../models/user.dart';
 import '../../../providers/admin_user_provider.dart';
 
-/// Dialog for editing user details
+/// Dialog for creating or editing user details
 /// 
-/// Allows editing of user role and active status.
-/// Email field is read-only for security purposes.
+/// Allows creating new users or editing existing user role and active status.
+/// Email field is read-only for editing, editable for creating.
 class UserFormDialog extends StatefulWidget {
-  /// The user to edit
-  final ApplicationUser user;
+  /// The user to edit (null for creating new user)
+  final ApplicationUser? user;
 
   const UserFormDialog({
     super.key,
-    required this.user,
+    this.user,
   });
 
   @override
@@ -41,15 +41,36 @@ class _UserFormDialogState extends State<UserFormDialog> {
     _initializeForm();
   }
 
-  /// Initialize form with existing user data
-  void _initializeForm() {
-    final userRole = widget.user.role ?? 'User';
-    // Defensive check: ensure selected role is in available roles
-    _selectedRole = _availableRoles.contains(userRole) ? userRole : 'User';
-    _isActive = widget.user.isActive;
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _countryController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _countryController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 
-  /// Save the user changes
+  /// Initialize form with existing user data
+  void _initializeForm() {
+    if (widget.user != null) {
+      final userRole = widget.user!.role ?? 'User';
+      _selectedRole = _availableRoles.contains(userRole) ? userRole : 'User';
+      _isActive = widget.user!.isActive;
+      _emailController.text = widget.user!.email;
+    } else {
+      _selectedRole = 'User';
+      _isActive = true;
+    }
+  }
+
+  /// Save the user changes or create new user
   Future<void> _saveUser() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -62,33 +83,56 @@ class _UserFormDialogState extends State<UserFormDialog> {
     try {
       final adminUserProvider = Provider.of<AdminUserProvider>(context, listen: false);
 
-      print('🔄 UserFormDialog: Saving user changes...');
-      print('User ID: ${widget.user.id}');
-      print('New Role: $_selectedRole');
-      print('New Active Status: $_isActive');
-
-      // Call updateUser with the changes
-      await adminUserProvider.updateUser(
-        widget.user.id,
-        role: _selectedRole,
-        isActive: _isActive,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('User "${widget.user.email}" updated successfully'),
-            backgroundColor: AppColors.successColor,
-          ),
+      if (widget.user == null) {
+        // Create new user
+        print('🔄 UserFormDialog: Creating new user...');
+        await adminUserProvider.createUser(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+          name: _nameController.text.trim(),
+          phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+          country: _countryController.text.trim().isEmpty ? null : _countryController.text.trim(),
+          role: _selectedRole,
         );
-        Navigator.of(context).pop(true); // Return true to indicate success
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('User "${_emailController.text}" created successfully'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        // Update existing user
+        print('🔄 UserFormDialog: Saving user changes...');
+        print('User ID: ${widget.user!.id}');
+        print('New Role: $_selectedRole');
+        print('New Active Status: $_isActive');
+
+        await adminUserProvider.updateUser(
+          widget.user!.id,
+          role: _selectedRole,
+          isActive: _isActive,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('User "${widget.user!.email}" updated successfully'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+          Navigator.of(context).pop(true);
+        }
       }
     } catch (e) {
       print('❌ UserFormDialog: Error saving user: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating user: $e'),
+            content: Text('Error: ${e.toString()}'),
             backgroundColor: AppColors.dangerColor,
           ),
         );
@@ -128,7 +172,7 @@ class _UserFormDialogState extends State<UserFormDialog> {
                 ),
                 const SizedBox(width: AppDim.paddingSmall),
                 Text(
-                  'Edit User',
+                  widget.user == null ? 'Add new user' : 'Edit User',
                   style: theme.textTheme.headlineSmall?.copyWith(
                     color: AppColors.textPrimary,
                     fontWeight: FontWeight.bold,
@@ -144,54 +188,56 @@ class _UserFormDialogState extends State<UserFormDialog> {
             ),
             const SizedBox(height: AppDim.paddingLarge),
 
-            // User info section
-            Container(
-              padding: const EdgeInsets.all(AppDim.paddingMedium),
-              decoration: BoxDecoration(
-                color: AppColors.primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-                border: Border.all(
-                  color: AppColors.primaryColor.withOpacity(0.3),
+            // User info section (only show when editing)
+            if (widget.user != null) ...[
+              Container(
+                padding: const EdgeInsets.all(AppDim.paddingMedium),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                  border: Border.all(
+                    color: AppColors.primaryColor.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: AppColors.primaryColor,
+                      foregroundColor: AppColors.textLight,
+                      child: Text(
+                        widget.user!.email.isNotEmpty 
+                            ? widget.user!.email[0].toUpperCase()
+                            : 'U',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: AppDim.paddingMedium),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.user!.userName ?? 'Unknown User',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'ID: ${widget.user!.id}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppColors.primaryColor,
-                    foregroundColor: AppColors.textLight,
-                    child: Text(
-                      widget.user.email.isNotEmpty 
-                          ? widget.user.email[0].toUpperCase()
-                          : 'U',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(width: AppDim.paddingMedium),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.user.userName ?? 'Unknown User',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'ID: ${widget.user.id}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppDim.paddingLarge),
+              const SizedBox(height: AppDim.paddingLarge),
+            ],
 
             // Form
             Form(
@@ -199,11 +245,38 @@ class _UserFormDialogState extends State<UserFormDialog> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Email field (read-only)
+                  // Name field (for new users)
+                  if (widget.user == null) ...[
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Full Name *',
+                        labelStyle: TextStyle(color: AppColors.textSecondary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        prefixIcon: Icon(Icons.person, color: AppColors.primaryColor),
+                      ),
+                      style: TextStyle(color: AppColors.textPrimary),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Name is required';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
+                  
+                  // Email field
                   TextFormField(
-                    initialValue: widget.user.email,
+                    controller: _emailController,
                     decoration: InputDecoration(
-                      labelText: 'Email Address',
+                      labelText: 'Email Address *',
                       labelStyle: TextStyle(color: AppColors.textSecondary),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(AppDim.radiusSmall),
@@ -212,22 +285,111 @@ class _UserFormDialogState extends State<UserFormDialog> {
                         borderRadius: BorderRadius.circular(AppDim.radiusSmall),
                         borderSide: BorderSide(color: AppColors.primaryColor),
                       ),
-                      suffixIcon: Icon(
-                        Icons.lock_outline,
-                        color: AppColors.textSecondary,
-                        size: 20,
-                      ),
-                      helperText: 'Email cannot be changed for security reasons',
+                      prefixIcon: Icon(Icons.email, color: AppColors.primaryColor),
+                      suffixIcon: widget.user != null
+                          ? Icon(Icons.lock_outline, color: AppColors.textSecondary, size: 20)
+                          : null,
+                      helperText: widget.user != null
+                          ? 'Email cannot be changed for security reasons'
+                          : 'Enter a valid email address',
                       helperStyle: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
                       ),
                     ),
-                    style: TextStyle(color: AppColors.textSecondary),
-                    readOnly: true,
-                    enabled: false,
+                    style: TextStyle(
+                      color: widget.user != null 
+                          ? AppColors.textSecondary 
+                          : AppColors.textPrimary,
+                    ),
+                    readOnly: widget.user != null,
+                    enabled: widget.user == null,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Email is required';
+                      }
+                      if (!value.contains('@')) {
+                        return 'Enter a valid email address';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: AppDim.paddingLarge),
+                  
+                  // Phone field (for new users)
+                  if (widget.user == null) ...[
+                    TextFormField(
+                      controller: _phoneController,
+                      decoration: InputDecoration(
+                        labelText: 'Phone Number',
+                        labelStyle: TextStyle(color: AppColors.textSecondary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        prefixIcon: Icon(Icons.phone, color: AppColors.primaryColor),
+                      ),
+                      style: TextStyle(color: AppColors.textPrimary),
+                      keyboardType: TextInputType.phone,
+                    ),
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
+                  
+                  // Country field (for new users)
+                  if (widget.user == null) ...[
+                    TextFormField(
+                      controller: _countryController,
+                      decoration: InputDecoration(
+                        labelText: 'Country',
+                        labelStyle: TextStyle(color: AppColors.textSecondary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        prefixIcon: Icon(Icons.public, color: AppColors.primaryColor),
+                      ),
+                      style: TextStyle(color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
+                  
+                  // Password field (for new users)
+                  if (widget.user == null) ...[
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Password *',
+                        labelStyle: TextStyle(color: AppColors.textSecondary),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                          borderSide: BorderSide(color: AppColors.primaryColor),
+                        ),
+                        prefixIcon: Icon(Icons.lock, color: AppColors.primaryColor),
+                      ),
+                      style: TextStyle(color: AppColors.textPrimary),
+                      obscureText: true,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Password is required';
+                        }
+                        if (value.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
 
                   // Role dropdown
                   Builder(

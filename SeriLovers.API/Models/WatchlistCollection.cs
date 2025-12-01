@@ -18,6 +18,15 @@ namespace SeriLovers.API.Models
         [StringLength(500)]
         public string? Description { get; set; }
 
+        [StringLength(500)]
+        public string? CoverUrl { get; set; }
+
+        [StringLength(50)]
+        public string? Category { get; set; }
+
+        [StringLength(50)]
+        public string? Status { get; set; }
+
         [Required]
         public int UserId { get; set; }
         public ApplicationUser User { get; set; } = null!;

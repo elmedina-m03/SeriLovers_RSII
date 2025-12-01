@@ -4,12 +4,16 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../models/series.dart';
 import '../../providers/series_provider.dart';
+import '../../providers/watchlist_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../screens/series_detail_screen.dart';
 import '../models/series_filter.dart';
 import '../widgets/fade_slide_transition.dart';
 import '../widgets/mobile_page_route.dart';
 import 'mobile_filter_screen.dart';
 import 'mobile_series_detail_screen.dart';
+import 'mobile_search_screen.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 
 /// Beautiful mobile home screen with banner, sections, and series cards
 class MobileHomeScreen extends StatefulWidget {
@@ -37,7 +41,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
     try {
-      await seriesProvider.fetchSeries(page: 1, pageSize: 50);
+      // Load more series for better variety
+      await seriesProvider.fetchSeries(page: 1, pageSize: 100);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -102,6 +107,45 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
+      appBar: AppBar(
+        title: const Text('SeriLovers'),
+        backgroundColor: AppColors.primaryColor,
+        foregroundColor: AppColors.textLight,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MobileSearchScreen(),
+                ),
+              );
+            },
+            tooltip: 'Search',
+          ),
+          Consumer<WatchlistProvider>(
+            builder: (context, watchlistProvider, child) {
+              return IconButton(
+                icon: const Icon(Icons.favorite_border),
+                onPressed: () {
+                  // Navigate to Lists tab where Favorites will be shown
+                  // The bottom navigation will handle this
+                  // For now, just show a message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Go to Lists tab to see your Favorites'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                tooltip: 'Favorites',
+              );
+            },
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Consumer<SeriesProvider>(
           builder: (context, seriesProvider, child) {
@@ -259,109 +303,107 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     );
   }
 
-  /// Banner with big image and overlay
+  /// Banner with big image and overlay - Clickable to go to series detail
   Widget _buildBanner(Series? series, ThemeData theme) {
     if (series == null) {
       return _buildBannerShimmer();
     }
 
-    return Container(
-      height: 220,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppDim.radiusLarge),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primaryColor.withOpacity(0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MobilePageRoute(
+            builder: (context) {
+              final screenWidth = MediaQuery.of(context).size.width;
+              if (screenWidth < 900) {
+                return MobileSeriesDetailScreen(series: series);
+              } else {
+                return SeriesDetailScreen(series: series);
+              }
+            },
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppDim.radiusLarge),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    AppColors.primaryColor,
-                    AppColors.primaryColor.withOpacity(0.7),
-                    AppColors.accentColor,
-                  ],
-                ),
-              ),
-              child: Image.network(
-                'https://via.placeholder.com/800x400/5932EA/FFFFFF?text=${series.title}',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    color: AppColors.primaryColor,
-                    child: const Center(
-                      child: Icon(
-                        Icons.movie,
-                        size: 80,
-                        color: AppColors.textLight,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withOpacity(0.75),
-                  ],
-                ),
-              ),
-            ),
-            Positioned(
-              left: AppDim.paddingLarge,
-              right: AppDim.paddingLarge,
-              bottom: AppDim.paddingLarge,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    series.title,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      color: AppColors.textLight,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: AppDim.paddingSmall),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.star,
-                        color: Colors.amber.shade300,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        series.rating.toStringAsFixed(1),
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textLight,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+        );
+      },
+      child: Container(
+        height: 220,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(AppDim.radiusLarge),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryColor.withOpacity(0.3),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppDim.radiusLarge),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Series Image
+              ImageWithPlaceholder(
+                imageUrl: series.imageUrl,
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+                placeholderIcon: Icons.movie,
+                placeholderIconSize: 80,
+                placeholderBackgroundColor: AppColors.primaryColor,
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.75),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: AppDim.paddingLarge,
+                right: AppDim.paddingLarge,
+                bottom: AppDim.paddingLarge,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      series.title,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: AppColors.textLight,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: AppDim.paddingSmall),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star,
+                          color: Colors.amber.shade300,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          series.rating.toStringAsFixed(1),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.textLight,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -424,23 +466,81 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Series Image Placeholder
-              Container(
-                height: 120,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryColor.withOpacity(0.2),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
+              // Series Image with Heart Icon
+              Stack(
+                children: [
+                  ImageWithPlaceholder(
+                    imageUrl: series.imageUrl,
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    borderRadius: 12,
+                    placeholderIcon: Icons.movie,
+                    placeholderIconSize: 40,
                   ),
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.movie,
-                    size: 40,
-                    color: AppColors.primaryColor,
+                  // Heart icon overlay
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Consumer<WatchlistProvider>(
+                      builder: (context, watchlistProvider, child) {
+                        return FutureBuilder<bool>(
+                          future: watchlistProvider.isInFavorites(series.id),
+                          builder: (context, snapshot) {
+                            final isFavorite = snapshot.data ?? false;
+                            return IconButton(
+                              icon: Icon(
+                                isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: isFavorite ? Colors.red : Colors.white,
+                                size: 24,
+                              ),
+                              onPressed: () async {
+                                final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                                if (!authProvider.isAuthenticated) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please log in to add favorites'),
+                                      backgroundColor: AppColors.dangerColor,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                
+                                try {
+                                  await watchlistProvider.toggleFavorites(series.id);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          isFavorite 
+                                            ? 'Removed from favorites' 
+                                            : 'Added to favorites',
+                                        ),
+                                        backgroundColor: AppColors.successColor,
+                                        duration: const Duration(seconds: 1),
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Error: $e'),
+                                        backgroundColor: AppColors.dangerColor,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
-                ),
+                ],
               ),
               // Series Info
               Expanded(

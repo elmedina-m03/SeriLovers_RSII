@@ -31,6 +31,8 @@ namespace SeriLovers.API.Models
         
         // Navigation properties
         public Season Season { get; set; } = null!;
+        public ICollection<EpisodeProgress> EpisodeProgresses { get; set; } = new List<EpisodeProgress>();
+        public ICollection<EpisodeReview> EpisodeReviews { get; set; } = new List<EpisodeReview>();
     }
 }
 

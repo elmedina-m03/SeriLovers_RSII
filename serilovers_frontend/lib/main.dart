@@ -4,6 +4,8 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'providers/auth_provider.dart';
 import 'providers/series_provider.dart';
 import 'providers/watchlist_provider.dart';
+import 'providers/episode_progress_provider.dart';
+import 'providers/episode_review_provider.dart';
 import 'providers/admin_user_provider.dart';
 import 'providers/actor_provider.dart';
 import 'providers/admin_stats_provider.dart';
@@ -14,10 +16,16 @@ import 'admin/providers/admin_statistics_provider.dart';
 import 'admin/providers/admin_challenge_provider.dart';
 import 'services/auth_service.dart';
 import 'services/api_service.dart';
+import 'services/watchlist_service.dart';
+import 'services/episode_progress_service.dart';
+import 'services/episode_review_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/series_list_screen.dart';
 import 'screens/series_detail_screen.dart';
 import 'screens/watchlist_screen.dart';
+import 'screens/my_lists_screen.dart';
+import 'screens/create_watchlist_screen.dart';
+import 'screens/watchlist_detail_screen.dart';
 import 'screens/main_tab_screen.dart';
 import 'admin/screens/admin_screen.dart';
 import 'mobile/mobile_main_screen.dart';
@@ -26,6 +34,8 @@ import 'mobile/screens/mobile_login_screen.dart';
 import 'mobile/screens/mobile_home_screen.dart';
 import 'mobile/screens/mobile_series_detail_screen.dart';
 import 'mobile/screens/mobile_edit_profile_screen.dart';
+import 'mobile/screens/mobile_register_screen.dart';
+import 'mobile/providers/mobile_challenges_provider.dart';
 import 'models/series.dart';
 import 'core/theme/app_theme.dart';
 
@@ -85,22 +95,59 @@ class MyApp extends StatelessWidget {
         ),
         ChangeNotifierProxyProvider<AuthProvider, WatchlistProvider>(
           create: (_) {
-            // Create a temporary instance - will be updated in update method
             final tempAuth = AuthProvider(authService: authService);
             return WatchlistProvider(
+              service: WatchlistService(apiService: apiService),
               apiService: apiService,
               authProvider: tempAuth,
             );
           },
           update: (context, authProvider, previous) {
-            // Update the existing WatchlistProvider with the correct AuthProvider
             if (previous != null) {
               previous.updateAuthProvider(authProvider);
               return previous;
             }
-            // Create new instance if previous doesn't exist
             return WatchlistProvider(
+              service: WatchlistService(apiService: apiService),
               apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, EpisodeProgressProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return EpisodeProgressProvider(
+              service: EpisodeProgressService(apiService: apiService),
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return EpisodeProgressProvider(
+              service: EpisodeProgressService(apiService: apiService),
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, EpisodeReviewProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return EpisodeReviewProvider(
+              service: EpisodeReviewService(apiService: apiService),
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return EpisodeReviewProvider(
+              service: EpisodeReviewService(apiService: apiService),
               authProvider: authProvider,
             );
           },
@@ -244,6 +291,25 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => ThemeProvider(),
         ),
+        ChangeNotifierProxyProvider<AuthProvider, MobileChallengesProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return MobileChallengesProvider(
+              apiService: apiService,
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return MobileChallengesProvider(
+              apiService: apiService,
+              authProvider: authProvider,
+            );
+          },
+        ),
       ],
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -264,9 +330,19 @@ class MyApp extends StatelessWidget {
               '/admin': (context) => const AdminScreen(),
               '/mobile': (context) => const MobileMainScreen(),
               '/mobile_login': (context) => const MobileLoginScreen(),
+              '/mobile_register': (context) => const MobileRegisterScreen(),
               '/mobile_home': (context) => const MobileHomeScreen(),
               '/mobile_edit_profile': (context) => const MobileEditProfileScreen(),
               '/watchlist': (context) => const WatchlistScreen(),
+              '/my_lists': (context) => const MyListsScreen(),
+              '/create_list': (context) => const CreateWatchlistScreen(),
+              '/list_view': (context) {
+                final collectionId = ModalRoute.of(context)?.settings.arguments as int?;
+                if (collectionId != null) {
+                  return WatchlistDetailScreen(watchlistCollectionId: collectionId);
+                }
+                return const MyListsScreen();
+              },
             },
             onGenerateRoute: (settings) {
               // Handle series detail route with Series argument

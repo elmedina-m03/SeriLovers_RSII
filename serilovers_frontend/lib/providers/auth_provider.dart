@@ -93,6 +93,24 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Registers a new user with email and password
+  /// 
+  /// [email] - User's email address
+  /// [password] - User's password
+  /// [confirmPassword] - Password confirmation
+  /// 
+  /// Returns true if registration successful, false otherwise
+  /// Note: Registration doesn't automatically log in the user
+  Future<bool> register(String email, String password, String confirmPassword) async {
+    try {
+      await _authService.register(email, password, confirmPassword);
+      return true;
+    } catch (e) {
+      print('Registration failed: $e');
+      return false;
+    }
+  }
+
   /// Logs out the current user
   /// 
   /// Deletes the stored token and updates authentication state

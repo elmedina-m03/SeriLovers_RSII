@@ -126,8 +126,9 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                 Text(
                   'Welcome Back',
                   style: theme.textTheme.headlineMedium?.copyWith(
-                    color: AppColors.textPrimary,
+                    color: const Color(0xFF2D2D2D), // Dark color for visibility
                     fontWeight: FontWeight.bold,
+                    fontSize: 28,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -135,7 +136,8 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                 Text(
                   'Sign in to continue',
                   style: theme.textTheme.bodyLarge?.copyWith(
-                    color: AppColors.textSecondary,
+                    color: const Color(0xFF757575), // Medium gray for visibility
+                    fontSize: 16,
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -149,10 +151,10 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
                     labelText: 'Email',
-                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    labelStyle: const TextStyle(color: Color(0xFF757575)), // Visible label color
                     hintText: 'Enter your email',
-                    hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.6)),
-                    prefixIcon: Icon(Icons.email_outlined, color: AppColors.primaryColor),
+                    hintStyle: TextStyle(color: const Color(0xFF757575).withOpacity(0.6)),
+                    prefixIcon: const Icon(Icons.email_outlined, color: AppColors.primaryColor),
                     filled: true,
                     fillColor: AppColors.cardBackground,
                     border: OutlineInputBorder(
@@ -176,7 +178,10 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                       borderSide: const BorderSide(color: AppColors.dangerColor, width: 2),
                     ),
                   ),
-                  style: TextStyle(color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    color: Color(0xFF2D2D2D), // Dark color for input text visibility
+                    fontSize: 16,
+                  ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your email';
@@ -198,14 +203,14 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                   onFieldSubmitted: (_) => _handleLogin(),
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    labelStyle: const TextStyle(color: Color(0xFF757575)), // Visible label color
                     hintText: 'Enter your password',
-                    hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.6)),
-                    prefixIcon: Icon(Icons.lock_outlined, color: AppColors.primaryColor),
+                    hintStyle: TextStyle(color: const Color(0xFF757575).withOpacity(0.6)),
+                    prefixIcon: const Icon(Icons.lock_outlined, color: AppColors.primaryColor),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                        color: AppColors.textSecondary,
+                        color: const Color(0xFF757575),
                       ),
                       onPressed: () {
                         setState(() {
@@ -236,7 +241,10 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                       borderSide: const BorderSide(color: AppColors.dangerColor, width: 2),
                     ),
                   ),
-                  style: TextStyle(color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    color: Color(0xFF2D2D2D), // Dark color for input text visibility
+                    fontSize: 16,
+                  ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your password';
@@ -286,19 +294,13 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                 // Sign Up Text Button
                 TextButton(
                   onPressed: () {
-                    // TODO: Navigate to sign up screen
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Sign up feature coming soon!'),
-                        backgroundColor: AppColors.primaryColor,
-                      ),
-                    );
+                    Navigator.pushNamed(context, '/mobile_register');
                   },
                   child: RichText(
                     textAlign: TextAlign.center,
                     text: TextSpan(
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textSecondary,
+                        color: const Color(0xFF757575),
                       ),
                       children: [
                         const TextSpan(text: "Don't have an account? "),

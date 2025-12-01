@@ -9,6 +9,7 @@ class Series {
   final List<Actor> actors;
   final int ratingsCount;
   final int watchlistsCount;
+  final String? imageUrl;
 
   Series({
     required this.id,
@@ -20,6 +21,7 @@ class Series {
     required this.actors,
     required this.ratingsCount,
     required this.watchlistsCount,
+    this.imageUrl,
   });
 
 
@@ -38,6 +40,7 @@ class Series {
           [],
       ratingsCount: json['ratingsCount'] as int? ?? 0,
       watchlistsCount: json['watchlistsCount'] as int? ?? 0,
+      imageUrl: json['imageUrl'] as String?,
     );
   }
 
@@ -53,6 +56,7 @@ class Series {
       'actors': actors.map((a) => a.toJson()).toList(),
       'ratingsCount': ratingsCount,
       'watchlistsCount': watchlistsCount,
+      'imageUrl': imageUrl,
     };
   }
 }
@@ -91,6 +95,7 @@ class Actor {
   final DateTime? dateOfBirth;
   final int? age;
   final int seriesCount;
+  final String? imageUrl;
 
   Actor({
     required this.id,
@@ -100,6 +105,7 @@ class Actor {
     this.dateOfBirth,
     this.age,
     this.seriesCount = 0,
+    this.imageUrl,
   });
 
   factory Actor.fromJson(Map<String, dynamic> json) {
@@ -114,6 +120,7 @@ class Actor {
       age: json['age'] as int?,
       seriesCount: (json['series'] as List<dynamic>?)?.length ?? 
                    (json['seriesCount'] as int?) ?? 0,
+      imageUrl: json['imageUrl'] as String?,
     );
   }
   
@@ -138,6 +145,7 @@ class Actor {
       'fullName': fullName,
       'dateOfBirth': dateOfBirth?.toIso8601String(),
       'seriesCount': seriesCount,
+      'imageUrl': imageUrl,
     };
   }
 }

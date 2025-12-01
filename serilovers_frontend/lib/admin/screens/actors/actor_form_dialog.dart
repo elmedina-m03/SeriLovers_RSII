@@ -1,9 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dim.dart';
 import '../../../models/series.dart';
+import '../../../services/api_service.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../utils/file_picker_helper.dart';
 import '../../providers/admin_actor_provider.dart';
+import '../../../core/widgets/image_with_placeholder.dart';
 
 /// Dialog for creating or editing an actor
 /// 
@@ -30,6 +35,8 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
   final _biographyController = TextEditingController();
   final _dateOfBirthController = TextEditingController();
 
+  String? _uploadedImageUrl; // Store uploaded image URL
+  bool _isUploadingImage = false;
   DateTime? _selectedDate;
   bool _isLoading = false;
 
@@ -60,12 +67,94 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
       if (_selectedDate != null) {
         _dateOfBirthController.text = _formatDate(_selectedDate!);
       }
+      _uploadedImageUrl = actor.imageUrl;
     }
   }
 
   /// Format date for display
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
+  }
+
+  /// Pick and upload image file
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final result = await FilePickerHelper.pickImage();
+      if (result == null) return; // User cancelled
+
+      setState(() {
+        _isUploadingImage = true;
+      });
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final apiService = ApiService();
+      final token = authProvider.token;
+
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      dynamic uploadResponse;
+
+      if (FilePickerHelper.isWeb) {
+        // Web: use bytes
+        final bytes = FilePickerHelper.getBytes(result);
+        final fileName = FilePickerHelper.getFileName(result);
+        if (bytes == null || fileName == null) {
+          throw Exception('Failed to read file');
+        }
+        uploadResponse = await apiService.uploadFileFromBytes(
+          '/ImageUpload/upload',
+          bytes,
+          fileName,
+          folder: 'actors',
+          token: token,
+        );
+      } else {
+        // Desktop/Mobile: use File
+        final file = FilePickerHelper.getFile(result);
+        if (file == null) {
+          throw Exception('Failed to read file');
+        }
+        uploadResponse = await apiService.uploadFile(
+          '/ImageUpload/upload',
+          file,
+          folder: 'actors',
+          token: token,
+        );
+      }
+
+      if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
+        setState(() {
+          _uploadedImageUrl = uploadResponse['imageUrl'] as String;
+          _isUploadingImage = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image uploaded successfully'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+        }
+      } else {
+        throw Exception('Invalid response from server');
+      }
+    } catch (e) {
+      print('Error uploading image: $e');
+      if (mounted) {
+        setState(() {
+          _isUploadingImage = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading image: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
   }
 
   /// Show date picker
@@ -114,6 +203,7 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
         'lastName': _lastNameController.text.trim(),
         'biography': _biographyController.text.trim(),
         'dateOfBirth': _selectedDate?.toIso8601String(),
+        'imageUrl': _uploadedImageUrl,
       };
 
       if (widget.actor == null) {
@@ -353,6 +443,94 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
                             fontSize: 12,
                           ),
                         ),
+                      ),
+                      const SizedBox(height: AppDim.paddingMedium),
+
+                      // Image upload field
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Actor Image',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: AppDim.paddingSmall),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _isUploadingImage ? null : _pickAndUploadImage,
+                                  icon: _isUploadingImage
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.textLight),
+                                          ),
+                                        )
+                                      : const Icon(Icons.image, size: 20),
+                                  label: Text(_isUploadingImage ? 'Uploading...' : 'Choose Image'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryColor,
+                                    foregroundColor: AppColors.textLight,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppDim.paddingMedium,
+                                      vertical: AppDim.paddingMedium,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (_uploadedImageUrl != null) ...[
+                                const SizedBox(width: AppDim.paddingSmall),
+                                IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _uploadedImageUrl = null;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.delete_outline),
+                                  color: AppColors.dangerColor,
+                                  tooltip: 'Remove image',
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (_uploadedImageUrl != null || widget.actor?.imageUrl != null) ...[
+                            const SizedBox(height: AppDim.paddingSmall),
+                            Container(
+                              height: 100,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                border: Border.all(color: AppColors.textSecondary.withOpacity(0.3)),
+                              ),
+                              child: ImageWithPlaceholder(
+                                imageUrl: _uploadedImageUrl ?? widget.actor?.imageUrl,
+                                height: 100,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                borderRadius: AppDim.radiusSmall,
+                                placeholderIcon: Icons.person,
+                              ),
+                            ),
+                            if (widget.actor?.imageUrl != null && _uploadedImageUrl == null) ...[
+                              const SizedBox(height: AppDim.paddingSmall),
+                              Text(
+                                'Current image (click "Choose Image" to change)',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ],
                       ),
                     ],
                   ),

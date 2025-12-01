@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using SeriLovers.API.Data;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
@@ -28,19 +30,55 @@ namespace SeriLovers.API.Controllers
         private readonly ITokenService _tokenService;
         private readonly ILogger<AuthController> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ApplicationDbContext _context;
 
         public AuthController(
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             ITokenService tokenService,
             ILogger<AuthController> logger,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,
+            ApplicationDbContext context)
         {
             _userManager = userManager;
             _signInManager = signInManager;
             _tokenService = tokenService;
             _logger = logger;
             _httpClientFactory = httpClientFactory;
+            _context = context;
+        }
+
+        /// <summary>
+        /// Creates a default "Favorites" watchlist collection for a new user.
+        /// </summary>
+        private async Task EnsureDefaultFavoritesListAsync(int userId)
+        {
+            try
+            {
+                // Check if user already has a "Favorites" list
+                var favoritesExists = await _context.WatchlistCollections
+                    .AnyAsync(c => c.UserId == userId && c.Name.ToLower() == "favorites");
+
+                if (!favoritesExists)
+                {
+                    var favoritesList = new WatchlistCollection
+                    {
+                        Name = "Favorites",
+                        Description = "Your favorite series",
+                        UserId = userId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.WatchlistCollections.Add(favoritesList);
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation("Created default 'Favorites' list for user {UserId}", userId);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to create default Favorites list for user {UserId}", userId);
+                // Don't throw - this is not critical for registration
+            }
         }
 
         /// <summary>
@@ -168,6 +206,9 @@ namespace SeriLovers.API.Controllers
                         Message = "Failed to create local user account."
                     });
                 }
+
+                // Create default "Favorites" list for the new user
+                await EnsureDefaultFavoritesListAsync(user.Id);
             }
 
             var loginInfo = new UserLoginInfo("Google", googleUser.Id ?? googleUser.Email, "Google");
@@ -267,6 +308,9 @@ namespace SeriLovers.API.Controllers
             if (result.Succeeded)
             {
                 _logger.LogInformation("User created a new account with password.");
+
+                // Create default "Favorites" list for the new user
+                await EnsureDefaultFavoritesListAsync(user.Id);
 
                 return Ok(new AuthResponseDto
                 {

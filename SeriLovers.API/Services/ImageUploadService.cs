@@ -75,10 +75,10 @@ namespace SeriLovers.API.Services
             return $"/uploads/{folderName}/{fileName}";
         }
 
-        public async Task<bool> DeleteImageAsync(string imageUrl)
+        public Task<bool> DeleteImageAsync(string imageUrl)
         {
             if (string.IsNullOrEmpty(imageUrl))
-                return false;
+                return Task.FromResult(false);
 
             try
             {
@@ -96,13 +96,13 @@ namespace SeriLovers.API.Services
                 if (File.Exists(filePath))
                 {
                     File.Delete(filePath);
-                    return true;
+                    return Task.FromResult(true);
                 }
-                return false;
+                return Task.FromResult(false);
             }
             catch
             {
-                return false;
+                return Task.FromResult(false);
             }
         }
 

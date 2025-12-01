@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../models/series.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 
 /// Mobile watchlist screen displaying watchlist items with poster thumbnails
 class MobileWatchlistScreen extends StatefulWidget {
@@ -111,6 +112,15 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
         backgroundColor: AppColors.primaryColor,
         foregroundColor: AppColors.textLight,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.folder),
+            tooltip: 'My Lists',
+            onPressed: () {
+              Navigator.pushNamed(context, '/my_lists');
+            },
+          ),
+        ],
       ),
       body: Consumer<WatchlistProvider>(
         builder: (context, watchlistProvider, child) {
@@ -211,7 +221,7 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          subtitle: series.description != null
+          subtitle: series.description != null && series.description!.isNotEmpty
               ? Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
@@ -219,11 +229,12 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: AppColors.textSecondary,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 )
               : null,
+          isThreeLine: false,
           trailing: IconButton(
             icon: const Icon(Icons.delete_outline),
             color: AppColors.dangerColor,
@@ -251,24 +262,14 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
         color: AppColors.primaryColor.withOpacity(0.2),
         borderRadius: BorderRadius.circular(AppDim.radiusSmall),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-        child: Image.network(
-          'https://via.placeholder.com/60x90/5932EA/FFFFFF?text=${series.title.substring(0, 1)}',
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            return Container(
-              color: AppColors.primaryColor.withOpacity(0.2),
-              child: Center(
-                child: Icon(
-                  Icons.movie,
-                  color: AppColors.primaryColor,
-                  size: 24,
-                ),
-              ),
-            );
-          },
-        ),
+      child: ImageWithPlaceholder(
+        imageUrl: series.imageUrl,
+        height: 60,
+        width: 45,
+        fit: BoxFit.cover,
+        borderRadius: AppDim.radiusSmall,
+        placeholderIcon: Icons.movie,
+        placeholderIconSize: 24,
       ),
     );
   }

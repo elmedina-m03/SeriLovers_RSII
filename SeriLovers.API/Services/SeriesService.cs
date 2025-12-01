@@ -59,12 +59,16 @@ namespace SeriLovers.API.Services
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var keyword = search.Trim().ToLower();
-                // Use a subquery to find series with matching actors
+
+                // Use a subquery to find series with matching actors.
+                // IMPORTANT: We cannot use Actor.FullName here because it's a computed
+                // property ([NotMapped]) and EF Core can't translate it to SQL,
+                // which would cause a 500 error when searching.
                 var matchingSeriesIds = _context.SeriesActors
                     .Where(sa => sa.Actor != null && (
                         sa.Actor.FirstName.ToLower().Contains(keyword) ||
                         sa.Actor.LastName.ToLower().Contains(keyword) ||
-                        sa.Actor.FullName.ToLower().Contains(keyword)
+                        (sa.Actor.FirstName + " " + sa.Actor.LastName).ToLower().Contains(keyword)
                     ))
                     .Select(sa => sa.SeriesId)
                     .Distinct();

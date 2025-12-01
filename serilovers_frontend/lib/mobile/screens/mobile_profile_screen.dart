@@ -6,6 +6,9 @@ import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../core/widgets/image_with_placeholder.dart';
+import 'mobile_status_screen.dart';
+import 'mobile_statistics_screen.dart';
 
 /// Mobile profile screen showing user info and logout button
 class MobileProfileScreen extends StatefulWidget {
@@ -17,9 +20,9 @@ class MobileProfileScreen extends StatefulWidget {
 
 class _MobileProfileScreenState extends State<MobileProfileScreen> {
   /// Get user info from JWT token
-  Map<String, String> _getUserInfo(String? token) {
+  Map<String, String?> _getUserInfo(String? token) {
     if (token == null || token.isEmpty) {
-      return {'email': 'Unknown', 'name': 'Unknown User'};
+      return {'email': 'Unknown', 'name': 'Unknown User', 'avatarUrl': null};
     }
 
     try {
@@ -39,9 +42,10 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
         }
       }
       
-      return {'email': email, 'name': name};
+      final avatarUrl = decodedToken['avatarUrl'] as String?;
+      return {'email': email, 'name': name, 'avatarUrl': avatarUrl};
     } catch (e) {
-      return {'email': 'Unknown', 'name': 'Unknown User'};
+      return {'email': 'Unknown', 'name': 'Unknown User', 'avatarUrl': null};
     }
   }
 
@@ -152,17 +156,11 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                   const SizedBox(height: AppDim.paddingLarge),
 
                   // User Avatar Circle
-                  CircleAvatar(
+                  AvatarImage(
+                    avatarUrl: userInfo['avatarUrl'],
                     radius: 60,
-                    backgroundColor: AppColors.primaryColor,
-                    child: Text(
-                      initials,
-                      style: const TextStyle(
-                        color: AppColors.textLight,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 36,
-                      ),
-                    ),
+                    initials: initials,
+                    placeholderIcon: Icons.person,
                   ),
 
                   const SizedBox(height: AppDim.paddingLarge),
@@ -178,9 +176,9 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
 
                   const SizedBox(height: AppDim.paddingSmall),
 
-                  // User Email
+                  // Username (from email)
                   Text(
-                    userInfo['email']!,
+                    '@${userInfo['email']!.split('@')[0]}',
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -188,129 +186,146 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
 
                   const SizedBox(height: AppDim.paddingLarge),
 
-                  // Joined date card (if available)
-                  if (joinedDate != null)
-                    Card(
-                      color: AppColors.cardBackground,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                      ),
-                      elevation: 2,
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.event_available,
-                          color: AppColors.primaryColor,
-                        ),
-                        title: const Text('Joined'),
-                        subtitle: Text(
-                          DateFormat('MMM d, yyyy').format(joinedDate),
-                        ),
-                      ),
-                    ),
-
-                  const SizedBox(height: AppDim.paddingLarge),
-
-                  // Dark Mode Toggle
-                  Consumer<ThemeProvider>(
-                    builder: (context, themeProvider, child) {
-                      return Card(
-                        color: AppColors.cardBackground,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                        ),
-                        elevation: 2,
-                        child: ListTile(
-                          leading: Icon(
-                            themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-                            color: AppColors.primaryColor,
-                          ),
-                          title: const Text('Dark Mode'),
-                          subtitle: Text(
-                            themeProvider.isDarkMode ? 'Enabled' : 'Disabled',
-                          ),
-                          trailing: Switch(
-                            value: themeProvider.isDarkMode,
-                            onChanged: (value) {
-                              themeProvider.toggleDarkMode();
-                            },
-                            activeColor: AppColors.primaryColor,
-                          ),
+                  // Menu Items
+                  _buildMenuCard(
+                    context,
+                    theme,
+                    icon: Icons.edit,
+                    title: 'Edit Profile',
+                    onTap: () async {
+                      final result = await Navigator.pushNamed(
+                        context,
+                        '/mobile_edit_profile',
+                      );
+                      if (result == true && mounted) {
+                        setState(() {});
+                      }
+                    },
+                  ),
+                  
+                  _buildMenuCard(
+                    context,
+                    theme,
+                    icon: Icons.bookmark,
+                    title: 'Status',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const MobileStatusScreen(),
                         ),
                       );
                     },
                   ),
-
-                  const SizedBox(height: AppDim.paddingMedium),
-
-                  // Edit Profile Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await Navigator.pushNamed(
-                          context,
-                          '/mobile_edit_profile',
-                        );
-                        if (result == true && mounted) {
-                          // Refresh the screen if profile was updated
-                          setState(() {});
-                        }
-                      },
-                      icon: const Icon(Icons.edit),
-                      label: const Text(
-                        'Edit Profile',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                  
+                  _buildMenuCard(
+                    context,
+                    theme,
+                    icon: Icons.bar_chart,
+                    title: 'Statistics',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const MobileStatisticsScreen(),
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: AppColors.textLight,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppDim.paddingMedium,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                        ),
-                        elevation: 4,
-                      ),
-                    ),
+                      );
+                    },
                   ),
-
-                  const SizedBox(height: AppDim.paddingMedium),
-
-                  // Logout Button
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _handleLogout(context),
-                      icon: const Icon(Icons.logout),
-                      label: const Text(
-                        'Logout',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                  
+                  _buildMenuCard(
+                    context,
+                    theme,
+                    icon: Icons.settings,
+                    title: 'Settings',
+                    onTap: () {
+                      // Show settings dialog
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Settings'),
+                          content: Consumer<ThemeProvider>(
+                            builder: (context, themeProvider, child) {
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: Icon(
+                                      themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                                      color: AppColors.primaryColor,
+                                    ),
+                                    title: const Text('Dark Mode'),
+                                    trailing: Switch(
+                                      value: themeProvider.isDarkMode,
+                                      onChanged: (value) {
+                                        themeProvider.toggleDarkMode();
+                                      },
+                                      activeColor: AppColors.primaryColor,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Close'),
+                            ),
+                          ],
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: AppColors.textLight,
-                        padding: const EdgeInsets.symmetric(
-                          vertical: AppDim.paddingMedium,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                        ),
-                        elevation: 4,
-                      ),
-                    ),
+                      );
+                    },
+                  ),
+                  
+                  _buildMenuCard(
+                    context,
+                    theme,
+                    icon: Icons.logout,
+                    title: 'Log out',
+                    onTap: () => _handleLogout(context),
+                    isDestructive: true,
                   ),
                 ],
               ),
             );
           },
         ),
+      ),
+    );
+  }
+
+  Widget _buildMenuCard(
+    BuildContext context,
+    ThemeData theme, {
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppDim.paddingSmall),
+      color: AppColors.cardBackground,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+      ),
+      elevation: 2,
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: isDestructive ? AppColors.dangerColor : AppColors.primaryColor,
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isDestructive ? AppColors.dangerColor : AppColors.textPrimary,
+          ),
+        ),
+        trailing: Icon(
+          Icons.chevron_right,
+          color: AppColors.textSecondary,
+        ),
+        onTap: onTap,
       ),
     );
   }

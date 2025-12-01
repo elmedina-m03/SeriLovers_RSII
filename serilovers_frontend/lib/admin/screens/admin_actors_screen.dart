@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 import '../../models/series.dart';
 import '../providers/admin_actor_provider.dart';
 import 'actors/actor_form_dialog.dart';
@@ -374,6 +375,9 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                 }),
                 columns: [
                   const DataColumn(
+                    label: Text('Photo'),
+                  ),
+                  const DataColumn(
                     label: Text('First Name'),
                   ),
                   DataColumn(
@@ -408,11 +412,30 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                     label: Text('Actions'),
                   ),
                 ],
-                sortColumnIndex: _sortBy == 'lastName' ? 1 : (_sortBy == 'age' ? 3 : null),
+                sortColumnIndex: _sortBy == 'lastName' ? 2 : (_sortBy == 'age' ? 4 : null),
                 sortAscending: _sortAscending,
                 rows: adminActorProvider.items.map((actor) {
                   return DataRow(
                     cells: [
+                      DataCell(
+                        Builder(
+                          builder: (context) {
+                            // Debug: log image URL for troubleshooting
+                            if (actor.imageUrl != null && actor.imageUrl!.isNotEmpty) {
+                              print('📸 Actor "${actor.fullName}" has imageUrl: ${actor.imageUrl}');
+                            }
+                            return ImageWithPlaceholder(
+                              imageUrl: actor.imageUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              borderRadius: 8,
+                              placeholderIcon: Icons.person,
+                              placeholderIconSize: 24,
+                            );
+                          },
+                        ),
+                      ),
                       DataCell(
                         Text(
                           actor.firstName,

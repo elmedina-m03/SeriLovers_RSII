@@ -14,6 +14,8 @@ namespace SeriLovers.API.Models
         public ICollection<Watchlist> Watchlists { get; set; } = new List<Watchlist>();
         public ICollection<FavoriteCharacter> FavoriteCharacters { get; set; } = new List<FavoriteCharacter>();
         public ICollection<RecommendationLog> RecommendationLogs { get; set; } = new List<RecommendationLog>();
+        public ICollection<EpisodeProgress> EpisodeProgresses { get; set; } = new List<EpisodeProgress>();
+        public ICollection<EpisodeReview> EpisodeReviews { get; set; } = new List<EpisodeReview>();
     }
 }
 

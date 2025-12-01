@@ -136,6 +136,49 @@ class AuthService {
     }
   }
 
+  /// Registers a new user with email and password
+  /// 
+  /// [email] - User's email address
+  /// [password] - User's password
+  /// [confirmPassword] - Password confirmation (must match password)
+  /// 
+  /// Returns a Map containing the API response
+  /// 
+  /// Throws [ApiException] or [AuthException] on failure
+  Future<Map<String, dynamic>> register(String email, String password, String confirmPassword) async {
+    try {
+      if (password != confirmPassword) {
+        throw AuthException('Passwords do not match');
+      }
+
+      final response = await _apiService.post(
+        '/Auth/register',
+        {
+          'email': email,
+          'password': password,
+          'confirmPassword': confirmPassword,
+        },
+      );
+
+      // Ensure response is a Map
+      if (response is! Map<String, dynamic>) {
+        throw AuthException('Invalid response format from server');
+      }
+
+      // Registration doesn't automatically log in, so we don't save token here
+      return response;
+    } on ApiException catch (e) {
+      // Convert API exceptions to user-friendly auth exceptions
+      throw AuthException(
+        _getFriendlyErrorMessage(e.statusCode, e.message),
+        e.statusCode,
+      );
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      throw AuthException('Registration failed: ${e.toString()}');
+    }
+  }
+
   /// Updates the current user's profile
   /// 
   /// [updateData] - Map containing fields to update (name, email, currentPassword, newPassword, avatar, avatarFileName)

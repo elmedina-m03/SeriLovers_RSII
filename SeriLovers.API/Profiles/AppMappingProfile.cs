@@ -103,6 +103,30 @@ namespace SeriLovers.API.Profiles
             CreateMap<WatchlistCollectionCreateDto, WatchlistCollection>();
             CreateMap<WatchlistCollectionUpdateDto, WatchlistCollection>()
                 .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+
+            // EpisodeProgress mappings
+            CreateMap<EpisodeProgress, EpisodeProgressDto>()
+                .ForMember(dest => dest.UserName, opt => opt.MapFrom(src => src.User != null ? src.User.UserName : null))
+                .ForMember(dest => dest.EpisodeTitle, opt => opt.MapFrom(src => src.Episode != null ? src.Episode.Title : null))
+                .ForMember(dest => dest.EpisodeNumber, opt => opt.MapFrom(src => src.Episode != null ? src.Episode.EpisodeNumber : 0))
+                .ForMember(dest => dest.SeasonId, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null ? src.Episode.Season.Id : 0))
+                .ForMember(dest => dest.SeasonNumber, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null ? src.Episode.Season.SeasonNumber : 0))
+                .ForMember(dest => dest.SeriesId, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null && src.Episode.Season.Series != null ? src.Episode.Season.Series.Id : 0))
+                .ForMember(dest => dest.SeriesTitle, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null && src.Episode.Season.Series != null ? src.Episode.Season.Series.Title : null));
+            CreateMap<EpisodeProgressCreateDto, EpisodeProgress>();
+
+            // EpisodeReview mappings
+            CreateMap<EpisodeReview, EpisodeReviewDto>()
+                .ForMember(dest => dest.UserName, opt => opt.MapFrom(src => src.User != null ? src.User.UserName : null))
+                .ForMember(dest => dest.UserAvatarUrl, opt => opt.MapFrom(src => src.User != null ? src.User.AvatarUrl : null))
+                .ForMember(dest => dest.EpisodeTitle, opt => opt.MapFrom(src => src.Episode != null ? src.Episode.Title : null))
+                .ForMember(dest => dest.EpisodeNumber, opt => opt.MapFrom(src => src.Episode != null ? src.Episode.EpisodeNumber : 0))
+                .ForMember(dest => dest.SeasonId, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null ? src.Episode.Season.Id : 0))
+                .ForMember(dest => dest.SeasonNumber, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null ? src.Episode.Season.SeasonNumber : 0))
+                .ForMember(dest => dest.SeriesId, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null && src.Episode.Season.Series != null ? src.Episode.Season.Series.Id : 0))
+                .ForMember(dest => dest.SeriesTitle, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null && src.Episode.Season.Series != null ? src.Episode.Season.Series.Title : null));
+            CreateMap<EpisodeReviewCreateDto, EpisodeReview>();
+            CreateMap<EpisodeReviewUpdateDto, EpisodeReview>();
         }
     }
 }

@@ -3,6 +3,8 @@ import 'screens/mobile_home_screen.dart';
 import 'screens/mobile_categories_screen.dart';
 import 'screens/mobile_watchlist_screen.dart';
 import 'screens/mobile_profile_screen.dart';
+import 'screens/mobile_challenges_screen.dart';
+import '../../screens/my_lists_screen.dart';
 import '../core/theme/app_colors.dart';
 
 /// Main mobile screen with bottom navigation and 4 tabs
@@ -24,8 +26,10 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       case 1:
         return const MobileCategoriesScreen();
       case 2:
-        return const MobileWatchlistScreen();
+        return const MyListsScreen(); // Show My Lists screen (Watchlist)
       case 3:
+        return const MobileChallengesScreen();
+      case 4:
         return const MobileProfileScreen();
       default:
         return const MobileHomeScreen();
@@ -72,9 +76,9 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
         elevation: 8,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
+            icon: Icon(Icons.explore_outlined),
+            activeIcon: Icon(Icons.explore),
+            label: 'Explore',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.category_outlined),
@@ -84,7 +88,12 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.bookmark_outline),
             activeIcon: Icon(Icons.bookmark),
-            label: 'Watchlist',
+            label: 'Lists',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.flag_outlined),
+            activeIcon: Icon(Icons.flag),
+            label: 'Challenges',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

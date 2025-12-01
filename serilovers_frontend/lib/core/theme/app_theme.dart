@@ -337,10 +337,10 @@ class AppTheme {
       // Input Decoration Theme
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+          borderRadius: BorderRadius.circular(12),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+          borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
             color: Colors.grey.shade700,
             width: 1,

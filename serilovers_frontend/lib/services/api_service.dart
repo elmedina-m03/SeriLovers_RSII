@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 /// Custom exception for API errors
 class ApiException implements Exception {
@@ -127,6 +129,111 @@ class ApiService {
     );
 
     return _handleResponse(response);
+  }
+
+  /// Uploads a file to the server
+  /// 
+  /// [path] - API endpoint path (relative to baseUrl)
+  /// [file] - The file to upload (File object)
+  /// [folder] - Folder name for organizing uploads (series, actors, avatars)
+  /// [token] - Optional authentication token
+  /// Returns the response containing the imageUrl
+  Future<dynamic> uploadFile(String path, File file, {String folder = 'general', String? token}) async {
+    final uri = Uri.parse('$baseUrl$path?folder=$folder');
+    
+    // Build multipart request
+    final request = http.MultipartRequest('POST', uri);
+    
+    // Add authorization header
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+    
+    // Get file extension and determine content type
+    final fileName = file.path.split('/').last;
+    final extension = fileName.split('.').last.toLowerCase();
+    final contentType = _getContentType(extension);
+    
+    // Add file to request
+    final fileStream = file.openRead();
+    final fileLength = await file.length();
+    final multipartFile = http.MultipartFile(
+      'file',
+      fileStream,
+      fileLength,
+      filename: fileName,
+      contentType: contentType,
+    );
+    
+    request.files.add(multipartFile);
+    
+    // Send request
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    return _handleResponse(response);
+  }
+
+  /// Uploads a file from bytes (for web platform)
+  /// 
+  /// [path] - API endpoint path (relative to baseUrl)
+  /// [bytes] - File bytes
+  /// [fileName] - Name of the file
+  /// [folder] - Folder name for organizing uploads
+  /// [token] - Optional authentication token
+  Future<dynamic> uploadFileFromBytes(
+    String path,
+    List<int> bytes,
+    String fileName, {
+    String folder = 'general',
+    String? token,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path?folder=$folder');
+    
+    // Build multipart request
+    final request = http.MultipartRequest('POST', uri);
+    
+    // Add authorization header
+    if (token != null && token.isNotEmpty) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+    
+    // Get content type from file extension
+    final extension = fileName.split('.').last.toLowerCase();
+    final contentType = _getContentType(extension);
+    
+    // Add file to request
+    final multipartFile = http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: fileName,
+      contentType: contentType,
+    );
+    
+    request.files.add(multipartFile);
+    
+    // Send request
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    return _handleResponse(response);
+  }
+
+  /// Gets the MediaType for a file extension
+  MediaType _getContentType(String extension) {
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return MediaType('image', 'jpeg');
+      case 'png':
+        return MediaType('image', 'png');
+      case 'gif':
+        return MediaType('image', 'gif');
+      case 'webp':
+        return MediaType('image', 'webp');
+      default:
+        return MediaType('image', 'jpeg');
+    }
   }
 }
 

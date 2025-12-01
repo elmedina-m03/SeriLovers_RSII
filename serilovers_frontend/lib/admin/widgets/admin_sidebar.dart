@@ -4,6 +4,7 @@ import 'package:jwt_decoder/jwt_decoder.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../providers/auth_provider.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 
 /// Admin sidebar widget with vertical menu items
 class AdminSidebar extends StatelessWidget {
@@ -20,9 +21,9 @@ class AdminSidebar extends StatelessWidget {
   });
 
   /// Get user info from JWT token
-  Map<String, String> _getUserInfo(String? token) {
+  Map<String, String?> _getUserInfo(String? token) {
     if (token == null || token.isEmpty) {
-      return {'email': 'Unknown', 'role': 'Unknown'};
+      return {'email': 'Unknown', 'role': 'Unknown', 'avatarUrl': null};
     }
     
     try {
@@ -31,9 +32,10 @@ class AdminSidebar extends StatelessWidget {
       final role = decodedToken['role'] as String? ?? 
                    (decodedToken['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] as String?) ?? 
                    'User';
-      return {'email': email, 'role': role};
+      final avatarUrl = decodedToken['avatarUrl'] as String?;
+      return {'email': email, 'role': role, 'avatarUrl': avatarUrl};
     } catch (e) {
-      return {'email': 'Unknown', 'role': 'Unknown'};
+      return {'email': 'Unknown', 'role': 'Unknown', 'avatarUrl': null};
     }
   }
 
@@ -97,18 +99,12 @@ class AdminSidebar extends StatelessWidget {
                 // User info with avatar
                 Row(
                   children: [
-                    // Circular avatar with initials
-                    CircleAvatar(
+                    // Circular avatar with image or initials
+                    AvatarImage(
+                      avatarUrl: userInfo['avatarUrl'],
                       radius: 20,
-                      backgroundColor: AppColors.primaryColor,
-                      child: Text(
-                        initials,
-                        style: const TextStyle(
-                          color: AppColors.textLight,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
+                      initials: initials,
+                      placeholderIcon: Icons.person,
                     ),
                     const SizedBox(width: 12),
                     // User name and role

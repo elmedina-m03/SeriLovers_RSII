@@ -67,7 +67,7 @@ namespace SeriLovers.API.Migrations
                 column: "CollectionId",
                 principalTable: "WatchlistCollections",
                 principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
+                onDelete: ReferentialAction.NoAction);
         }
 
         /// <inheritdoc />

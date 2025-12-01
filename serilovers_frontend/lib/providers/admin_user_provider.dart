@@ -352,6 +352,90 @@ class AdminUserProvider extends ChangeNotifier {
     }
   }
 
+  /// Creates a new user
+  /// 
+  /// [email] - User email (required)
+  /// [password] - User password (required)
+  /// [name] - User full name (optional)
+  /// [phone] - User phone number (optional)
+  /// [country] - User country (optional)
+  /// [role] - User role (optional, defaults to 'User')
+  Future<ApplicationUser> createUser({
+    required String email,
+    required String password,
+    String? name,
+    String? phone,
+    String? country,
+    String? role,
+  }) async {
+    try {
+      final token = _authProvider.token;
+      print('🔑 AdminUserProvider: Creating user with token available: ${token != null && token.isNotEmpty}');
+      
+      if (token == null || token.isEmpty) {
+        print('⚠️ AdminUserProvider: No authentication token available for create');
+        throw Exception('Authentication required');
+      }
+
+      // Prepare create data
+      final createData = <String, dynamic>{
+        'email': email,
+        'password': password,
+      };
+      
+      // Add optional fields if provided
+      if (name != null && name.isNotEmpty) {
+        createData['name'] = name;
+      }
+      if (phone != null && phone.isNotEmpty) {
+        createData['phone'] = phone;
+      }
+      if (country != null && country.isNotEmpty) {
+        createData['country'] = country;
+      }
+      if (role != null && role.isNotEmpty) {
+        createData['role'] = role;
+      }
+      
+      print('📡 AdminUserProvider: Creating user with data: $createData');
+      
+      // Use register endpoint (may need admin-specific endpoint for role assignment)
+      final response = await _apiService.post(
+        '/Auth/register',
+        createData,
+        token: token,
+      );
+
+      print('📥 AdminUserProvider: Create user response received');
+      print('Response: $response');
+      
+      // After creation, fetch the user list to get the new user
+      await fetchFiltered();
+      
+      // Find the newly created user by email
+      final newUser = users.firstWhere(
+        (user) => user.email.toLowerCase() == email.toLowerCase(),
+        orElse: () => throw Exception('User created but not found in list'),
+      );
+      
+      // If role was specified and different from default, update it
+      if (role != null && role.isNotEmpty && role != 'User') {
+        try {
+          await updateUser(newUser.id, role: role);
+          return getUserById(newUser.id) ?? newUser;
+        } catch (e) {
+          print('⚠️ AdminUserProvider: Could not set role, user created with default role: $e');
+        }
+      }
+      
+      print('✅ AdminUserProvider: User created successfully with ID: ${newUser.id}');
+      return newUser;
+    } catch (e) {
+      print('❌ AdminUserProvider: Error creating user: $e');
+      rethrow;
+    }
+  }
+
   /// Gets a user by ID from the current users list
   /// 
   /// [userId] - The user ID to find

@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../providers/series_provider.dart';
-import '../../widgets/series_card.dart';
+import '../widgets/series_card_mobile.dart';
 
 /// Mobile search screen for finding series
 class MobileSearchScreen extends StatefulWidget {
@@ -16,9 +17,11 @@ class MobileSearchScreen extends StatefulWidget {
 class _MobileSearchScreenState extends State<MobileSearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  Timer? _debounceTimer;
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -29,13 +32,21 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
       _query = query;
     });
 
+    // Cancel previous timer
+    _debounceTimer?.cancel();
+
     if (query.isEmpty) {
       // Do not search on empty query; keep current items or show hint
       return;
     }
 
-    final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-    await seriesProvider.searchSeries(query);
+    // Debounce: wait 500ms before searching
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (!mounted) return;
+      
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+      await seriesProvider.searchSeries(query);
+    });
   }
 
   @override
@@ -119,7 +130,7 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
                   if (seriesProvider.items.isEmpty) {
                     return Center(
                       child: Text(
-                        'No series found.',
+                        'No results',
                         style: theme.textTheme.bodyLarge?.copyWith(
                           color: AppColors.textSecondary,
                         ),
@@ -131,7 +142,7 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
                     itemCount: seriesProvider.items.length,
                     itemBuilder: (context, index) {
                       final series = seriesProvider.items[index];
-                      return SeriesCard(series: series);
+                      return SeriesCardMobile(series: series);
                     },
                   );
                 },

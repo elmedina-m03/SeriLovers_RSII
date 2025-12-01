@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 import '../../providers/admin_user_provider.dart';
 import '../../models/user.dart';
 import 'users/user_form_dialog.dart';
@@ -262,6 +263,34 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                // Add button at top-right
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final result = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => const UserFormDialog(),
+                        );
+                        if (result == true) {
+                          await _loadUsers();
+                        }
+                      },
+                      icon: const Icon(Icons.add, size: 20),
+                      label: const Text('Add new user'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        foregroundColor: AppColors.textLight,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppDim.paddingMedium,
+                          vertical: AppDim.paddingSmall,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppDim.paddingMedium),
                 // Search and Filter Controls
                 Card(
                   color: AppColors.cardBackground,
@@ -388,6 +417,9 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                 }),
                 columns: [
                   const DataColumn(
+                    label: Text('Avatar'),
+                  ),
+                  const DataColumn(
                     label: Text('ID'),
                   ),
                   DataColumn(
@@ -426,11 +458,24 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     label: Text('Actions'),
                   ),
                 ],
-                sortColumnIndex: _sortBy == 'name' ? 1 : _sortBy == 'dateCreated' ? 6 : null,
+                sortColumnIndex: _sortBy == 'name' ? 2 : _sortBy == 'dateCreated' ? 7 : null,
                 sortAscending: _sortAscending,
                 rows: userProvider.users.map((user) {
+                  // Get initials for avatar
+                  final initials = user.displayName.isNotEmpty 
+                      ? user.displayName.substring(0, user.displayName.length > 2 ? 2 : 1).toUpperCase()
+                      : 'U';
+                  
                   return DataRow(
                     cells: [
+                      DataCell(
+                        AvatarImage(
+                          avatarUrl: user.avatarUrl,
+                          radius: 20,
+                          initials: initials,
+                          placeholderIcon: Icons.person,
+                        ),
+                      ),
                       DataCell(
                         Text(
                           user.id.toString(),

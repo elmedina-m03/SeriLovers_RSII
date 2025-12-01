@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/series.dart';
+import '../core/widgets/image_with_placeholder.dart';
+import '../core/theme/app_colors.dart';
 
 /// Widget that displays a series card with title, rating, and genres
 /// 
@@ -33,8 +35,25 @@ class SeriesCard extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Series Image
+              if (series.imageUrl != null && series.imageUrl!.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: ImageWithPlaceholder(
+                    imageUrl: series.imageUrl,
+                    height: 180,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    borderRadius: 12,
+                    placeholderIcon: Icons.movie,
+                    placeholderIconSize: 60,
+                  ),
+                ),
+              if (series.imageUrl != null && series.imageUrl!.isNotEmpty)
+                const SizedBox(height: 12),
               // Title and Rating Row
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,

@@ -4,7 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../models/series.dart';
 import '../../providers/series_provider.dart';
-import '../../widgets/series_card.dart';
+import '../widgets/series_card_mobile.dart';
 import '../models/series_filter.dart';
 import 'mobile_filter_screen.dart';
 
@@ -169,7 +169,7 @@ class _MobileCategoryDetailScreenState extends State<MobileCategoryDetailScreen>
                       itemCount: _series.length,
                       itemBuilder: (context, index) {
                         final series = _series[index];
-                        return SeriesCard(series: series);
+                        return SeriesCardMobile(series: series);
                       },
                     )),
         ),

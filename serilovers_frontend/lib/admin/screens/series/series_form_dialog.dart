@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +8,9 @@ import '../../../models/series.dart';
 import '../../../providers/actor_provider.dart';
 import '../../../services/api_service.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../utils/file_picker_helper.dart';
 import '../../providers/admin_series_provider.dart';
+import '../../../core/widgets/image_with_placeholder.dart';
 
 /// Dialog for creating or editing a series
 /// 
@@ -33,6 +36,8 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
   final _descriptionController = TextEditingController();
   final _ratingController = TextEditingController();
   final _releaseDateController = TextEditingController();
+  String? _uploadedImageUrl; // Store uploaded image URL
+  bool _isUploadingImage = false;
 
   DateTime? _selectedDate;
   List<int> _selectedGenreIds = []; // Changed to use genre IDs
@@ -59,6 +64,7 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       _ratingController.text = series.rating.toString();
       _selectedDate = series.releaseDate;
       _releaseDateController.text = _formatDate(_selectedDate!);
+      _uploadedImageUrl = series.imageUrl;
       
       // Set genre IDs from series genres
       // Note: series.genres is List<String>, we need to find matching Genre IDs
@@ -194,6 +200,80 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
     }
   }
 
+  /// Pick and upload image file
+  Future<void> _pickAndUploadImage() async {
+    try {
+      final result = await FilePickerHelper.pickImage();
+      if (result == null) return; // User cancelled
+
+      setState(() {
+        _isUploadingImage = true;
+      });
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final apiService = ApiService();
+      final token = authProvider.token;
+
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      dynamic uploadResponse;
+
+      if (FilePickerHelper.isWeb) {
+        // Web: use bytes
+        final bytes = FilePickerHelper.getBytes(result);
+        final fileName = FilePickerHelper.getFileName(result);
+        if (bytes == null || fileName == null) {
+          throw Exception('Failed to read file');
+        }
+        uploadResponse = await apiService.uploadFileFromBytes(
+          '/ImageUpload/upload',
+          bytes,
+          fileName,
+          folder: 'series',
+          token: token,
+        );
+      } else {
+        // Desktop/Mobile: use File
+        final file = FilePickerHelper.getFile(result);
+        if (file == null) {
+          throw Exception('Failed to read file');
+        }
+        uploadResponse = await apiService.uploadFile(
+          '/ImageUpload/upload',
+          file,
+          folder: 'series',
+          token: token,
+        );
+      }
+
+      if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
+        setState(() {
+          _uploadedImageUrl = uploadResponse['imageUrl'] as String;
+          _isUploadingImage = false;
+        });
+        // Image is uploaded and ready, but not saved to series yet
+        // Success message will show only after clicking "Update"
+      } else {
+        throw Exception('Invalid response from server');
+      }
+    } catch (e) {
+      print('Error uploading image: $e');
+      if (mounted) {
+        setState(() {
+          _isUploadingImage = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading image: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
+  }
+
   /// Save the series (create or update)
   Future<void> _saveSeries() async {
     if (!_formKey.currentState!.validate()) {
@@ -228,14 +308,33 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       final adminSeriesProvider = Provider.of<AdminSeriesProvider>(context, listen: false);
 
       // Prepare series data with expected property names
-      final seriesData = {
+      // Use uploaded image URL if available, otherwise keep existing image URL
+      // If editing and no new image uploaded, keep the existing image URL
+      // If editing and image was removed (deleted), set to null
+      final imageUrlToSave = _uploadedImageUrl ?? widget.series?.imageUrl;
+      
+      final seriesData = <String, dynamic>{
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
         'rating': double.parse(_ratingController.text),
         'releaseDate': _selectedDate!.toIso8601String(),
-        'genreIds': _selectedGenreIds, // Changed to genreIds
+        'genreIds': _selectedGenreIds,
         'actorIds': _selectedActors.map((actor) => actor.id).toList(),
       };
+      
+      // Always include imageUrl, even if null (to allow removing images)
+      if (imageUrlToSave != null && imageUrlToSave.isNotEmpty) {
+        seriesData['imageUrl'] = imageUrlToSave;
+      } else if (widget.series != null && widget.series!.imageUrl != null) {
+        // Keep existing image if no new one uploaded and not explicitly removed
+        seriesData['imageUrl'] = widget.series!.imageUrl;
+      } else {
+        // No image (new series or image was removed)
+        seriesData['imageUrl'] = null;
+      }
+      
+      print('💾 Saving series with imageUrl: ${seriesData['imageUrl']}');
+      print('💾 Full series data: $seriesData');
 
       if (widget.series == null) {
         // Create new series
@@ -459,6 +558,122 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
                           }
                           return null;
                         },
+                      ),
+                      const SizedBox(height: AppDim.paddingMedium),
+
+                      // Image upload field
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Series Image',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: AppDim.paddingSmall),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: _isUploadingImage ? null : _pickAndUploadImage,
+                                  icon: _isUploadingImage
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.textLight),
+                                          ),
+                                        )
+                                      : const Icon(Icons.image, size: 20),
+                                  label: Text(_isUploadingImage ? 'Uploading...' : 'Choose Image'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryColor,
+                                    foregroundColor: AppColors.textLight,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppDim.paddingMedium,
+                                      vertical: AppDim.paddingMedium,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if ((_uploadedImageUrl != null && _uploadedImageUrl!.isNotEmpty) || 
+                                  (widget.series?.imageUrl != null && widget.series!.imageUrl!.isNotEmpty)) ...[
+                                const SizedBox(width: AppDim.paddingSmall),
+                                IconButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _uploadedImageUrl = null;
+                                    });
+                                  },
+                                  icon: const Icon(Icons.delete_outline),
+                                  color: AppColors.dangerColor,
+                                  tooltip: 'Remove image',
+                                ),
+                              ],
+                            ],
+                          ),
+                          // Always show image preview if there's an image (existing or newly uploaded)
+                          Builder(
+                            builder: (context) {
+                              final currentImageUrl = _uploadedImageUrl ?? widget.series?.imageUrl;
+                              if (currentImageUrl != null && currentImageUrl.isNotEmpty) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: AppDim.paddingSmall),
+                                    Container(
+                                      height: 150,
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                        border: Border.all(color: AppColors.textSecondary.withOpacity(0.3)),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                        child: ImageWithPlaceholder(
+                                          imageUrl: currentImageUrl,
+                                          height: 150,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                          borderRadius: AppDim.radiusSmall,
+                                          placeholderIcon: Icons.movie,
+                                        ),
+                                      ),
+                                    ),
+                                    if (widget.series?.imageUrl != null && 
+                                        widget.series!.imageUrl!.isNotEmpty && 
+                                        _uploadedImageUrl == null) ...[
+                                      const SizedBox(height: AppDim.paddingSmall),
+                                      Text(
+                                        'Current image (click "Choose Image" to change)',
+                                        style: TextStyle(
+                                          color: AppColors.textSecondary,
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ] else if (_uploadedImageUrl != null && _uploadedImageUrl!.isNotEmpty) ...[
+                                      const SizedBox(height: AppDim.paddingSmall),
+                                      Text(
+                                        'New image selected (click "Update" to save)',
+                                        style: TextStyle(
+                                          color: AppColors.successColor,
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AppDim.paddingMedium),
 

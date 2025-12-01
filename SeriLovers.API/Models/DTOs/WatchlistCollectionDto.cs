@@ -16,6 +16,15 @@ namespace SeriLovers.API.Models.DTOs
         [StringLength(500)]
         public string? Description { get; set; }
 
+        [StringLength(500)]
+        public string? CoverUrl { get; set; }
+
+        [StringLength(50)]
+        public string? Category { get; set; }
+
+        [StringLength(50)]
+        public string? Status { get; set; }
+
         [Required]
         public int UserId { get; set; }
 
@@ -36,6 +45,15 @@ namespace SeriLovers.API.Models.DTOs
 
         [StringLength(500)]
         public string? Description { get; set; }
+
+        [StringLength(500)]
+        public string? CoverUrl { get; set; }
+
+        [StringLength(50)]
+        public string? Category { get; set; }
+
+        [StringLength(50)]
+        public string? Status { get; set; }
     }
 
     public class WatchlistCollectionUpdateDto
@@ -45,6 +63,15 @@ namespace SeriLovers.API.Models.DTOs
 
         [StringLength(500)]
         public string? Description { get; set; }
+
+        [StringLength(500)]
+        public string? CoverUrl { get; set; }
+
+        [StringLength(50)]
+        public string? Category { get; set; }
+
+        [StringLength(50)]
+        public string? Status { get; set; }
     }
 
     public class WatchlistCollectionDetailDto : WatchlistCollectionDto

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 import '../../models/series.dart';
 import '../providers/admin_series_provider.dart';
 import 'series/series_form_dialog.dart';
@@ -255,7 +256,7 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                     ElevatedButton.icon(
                       onPressed: _handleAddSeries,
                       icon: const Icon(Icons.add, size: 20),
-                      label: const Text('Add Series'),
+                      label: const Text('Add new series'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryColor,
                         foregroundColor: AppColors.textLight,
@@ -436,6 +437,13 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                   return AppColors.cardBackground;
                 }),
                 columns: [
+                  const DataColumn(
+                    label: Text('ID'),
+                    numeric: true,
+                  ),
+                  const DataColumn(
+                    label: Text('Image'),
+                  ),
                   DataColumn(
                     label: const Text('Title'),
                     onSort: (columnIndex, ascending) {
@@ -445,6 +453,10 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                       });
                       _loadSeries(page: 1); // Reset to first page on sort
                     },
+                  ),
+                  const DataColumn(
+                    label: Text('Episodes'),
+                    numeric: true,
                   ),
                   DataColumn(
                     label: const Text('Year'),
@@ -457,32 +469,66 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                       _loadSeries();
                     },
                   ),
-                  DataColumn(
-                    label: const Text('Rating'),
-                    numeric: true,
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortBy = 'rating';
-                        _sortAscending = ascending;
-                      });
-                      _loadSeries();
-                    },
+                  const DataColumn(
+                    label: Text('Genre'),
                   ),
                   const DataColumn(
-                    label: Text('Genres'),
+                    label: Text('Main Actor'),
                   ),
                   const DataColumn(
                     label: Text('Actions'),
                   ),
                 ],
-                sortColumnIndex: _sortBy == 'title' ? 0 : _sortBy == 'year' ? 1 : _sortBy == 'rating' ? 2 : null,
+                sortColumnIndex: _sortBy == 'title' ? 2 : _sortBy == 'year' ? 4 : null,
                 sortAscending: _sortAscending,
                 rows: adminSeriesProvider.items.map((series) {
+                  // Calculate total episodes from seasons
+                  int totalEpisodes = 0;
+                  // Note: This would need to be calculated from API if seasons data is available
+                  // For now, using a placeholder
+                  
+                  // Get main actor (first actor or empty)
+                  final mainActor = series.actors.isNotEmpty 
+                      ? series.actors.first.fullName 
+                      : 'N/A';
+                  
+                  // Get first genre or empty
+                  final firstGenre = series.genres.isNotEmpty 
+                      ? series.genres.first 
+                      : 'N/A';
+                  
                   return DataRow(
                     cells: [
                       DataCell(
                         Text(
+                          series.id.toString(),
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      DataCell(
+                        Builder(
+                          builder: (context) {
+                            return ImageWithPlaceholder(
+                              imageUrl: series.imageUrl,
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                              borderRadius: 8,
+                              placeholderIcon: Icons.movie,
+                              placeholderIconSize: 24,
+                            );
+                          },
+                        ),
+                      ),
+                      DataCell(
+                        Text(
                           series.title,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                      DataCell(
+                        Text(
+                          totalEpisodes > 0 ? totalEpisodes.toString() : 'N/A',
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
@@ -493,45 +539,15 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                         ),
                       ),
                       DataCell(
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.star,
-                              size: 16,
-                              color: AppColors.primaryColor,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              series.rating.toStringAsFixed(1),
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                          ],
+                        Text(
+                          firstGenre,
+                          style: theme.textTheme.bodyMedium,
                         ),
                       ),
                       DataCell(
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: series.genres.take(3).map((genre) {
-                            return Chip(
-                              label: Text(
-                                genre,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              backgroundColor: AppColors.cardBackground,
-                              side: BorderSide(
-                                color: AppColors.primaryColor.withOpacity(0.3),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                            );
-                          }).toList(),
+                        Text(
+                          mainActor,
+                          style: theme.textTheme.bodyMedium,
                         ),
                       ),
                       DataCell(
