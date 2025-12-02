@@ -55,9 +55,10 @@ namespace SeriLovers.API.Controllers
         {
             try
             {
-                // Check if user already has a "Favorites" list
+                // Check if user already has a "Favorites" list (check both spellings)
                 var favoritesExists = await _context.WatchlistCollections
-                    .AnyAsync(c => c.UserId == userId && c.Name.ToLower() == "favorites");
+                    .AnyAsync(c => c.UserId == userId && 
+                                  (c.Name.ToLower() == "favorites" || c.Name.ToLower() == "favourite"));
 
                 if (!favoritesExists)
                 {
@@ -72,6 +73,40 @@ namespace SeriLovers.API.Controllers
                     _context.WatchlistCollections.Add(favoritesList);
                     await _context.SaveChangesAsync();
                     _logger.LogInformation("Created default 'Favorites' list for user {UserId}", userId);
+                }
+                else
+                {
+                    // Clean up any duplicate Favorites folders (shouldn't happen, but just in case)
+                    var allFavorites = await _context.WatchlistCollections
+                        .Where(c => c.UserId == userId && 
+                                   (c.Name.ToLower() == "favorites" || c.Name.ToLower() == "favourite"))
+                        .OrderBy(c => c.CreatedAt)
+                        .ToListAsync();
+
+                    if (allFavorites.Count > 1)
+                    {
+                        // Keep the first one (oldest)
+                        var keepFavorites = allFavorites.First();
+                        
+                        // Move series from duplicates to the kept Favorites folder and delete duplicates
+                        foreach (var duplicate in allFavorites.Skip(1))
+                        {
+                            var duplicateWatchlists = await _context.Watchlists
+                                .Where(w => w.CollectionId == duplicate.Id)
+                                .ToListAsync();
+                            
+                            foreach (var watchlist in duplicateWatchlists)
+                            {
+                                watchlist.CollectionId = keepFavorites.Id;
+                            }
+                            
+                            _context.WatchlistCollections.Remove(duplicate);
+                        }
+                        
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation("Cleaned up {Count} duplicate Favorites folders for user {UserId}", 
+                            allFavorites.Count - 1, userId);
+                    }
                 }
             }
             catch (Exception ex)
@@ -463,11 +498,17 @@ namespace SeriLovers.API.Controllers
                 user.UserName = email; // Keep UserName in sync with Email
             }
 
-            // Update name (stored in UserName or a separate field if you have one)
-            if (updateData.ContainsKey("name") && updateData["name"] is string name)
+            // Update name - store in UserName if email is not being updated
+            // Otherwise, we'll include it in the token as a custom claim
+            string? updatedName = null;
+            if (updateData.ContainsKey("name") && updateData["name"] is string name && !string.IsNullOrWhiteSpace(name))
             {
-                // You can store name in UserName or add a Name property to ApplicationUser
-                // For now, we'll keep it simple and not change UserName if email is being updated
+                updatedName = name.Trim();
+                // If email is not being updated, update UserName with the display name
+                if (!updateData.ContainsKey("email"))
+                {
+                    user.UserName = updatedName;
+                }
             }
 
             // Update avatar URL if provided
@@ -510,10 +551,17 @@ namespace SeriLovers.API.Controllers
                 return BadRequest(new { message = "Failed to update profile", errors = result.Errors.Select(e => e.Description) });
             }
 
+            // Reload user to get latest data
+            user = await _userManager.GetUserAsync(User);
+            if (user == null)
+            {
+                return Unauthorized(new { message = "User not found." });
+            }
+
             // Get updated roles
             var roles = await _userManager.GetRolesAsync(user);
 
-            // Generate new token with updated user info
+            // Generate new token with updated user info (including name and avatarUrl)
             var token = _tokenService.GenerateToken(user, roles);
 
             return Ok(new
@@ -526,7 +574,8 @@ namespace SeriLovers.API.Controllers
                     id = user.Id,
                     email = user.Email,
                     userName = user.UserName,
-                    avatarUrl = user.AvatarUrl
+                    avatarUrl = user.AvatarUrl,
+                    name = updatedName ?? user.UserName ?? user.Email?.Split('@')[0] ?? "User"
                 }
             });
         }

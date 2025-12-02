@@ -6,6 +6,7 @@ import 'providers/series_provider.dart';
 import 'providers/watchlist_provider.dart';
 import 'providers/episode_progress_provider.dart';
 import 'providers/episode_review_provider.dart';
+import 'providers/rating_provider.dart';
 import 'providers/admin_user_provider.dart';
 import 'providers/actor_provider.dart';
 import 'providers/admin_stats_provider.dart';
@@ -19,6 +20,7 @@ import 'services/api_service.dart';
 import 'services/watchlist_service.dart';
 import 'services/episode_progress_service.dart';
 import 'services/episode_review_service.dart';
+import 'services/rating_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/series_list_screen.dart';
 import 'screens/series_detail_screen.dart';
@@ -148,6 +150,25 @@ class MyApp extends StatelessWidget {
             }
             return EpisodeReviewProvider(
               service: EpisodeReviewService(apiService: apiService),
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, RatingProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return RatingProvider(
+              service: RatingService(apiService: apiService),
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return RatingProvider(
+              service: RatingService(apiService: apiService),
               authProvider: authProvider,
             );
           },

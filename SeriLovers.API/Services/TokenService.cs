@@ -37,8 +37,25 @@ namespace SeriLovers.API.Services
                 new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim("userId", user.Id.ToString()) // Add userId claim for easier access
             };
+
+            // Add avatar URL if available
+            if (!string.IsNullOrEmpty(user.AvatarUrl))
+            {
+                claims.Add(new Claim("avatarUrl", user.AvatarUrl));
+            }
+
+            // Add name claim (extract from UserName or email if no custom name)
+            var displayName = user.UserName ?? user.Email ?? "User";
+            // If UserName looks like an email, extract the name part
+            if (displayName.Contains('@'))
+            {
+                var emailPart = displayName.Split('@')[0];
+                displayName = emailPart[0].ToString().ToUpper() + emailPart.Substring(1);
+            }
+            claims.Add(new Claim("name", displayName));
 
             // Add roles using both standard JWT claim name and ASP.NET Core claim type
             foreach (var role in roles)

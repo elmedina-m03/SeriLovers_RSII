@@ -3,10 +3,11 @@ import 'package:provider/provider.dart';
 import '../models/series.dart';
 import '../models/watchlist.dart';
 import '../providers/watchlist_provider.dart';
-import '../providers/series_provider.dart';
 import '../providers/episode_progress_provider.dart';
+import '../providers/auth_provider.dart';
 import '../core/theme/app_colors.dart';
 import 'watchlist_series_detail_screen.dart';
+import '../mobile/screens/mobile_series_detail_screen.dart';
 
 class WatchlistDetailScreen extends StatefulWidget {
   final int watchlistCollectionId;
@@ -92,6 +93,79 @@ class _WatchlistDetailScreenState extends State<WatchlistDetailScreen> {
         _loading = false;
         _error = e.toString();
       });
+    }
+  }
+
+  Future<void> _showRemoveDialog(BuildContext context, Series series) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Series'),
+        content: Text('Are you sure you want to remove "${series.title}" from this list?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _removeSeries(series.id);
+    }
+  }
+
+  Future<void> _removeSeries(int seriesId) async {
+    final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.token;
+
+    if (token == null || token.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please log in to manage your lists'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      await watchlistProvider.removeSeriesFromList(
+        widget.watchlistCollectionId,
+        seriesId,
+      );
+
+      // Reload the watchlist to refresh the UI
+      await _loadWatchlist();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Series removed from list'),
+            backgroundColor: AppColors.successColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error removing series: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
     }
   }
 
@@ -262,14 +336,23 @@ class _WatchlistDetailScreenState extends State<WatchlistDetailScreen> {
                                 );
                               },
                             ),
-                            trailing: const Icon(Icons.chevron_right),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                  onPressed: () => _showRemoveDialog(context, series),
+                                  tooltip: 'Remove from list',
+                                ),
+                                const Icon(Icons.chevron_right),
+                              ],
+                            ),
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => WatchlistSeriesDetailScreen(
+                                  builder: (context) => MobileSeriesDetailScreen(
                                     series: series,
-                                    watchlistCollectionId: widget.watchlistCollectionId,
                                   ),
                                 ),
                               );

@@ -14,6 +14,7 @@ import 'mobile_filter_screen.dart';
 import 'mobile_series_detail_screen.dart';
 import 'mobile_search_screen.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../../core/widgets/horizontal_paginated_list.dart';
 
 /// Beautiful mobile home screen with banner, sections, and series cards
 class MobileHomeScreen extends StatefulWidget {
@@ -41,8 +42,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
     try {
-      // Load more series for better variety
-      await seriesProvider.fetchSeries(page: 1, pageSize: 100);
+      // Load initial batch for pagination
+      await seriesProvider.fetchSeries(page: 1, pageSize: 20);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -124,25 +125,6 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               );
             },
             tooltip: 'Search',
-          ),
-          Consumer<WatchlistProvider>(
-            builder: (context, watchlistProvider, child) {
-              return IconButton(
-                icon: const Icon(Icons.favorite_border),
-                onPressed: () {
-                  // Navigate to Lists tab where Favorites will be shown
-                  // The bottom navigation will handle this
-                  // For now, just show a message
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Go to Lists tab to see your Favorites'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-                tooltip: 'Favorites',
-              );
-            },
           ),
         ],
       ),
@@ -227,28 +209,35 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     ),
                   ),
 
-                  SizedBox(
-                    height: 200,
-                    child: isLoading && perfectForYou.isEmpty
-                        ? _buildSeriesShimmerList()
-                        : (perfectForYou.isEmpty
-                            ? _buildEmptySectionMessage('No recommendations yet')
-                            : ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppDim.paddingMedium,
-                                ),
-                                itemCount: perfectForYou.length,
-                                itemBuilder: (context, index) {
-                                  final series = perfectForYou[index];
-                                  return FadeSlideTransition(
-                                    delay: index * 50, // Stagger animation
-                                    direction: SlideDirection.right,
-                                    child: _buildSeriesCard(series, context, theme),
-                                  );
-                                },
-                              )),
-                  ),
+                  isLoading && perfectForYou.isEmpty
+                      ? SizedBox(height: 200, child: _buildSeriesShimmerList())
+                      : perfectForYou.isEmpty
+                          ? SizedBox(height: 200, child: _buildEmptySectionMessage('No recommendations yet'))
+                          : HorizontalPaginatedList<Series>(
+                              height: 200,
+                              items: perfectForYou,
+                              itemBuilder: (context, series, index) {
+                                return FadeSlideTransition(
+                                  delay: index * 50,
+                                  direction: SlideDirection.right,
+                                  child: _buildSeriesCard(series, context, theme),
+                                );
+                              },
+                              onLoadMore: () async {
+                                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                                if (seriesProvider.hasMore) {
+                                  await seriesProvider.loadMoreSeries();
+                                  // Re-filter after loading more
+                                  if (mounted) {
+                                    setState(() {});
+                                  }
+                                }
+                              },
+                              hasMore: seriesProvider.hasMore && perfectForYou.length < seriesProvider.items.length,
+                              isLoadingMore: seriesProvider.isLoading,
+                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                              spacing: AppDim.paddingMedium,
+                            ),
 
                   const SizedBox(height: AppDim.paddingLarge),
 
@@ -270,30 +259,84 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     ),
                   ),
 
-                  SizedBox(
-                    height: 200,
-                    child: isLoading && summerSeries.isEmpty
-                        ? _buildSeriesShimmerList()
-                        : (summerSeries.isEmpty
-                            ? _buildEmptySectionMessage('No summer picks yet')
-                            : ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: AppDim.paddingMedium,
-                                ),
-                                itemCount: summerSeries.length,
-                                itemBuilder: (context, index) {
-                                  final series = summerSeries[index];
-                                  return FadeSlideTransition(
-                                    delay: index * 50, // Stagger animation
-                                    direction: SlideDirection.right,
-                                    child: _buildSeriesCard(series, context, theme),
-                                  );
-                                },
-                              )),
-                  ),
+                  isLoading && summerSeries.isEmpty
+                      ? SizedBox(height: 200, child: _buildSeriesShimmerList())
+                      : summerSeries.isEmpty
+                          ? SizedBox(height: 200, child: _buildEmptySectionMessage('No summer picks yet'))
+                          : HorizontalPaginatedList<Series>(
+                              height: 200,
+                              items: summerSeries,
+                              itemBuilder: (context, series, index) {
+                                return FadeSlideTransition(
+                                  delay: index * 50,
+                                  direction: SlideDirection.right,
+                                  child: _buildSeriesCard(series, context, theme),
+                                );
+                              },
+                              onLoadMore: () async {
+                                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                                if (seriesProvider.hasMore) {
+                                  await seriesProvider.loadMoreSeries();
+                                  if (mounted) {
+                                    setState(() {});
+                                  }
+                                }
+                              },
+                              hasMore: seriesProvider.hasMore && summerSeries.length < seriesProvider.items.length,
+                              isLoadingMore: seriesProvider.isLoading,
+                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                              spacing: AppDim.paddingMedium,
+                            ),
 
                   const SizedBox(height: AppDim.paddingLarge),
+
+                  // "All Series" Section - Show more series
+                  if (filteredItems.length > (perfectForYou.length + summerSeries.length)) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppDim.paddingMedium,
+                        AppDim.paddingSmall,
+                        AppDim.paddingMedium,
+                        AppDim.paddingSmall,
+                      ),
+                      child: Text(
+                        'All Series',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                        ),
+                      ),
+                    ),
+                    HorizontalPaginatedList<Series>(
+                      height: 200,
+                      items: filteredItems
+                          .where((series) => !perfectForYou.contains(series) && !summerSeries.contains(series))
+                          .take(50)
+                          .toList(),
+                      itemBuilder: (context, series, index) {
+                        return FadeSlideTransition(
+                          delay: index * 30,
+                          direction: SlideDirection.right,
+                          child: _buildSeriesCard(series, context, theme),
+                        );
+                      },
+                      onLoadMore: () async {
+                        final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                        if (seriesProvider.hasMore) {
+                          await seriesProvider.loadMoreSeries();
+                          if (mounted) {
+                            setState(() {});
+                          }
+                        }
+                      },
+                      hasMore: seriesProvider.hasMore,
+                      isLoadingMore: seriesProvider.isLoading,
+                      padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                      spacing: AppDim.paddingMedium,
+                    ),
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
                 ],
               ),
             );
@@ -352,14 +395,17 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                 placeholderIconSize: 80,
                 placeholderBackgroundColor: AppColors.primaryColor,
               ),
+              // Enhanced gradient overlay for better text readability
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
+                    stops: const [0.0, 0.5, 1.0],
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.75),
+                      Colors.black.withOpacity(0.3),
+                      Colors.black.withOpacity(0.85),
                     ],
                   ),
                 ),
@@ -436,14 +482,15 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
 
   /// Builds a series card for lists
   Widget _buildSeriesCard(Series series, BuildContext context, ThemeData theme) {
-    return Container(
+    return SizedBox(
       width: 140,
-      margin: const EdgeInsets.only(right: AppDim.paddingMedium),
+      height: 200, // Fixed height to prevent unbounded constraints
       child: Card(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
         ),
         elevation: 4,
+        margin: const EdgeInsets.only(right: AppDim.paddingMedium),
         child: InkWell(
           onTap: () {
             Navigator.push(
@@ -465,119 +512,58 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
           borderRadius: BorderRadius.circular(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Series Image with Heart Icon
-              Stack(
-                children: [
-                  ImageWithPlaceholder(
-                    imageUrl: series.imageUrl,
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    borderRadius: 12,
-                    placeholderIcon: Icons.movie,
-                    placeholderIconSize: 40,
-                  ),
-                  // Heart icon overlay
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Consumer<WatchlistProvider>(
-                      builder: (context, watchlistProvider, child) {
-                        return FutureBuilder<bool>(
-                          future: watchlistProvider.isInFavorites(series.id),
-                          builder: (context, snapshot) {
-                            final isFavorite = snapshot.data ?? false;
-                            return IconButton(
-                              icon: Icon(
-                                isFavorite ? Icons.favorite : Icons.favorite_border,
-                                color: isFavorite ? Colors.red : Colors.white,
-                                size: 24,
-                              ),
-                              onPressed: () async {
-                                final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                                if (!authProvider.isAuthenticated) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Please log in to add favorites'),
-                                      backgroundColor: AppColors.dangerColor,
-                                    ),
-                                  );
-                                  return;
-                                }
-                                
-                                try {
-                                  await watchlistProvider.toggleFavorites(series.id);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          isFavorite 
-                                            ? 'Removed from favorites' 
-                                            : 'Added to favorites',
-                                        ),
-                                        backgroundColor: AppColors.successColor,
-                                        duration: const Duration(seconds: 1),
-                                      ),
-                                    );
-                                  }
-                                } catch (e) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('Error: $e'),
-                                        backgroundColor: AppColors.dangerColor,
-                                      ),
-                                    );
-                                  }
-                                }
-                              },
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
+              // Series Image (no heart icon)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: ImageWithPlaceholder(
+                  imageUrl: series.imageUrl,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  borderRadius: 0, // No border radius here since ClipRRect handles it
+                  placeholderIcon: Icons.movie,
+                  placeholderIconSize: 40,
+                ),
               ),
-              // Series Info
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        series.title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
+              // Series Info - Fixed height section
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      series.title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star,
+                          size: 14,
+                          color: AppColors.primaryColor,
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.star,
-                            size: 14,
-                            color: AppColors.primaryColor,
+                        const SizedBox(width: 4),
+                        Text(
+                          series.rating.toStringAsFixed(1),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            series.rating.toStringAsFixed(1),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],

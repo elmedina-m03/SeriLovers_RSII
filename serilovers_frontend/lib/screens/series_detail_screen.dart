@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../models/series.dart';
+import '../models/season.dart'; // Contains both Season and Episode classes
 import '../providers/watchlist_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/episode_progress_provider.dart';
+import '../providers/series_provider.dart';
 import '../services/api_service.dart';
+import '../services/episode_progress_service.dart';
 import '../core/theme/app_colors.dart';
+import '../mobile/widgets/season_selector.dart';
 import 'episode_reviews_screen.dart';
 
 /// Screen that displays detailed information about a series
@@ -24,10 +28,16 @@ class SeriesDetailScreen extends StatefulWidget {
 
 class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   int? _currentUserId;
+  late Series _series;
+  int? _selectedSeasonNumber;
+  bool _isLoadingDetail = false;
+  Set<int> _watchedEpisodeIds = {}; // Track watched episode IDs for UI updates
 
   @override
   void initState() {
     super.initState();
+    _series = widget.series;
+    
     // Load user lists and legacy watchlist
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
@@ -62,8 +72,65 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
 
       // Load episode progress for this series
       final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
-      progressProvider.loadSeriesProgress(widget.series.id).catchError((_) {});
+      progressProvider.loadSeriesProgress(widget.series.id).then((_) {
+        // Load watched episodes for UI indicators
+        _loadWatchedEpisodes();
+      }).catchError((_) {});
+      
+      // Load full series detail with seasons and episodes
+      _loadSeriesDetail();
     });
+  }
+
+  /// Load full series detail with seasons and episodes
+  Future<void> _loadSeriesDetail() async {
+    if (_isLoadingDetail) return;
+    
+    setState(() {
+      _isLoadingDetail = true;
+    });
+
+    try {
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+      final detail = await seriesProvider.fetchSeriesDetail(widget.series.id);
+      
+      if (detail != null && mounted) {
+        setState(() {
+          _series = detail;
+          // Auto-select first season if available and none selected
+          if (_series.seasons.isNotEmpty && _selectedSeasonNumber == null) {
+            final sortedSeasons = List<Season>.from(_series.seasons)
+              ..sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber));
+            _selectedSeasonNumber = sortedSeasons.first.seasonNumber;
+          }
+          _isLoadingDetail = false;
+        });
+        // Reload watched episodes after series detail loads
+        _loadWatchedEpisodes();
+      } else if (mounted) {
+        setState(() {
+          _isLoadingDetail = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingDetail = false;
+        });
+      }
+    }
+  }
+
+  /// Get the currently selected season
+  Season? get _selectedSeason {
+    if (_selectedSeasonNumber == null || _series.seasons.isEmpty) return null;
+    try {
+      return _series.seasons.firstWhere(
+        (s) => s.seasonNumber == _selectedSeasonNumber,
+      );
+    } catch (e) {
+      return null;
+    }
   }
 
   @override
@@ -139,14 +206,14 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
               height: 350,
               decoration: BoxDecoration(
                 color: Colors.grey[300],
-                image: widget.series.imageUrl != null && widget.series.imageUrl!.isNotEmpty
+                      image: _series.imageUrl != null && _series.imageUrl!.isNotEmpty
                     ? DecorationImage(
-                        image: NetworkImage(widget.series.imageUrl!),
+                        image: NetworkImage(_series.imageUrl!),
                         fit: BoxFit.cover,
                       )
                     : null,
               ),
-              child: widget.series.imageUrl == null || widget.series.imageUrl!.isEmpty
+              child: _series.imageUrl == null || _series.imageUrl!.isEmpty
                   ? Center(
                       child: Icon(
                         Icons.movie,
@@ -166,7 +233,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          widget.series.title,
+                          _series.title,
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -199,7 +266,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                   );
                                   return;
                                 }
-                                await provider.addSeries(favList.id, widget.series.id);
+                                await provider.addSeries(favList.id, _series.id);
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
@@ -223,23 +290,26 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Episodes and year
+                  // Seasons, episodes and year
                   Row(
                     children: [
                       Text(
-                        '20 episodes', // Placeholder - can be updated when seasons data is available
+                        '${_series.releaseDate.year}',
                         style: TextStyle(
                           fontSize: 14,
                           color: AppColors.textSecondary,
                         ),
                       ),
-                      if (widget.series.releaseDate != null) ...[
+                      if (_series.seasons.isNotEmpty) ...[
                         Text(
-                          ' • ',
-                          style: TextStyle(color: AppColors.textSecondary),
+                          ' • ${_series.totalSeasons} season${_series.totalSeasons > 1 ? 's' : ''}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                         Text(
-                          '${widget.series.releaseDate.year}',
+                          ' • ${_series.totalEpisodes} episodes',
                           style: TextStyle(
                             fontSize: 14,
                             color: AppColors.textSecondary,
@@ -267,18 +337,18 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                               size: 18,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              widget.series.rating.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                            if (widget.series.ratingsCount > 0) ...[
-                              const SizedBox(width: 4),
-                              Text(
-                                '(${widget.series.ratingsCount})',
+                      Text(
+                        _series.rating.toStringAsFixed(1),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      if (_series.ratingsCount > 0) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          '(${_series.ratingsCount})',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 12,
@@ -294,7 +364,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                   // Episode Progress Section
                   Consumer<EpisodeProgressProvider>(
                     builder: (context, progressProvider, _) {
-                      final progress = progressProvider.getSeriesProgress(widget.series.id);
+                      final progress = progressProvider.getSeriesProgress(_series.id);
                       
                       if (progress == null) {
                         return const SizedBox.shrink();
@@ -348,7 +418,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                           // For now, we'll just reload progress
                                           // In a real implementation, you'd mark the next episode as watched
                                           try {
-                                            await progressProvider.loadSeriesProgress(widget.series.id);
+                                            await progressProvider.loadSeriesProgress(_series.id);
                                             if (!mounted) return;
                                             ScaffoldMessenger.of(context).showSnackBar(
                                               const SnackBar(
@@ -405,8 +475,47 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     },
                   ),
                   const SizedBox(height: 24),
+                  
+                  // Seasons and Episodes Section
+                  if (_series.seasons.isNotEmpty) ...[
+                    Text(
+                      'Seasons & Episodes',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Season Selector
+                    SeasonSelector(
+                      seasons: _series.seasons,
+                      selectedSeasonNumber: _selectedSeasonNumber,
+                      onSeasonSelected: (int seasonNumber) {
+                        setState(() {
+                          _selectedSeasonNumber = seasonNumber;
+                        });
+                      },
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Episodes List for Selected Season
+                    if (_selectedSeason != null) ...[
+                      _buildEpisodesList(_selectedSeason!, Theme.of(context)),
+                    ] else if (_isLoadingDetail) ...[
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 24),
+                  ],
+
                   // Series description
-                  if (widget.series.description != null && widget.series.description!.isNotEmpty) ...[
+                  if (_series.description != null && _series.description!.isNotEmpty) ...[
                     Text(
                       'Description',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -415,14 +524,14 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      widget.series.description!,
+                      _series.description!,
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                     const SizedBox(height: 24),
                   ],
 
                   // Genres as Wrap with chips
-                  if (widget.series.genres.isNotEmpty) ...[
+                  if (_series.genres.isNotEmpty) ...[
                     Text(
                       'Genres',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -433,7 +542,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: widget.series.genres.map((genre) {
+                      children: _series.genres.map((genre) {
                         return Chip(
                           label: Text(
                             genre,
@@ -454,7 +563,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                   ],
 
                   // Actors section
-                  if (widget.series.actors.isNotEmpty) ...[
+                  if (_series.actors.isNotEmpty) ...[
                     Text(
                       'Actors',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -465,10 +574,10 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     ListView.separated(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: widget.series.actors.length,
+                      itemCount: _series.actors.length,
                       separatorBuilder: (context, index) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
-                        final actor = widget.series.actors[index];
+                        final actor = _series.actors[index];
                         return Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -516,7 +625,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     width: double.infinity,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        _showWatchlistSelector(context, widget.series.id);
+                        _showWatchlistSelector(context, _series.id);
                       },
                       icon: const Icon(Icons.bookmark_add),
                       label: const Text('Add to Watchlist'),
@@ -535,6 +644,220 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Build episodes list for a season
+  Widget _buildEpisodesList(Season season, ThemeData theme) {
+    if (season.episodes.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'No episodes available for this season.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppColors.textSecondary,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
+    // Sort episodes by episode number
+    final sortedEpisodes = List<Episode>.from(season.episodes)
+      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Season ${season.seasonNumber} • ${season.episodes.length} episodes',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          constraints: const BoxConstraints(maxHeight: 400),
+          child: ListView.builder(
+            shrinkWrap: true,
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: sortedEpisodes.length,
+            itemBuilder: (context, index) {
+              final episode = sortedEpisodes[index];
+              return _buildEpisodeCard(episode, season, theme);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build a single episode card
+  Widget _buildEpisodeCard(Episode episode, Season season, ThemeData theme) {
+    final isWatched = _watchedEpisodeIds.contains(episode.id);
+    final episodeNumber = 'S${season.seasonNumber.toString().padLeft(2, '0')}E${episode.episodeNumber.toString().padLeft(2, '0')}';
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: isWatched 
+          ? AppColors.primaryColor.withOpacity(0.1) 
+          : Colors.white,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isWatched 
+              ? AppColors.successColor 
+              : AppColors.primaryColor,
+          child: Text(
+            episodeNumber,
+            style: TextStyle(
+              color: AppColors.textLight,
+              fontWeight: FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                episode.title,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (isWatched)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: AppColors.successColor,
+                ),
+              ),
+          ],
+        ),
+        subtitle: episode.description != null && episode.description!.isNotEmpty
+            ? Text(
+                episode.description!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              )
+            : episode.airDate != null
+                ? Text(
+                    'Aired: ${episode.airDate!.year}-${episode.airDate!.month.toString().padLeft(2, '0')}-${episode.airDate!.day.toString().padLeft(2, '0')}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  )
+                : null,
+        trailing: episode.rating != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.star,
+                    size: 16,
+                    color: Colors.amber,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    episode.rating!.toStringAsFixed(1),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              )
+            : IconButton(
+                icon: Icon(
+                  isWatched ? Icons.check_circle : Icons.check_circle_outline,
+                  color: isWatched ? AppColors.successColor : AppColors.textSecondary,
+                ),
+                onPressed: () => _toggleEpisodeWatched(episode.id, isWatched),
+                tooltip: isWatched ? 'Mark as unwatched' : 'Mark as watched',
+              ),
+        onTap: () => _toggleEpisodeWatched(episode.id, isWatched),
+      ),
+    );
+  }
+
+  /// Load watched episode IDs for UI indicators
+  Future<void> _loadWatchedEpisodes() async {
+    try {
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      
+      if (token == null || token.isEmpty) {
+        return;
+      }
+
+      final progressService = EpisodeProgressService();
+      final userProgress = await progressService.getUserProgress(token: token);
+      
+      if (mounted) {
+        setState(() {
+          _watchedEpisodeIds = userProgress
+              .where((p) => p.seriesId == _series.id)
+              .map((p) => p.episodeId)
+              .toSet();
+        });
+      }
+    } catch (e) {
+      // Silently fail - watched indicators just won't show
+      print('Error loading watched episodes: $e');
+    }
+  }
+
+  /// Toggle episode watched status
+  Future<void> _toggleEpisodeWatched(int episodeId, bool isCurrentlyWatched) async {
+    try {
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      
+      if (isCurrentlyWatched) {
+        // Mark as unwatched (remove progress)
+        await progressProvider.removeProgress(episodeId);
+        setState(() {
+          _watchedEpisodeIds.remove(episodeId);
+        });
+      } else {
+        // Mark as watched
+        await progressProvider.markEpisodeWatched(episodeId);
+        setState(() {
+          _watchedEpisodeIds.add(episodeId);
+        });
+      }
+      
+      // Refresh series progress and watched episodes
+      await progressProvider.loadSeriesProgress(_series.id);
+      await _loadWatchedEpisodes();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isCurrentlyWatched 
+                ? 'Episode marked as unwatched' 
+                : 'Episode marked as watched!'),
+            backgroundColor: AppColors.successColor,
+          ),
+        );
+        setState(() {}); // Refresh UI
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating episode: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
   }
 }
 

@@ -75,7 +75,8 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet("series/{seriesId}")]
-        [SwaggerOperation(Summary = "Ratings by series", Description = "Lists ratings left for a specific series.")]
+        [AllowAnonymous]
+        [SwaggerOperation(Summary = "Ratings by series", Description = "Lists ratings left for a specific series. Public endpoint - no authentication required.")]
         public async Task<IActionResult> GetBySeries(int seriesId)
         {
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == seriesId);

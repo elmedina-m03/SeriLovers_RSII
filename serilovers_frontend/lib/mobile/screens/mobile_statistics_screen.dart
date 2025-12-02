@@ -7,6 +7,9 @@ import '../../core/theme/app_dim.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/series_provider.dart';
+import '../../providers/episode_progress_provider.dart';
+import '../../services/episode_progress_service.dart';
+import '../../services/rating_service.dart';
 import '../../core/widgets/image_with_placeholder.dart';
 
 /// Statistics screen showing user statistics with cards and charts
@@ -50,6 +53,8 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+    final progressService = EpisodeProgressService();
+    final ratingService = RatingService();
     
     final userId = _extractUserId(auth.token);
     if (userId == null) return;
@@ -57,20 +62,23 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
     _currentUserId = userId;
 
     try {
+      final token = auth.token;
+      if (token == null || token.isEmpty) return;
+
       // Load watchlist to get series count
       await watchlistProvider.loadWatchlist();
-      
-      // Calculate statistics
       final watchlistItems = watchlistProvider.items;
       _totalSeries = watchlistItems.length;
       
-      // Calculate episodes (simplified - assume average 20 episodes per series)
-      _totalEpisodes = _totalSeries * 20;
+      // Get real episode progress data
+      final allProgress = await progressService.getUserProgress(token: token);
+      final completedProgress = allProgress.where((p) => p.isCompleted).toList();
+      _totalEpisodes = completedProgress.length;
       
-      // Calculate hours (assume 45 minutes per episode)
+      // Calculate hours (assume 45 minutes per episode - standard TV episode length)
       _totalHours = (_totalEpisodes * 45 / 60).round();
       
-      // Calculate genre distribution
+      // Calculate genre distribution from watchlist series
       _genreDistribution = {};
       for (var series in watchlistItems) {
         for (var genre in series.genres) {
@@ -85,14 +93,23 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
           MapEntry(key, (value / total * 100)));
       }
       
-      // Get reviews count (simplified - would need API endpoint)
-      _totalReviews = _totalSeries ~/ 2; // Assume half of series have reviews
+      // Get real reviews count from API
+      try {
+        final userRatings = await ratingService.getUserRatings(userId, token: token);
+        _totalReviews = userRatings.length;
+      } catch (e) {
+        // If endpoint fails, fallback to 0
+        _totalReviews = 0;
+      }
       
       if (mounted) {
         setState(() {});
       }
     } catch (e) {
-      // Handle error silently
+      // Handle error silently - show default values
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -152,14 +169,15 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
             
             const SizedBox(height: AppDim.paddingLarge),
             
-            // Bio (placeholder)
-            Text(
-              'Big fan of Turkish Dramas | Romance & History lover',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
+            // Bio - can be customized later if user profile has bio field
+            // For now, show a default message or leave empty
+            // Text(
+            //   'Big fan of Turkish Dramas | Romance & History lover',
+            //   style: theme.textTheme.bodyMedium?.copyWith(
+            //     color: AppColors.textSecondary,
+            //     fontStyle: FontStyle.italic,
+            //   ),
+            // ),
             
             const SizedBox(height: AppDim.paddingLarge),
             

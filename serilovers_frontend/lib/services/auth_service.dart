@@ -212,6 +212,8 @@ class AuthService {
 
       if (newToken != null && newToken is String) {
         await saveToken(newToken);
+        // Update the response to include the token for the provider
+        response['token'] = newToken;
       }
 
       return response;

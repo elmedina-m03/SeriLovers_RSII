@@ -4,11 +4,18 @@ import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../providers/episode_progress_provider.dart';
+import '../../providers/series_provider.dart';
+import '../../services/episode_progress_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../../models/series.dart';
+import '../../models/episode_progress.dart';
+import '../widgets/mobile_page_route.dart';
 import 'mobile_status_screen.dart';
 import 'mobile_statistics_screen.dart';
+import 'mobile_series_detail_screen.dart';
 
 /// Mobile profile screen showing user info and logout button
 class MobileProfileScreen extends StatefulWidget {
@@ -19,6 +26,98 @@ class MobileProfileScreen extends StatefulWidget {
 }
 
 class _MobileProfileScreenState extends State<MobileProfileScreen> {
+  List<Series> _recentlyWatchedSeries = [];
+  bool _isLoadingWatchedHistory = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadWatchedHistory();
+    });
+  }
+
+  Future<void> _loadWatchedHistory() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (!authProvider.isAuthenticated) return;
+
+    setState(() {
+      _isLoadingWatchedHistory = true;
+    });
+
+    try {
+      final progressService = EpisodeProgressService();
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+      final token = authProvider.token;
+
+      if (token == null || token.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _recentlyWatchedSeries = [];
+            _isLoadingWatchedHistory = false;
+          });
+        }
+        return;
+      }
+
+      // Load user progress from service
+      final userProgress = await progressService.getUserProgress(token: token);
+
+      if (userProgress.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _recentlyWatchedSeries = [];
+            _isLoadingWatchedHistory = false;
+          });
+        }
+        return;
+      }
+
+      // Get unique series IDs from progress, ordered by most recent watched date
+      final seriesProgressMap = <int, DateTime>{};
+      for (final progress in userProgress) {
+        if (progress.seriesId > 0) {
+          final watchedDate = progress.watchedAt;
+          if (!seriesProgressMap.containsKey(progress.seriesId) ||
+              watchedDate.isAfter(seriesProgressMap[progress.seriesId]!)) {
+            seriesProgressMap[progress.seriesId] = watchedDate;
+          }
+        }
+      }
+
+      // Sort by most recent watched date
+      final sortedSeriesIds = seriesProgressMap.entries
+          .toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+      final seriesIds = sortedSeriesIds.map((e) => e.key).take(10).toList();
+
+      // Load all series to get details
+      await seriesProvider.fetchSeries(page: 1, pageSize: 200);
+
+      // Get series details for recently watched
+      final recentlyWatched = <Series>[];
+      for (final seriesId in seriesIds) {
+        final series = seriesProvider.getById(seriesId);
+        if (series != null) {
+          recentlyWatched.add(series);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _recentlyWatchedSeries = recentlyWatched;
+          _isLoadingWatchedHistory = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingWatchedHistory = false;
+        });
+      }
+    }
+  }
+
   /// Get user info from JWT token
   Map<String, String?> _getUserInfo(String? token) {
     if (token == null || token.isEmpty) {
@@ -31,14 +130,18 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                    decodedToken['sub'] as String? ?? 
                    'Unknown';
       
-      // Extract name from email (use part before @)
-      String name = 'User';
-      if (email != 'Unknown') {
-        final parts = email.split('@');
-        if (parts.isNotEmpty) {
-          final namePart = parts[0];
-          // Capitalize first letter
-          name = namePart[0].toUpperCase() + namePart.substring(1);
+      // Try to get name from token claim first, otherwise extract from email
+      String name = decodedToken['name'] as String? ?? '';
+      if (name.isEmpty) {
+        if (email != 'Unknown') {
+          final parts = email.split('@');
+          if (parts.isNotEmpty) {
+            final namePart = parts[0];
+            // Capitalize first letter
+            name = namePart[0].toUpperCase() + namePart.substring(1);
+          }
+        } else {
+          name = 'User';
         }
       }
       
@@ -186,6 +289,53 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
 
                   const SizedBox(height: AppDim.paddingLarge),
 
+                  // Recently Watched Section
+                  if (_recentlyWatchedSeries.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingSmall),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Recently Watched',
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const MobileStatusScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text('See All'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: AppDim.paddingSmall),
+                    SizedBox(
+                      height: 180,
+                      child: _isLoadingWatchedHistory
+                          ? const Center(child: CircularProgressIndicator())
+                          : ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                              itemCount: _recentlyWatchedSeries.length,
+                              itemBuilder: (context, index) {
+                                final series = _recentlyWatchedSeries[index];
+                                return _buildWatchedSeriesCard(series, context, theme);
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
+
                   // Menu Items
                   _buildMenuCard(
                     context,
@@ -199,6 +349,8 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                       );
                       if (result == true && mounted) {
                         setState(() {});
+                        // Reload watched history in case user watched something
+                        _loadWatchedHistory();
                       }
                     },
                   ),
@@ -326,6 +478,81 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
           color: AppColors.textSecondary,
         ),
         onTap: onTap,
+      ),
+    );
+  }
+
+  Widget _buildWatchedSeriesCard(Series series, BuildContext context, ThemeData theme) {
+    return Container(
+      width: 120,
+      margin: const EdgeInsets.only(right: AppDim.paddingMedium),
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 2,
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MobilePageRoute(
+                builder: (context) => MobileSeriesDetailScreen(series: series),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: ImageWithPlaceholder(
+                  imageUrl: series.imageUrl,
+                  height: 100,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholderIcon: Icons.movie,
+                  placeholderIconSize: 40,
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      series.title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star,
+                          size: 12,
+                          color: AppColors.primaryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          series.rating.toStringAsFixed(1),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

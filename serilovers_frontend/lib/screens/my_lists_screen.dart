@@ -16,13 +16,27 @@ class MyListsScreen extends StatefulWidget {
 
 class _MyListsScreenState extends State<MyListsScreen> {
   int? _currentUserId;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.toLowerCase();
+      });
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadWatchlists();
     });
+  }
+
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   int? _extractUserId(String? token) {
@@ -129,32 +143,33 @@ class _MyListsScreenState extends State<MyListsScreen> {
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.grey[300]!),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.search, color: Colors.grey[600], size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Search',
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[300]!),
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          decoration: InputDecoration(
+                            hintText: 'Search lists...',
+                            hintStyle: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
                             ),
+                            border: InputBorder.none,
+                            icon: Icon(Icons.search, color: Colors.grey[600], size: 20),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear, size: 20),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                    },
+                                  )
+                                : null,
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -186,80 +201,117 @@ class _MyListsScreenState extends State<MyListsScreen> {
                     ),
                   ),
                   // Watchlist cards grid
-                  if (provider.lists.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.list_alt,
-                              size: 64,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'You have no lists yet.',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            // Show create button even when empty
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: ElevatedButton(
-                                  onPressed: () {
-                                    Navigator.pushNamed(context, '/create_list');
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primaryColor,
-                                    foregroundColor: AppColors.textLight,
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    elevation: 2,
-                                  ),
-                                  child: const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.add, size: 20),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Create a new list',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
+                  Builder(
+                    builder: (context) {
+                      // Filter lists by search query
+                      final filteredLists = _searchQuery.isEmpty
+                          ? provider.lists
+                          : provider.lists.where((list) =>
+                              list.name.toLowerCase().contains(_searchQuery)).toList();
+                      
+                      if (provider.lists.isEmpty) {
+                        return SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.list_alt,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'You have no lists yet.',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 16,
                                   ),
                                 ),
-                              ),
+                                const SizedBox(height: 24),
+                                // Show create button even when empty
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.pushNamed(context, '/create_list');
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.primaryColor,
+                                        foregroundColor: AppColors.textLight,
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        elevation: 2,
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.add, size: 20),
+                                          SizedBox(width: 8),
+                                          Text(
+                                            'Create a new list',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverGrid(
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.85,
-                        ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final Watchlist list = provider.lists[index];
-                            final isFavorites = list.name.toLowerCase() == 'favorites';
+                          ),
+                        );
+                      }
+                      
+                      if (filteredLists.isEmpty && _searchQuery.isNotEmpty) {
+                        return SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No lists found matching "$_searchQuery"',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      
+                      // If we have lists, show the grid
+                      return SliverPadding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        sliver: SliverGrid(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.85,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final Watchlist list = filteredLists[index];
+                              final isFavorites = list.name.toLowerCase() == 'favorites' || list.name.toLowerCase() == 'favourite';
                             
                             return GestureDetector(
                               onTap: () {
@@ -269,6 +321,9 @@ class _MyListsScreenState extends State<MyListsScreen> {
                                   arguments: list.id,
                                 );
                               },
+                              onLongPress: isFavorites
+                                  ? null
+                                  : () => _showDeleteDialog(context, list, provider),
                               child: Card(
                                 elevation: 2,
                                 shape: RoundedRectangleBorder(
@@ -303,24 +358,37 @@ class _MyListsScreenState extends State<MyListsScreen> {
                                           ),
                                         ),
                                       ),
-                                      // Heart icon for Favorites (top-right)
-                                      if (isFavorites)
-                                        Positioned(
-                                          top: 8,
-                                          right: 8,
-                                          child: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withOpacity(0.9),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.favorite,
-                                              color: Colors.red,
-                                              size: 24,
-                                            ),
-                                          ),
-                                        ),
+                                      // Heart icon for Favorites (top-right) or Delete button for other lists
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: isFavorites
+                                            ? Container(
+                                                padding: const EdgeInsets.all(6),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white.withOpacity(0.9),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.favorite,
+                                                  color: Colors.red,
+                                                  size: 24,
+                                                ),
+                                              )
+                                            : IconButton(
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                  color: Colors.white,
+                                                  size: 24,
+                                                ),
+                                                onPressed: () => _showDeleteDialog(context, list, provider),
+                                                style: IconButton.styleFrom(
+                                                  backgroundColor: Colors.black.withOpacity(0.5),
+                                                  padding: const EdgeInsets.all(6),
+                                                ),
+                                                tooltip: 'Delete list',
+                                              ),
+                                      ),
                                       // Content
                                       Padding(
                                         padding: const EdgeInsets.all(12),
@@ -368,10 +436,12 @@ class _MyListsScreenState extends State<MyListsScreen> {
                                 ),
                               ),
                             );
-                          },
-                          childCount: provider.lists.length,
-                        ),
-                      ),
+                              },
+                              childCount: filteredLists.length,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   // Create button
                   SliverToBoxAdapter(
@@ -417,6 +487,58 @@ class _MyListsScreenState extends State<MyListsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _showDeleteDialog(BuildContext context, Watchlist list, WatchlistProvider provider) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete List'),
+        content: Text('Are you sure you want to delete "${list.name}"? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        await provider.deleteList(list.id);
+        
+        // Reload watchlists to refresh the UI
+        if (_currentUserId != null) {
+          await provider.loadUserWatchlists(_currentUserId!);
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('List deleted successfully'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting list: $e'),
+              backgroundColor: AppColors.dangerColor,
+            ),
+          );
+        }
+      }
+    }
   }
 
   Widget _buildPlaceholderCover(String listName) {

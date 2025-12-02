@@ -62,6 +62,33 @@ namespace SeriLovers.API.Controllers
                 .OrderBy(c => c.Name)
                 .ToListAsync();
 
+            // Clean up duplicate Favorites folders - keep only the first one
+            var favoritesCollections = collections
+                .Where(c => c.Name.Equals("Favorites", StringComparison.OrdinalIgnoreCase) ||
+                           c.Name.Equals("Favourite", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (favoritesCollections.Count > 1)
+            {
+                // Keep the first one (oldest)
+                var keepFavorites = favoritesCollections.OrderBy(c => c.CreatedAt).First();
+                
+                // Delete duplicates
+                foreach (var duplicate in favoritesCollections.Where(c => c.Id != keepFavorites.Id))
+                {
+                    // Move series from duplicate to the kept Favorites folder
+                    foreach (var watchlist in duplicate.Watchlists.ToList())
+                    {
+                        watchlist.CollectionId = keepFavorites.Id;
+                    }
+                    
+                    _context.WatchlistCollections.Remove(duplicate);
+                    collections.Remove(duplicate);
+                }
+                
+                await _context.SaveChangesAsync();
+            }
+
             var result = _mapper.Map<IEnumerable<WatchlistCollectionDto>>(collections);
             return Ok(result);
         }
@@ -127,6 +154,20 @@ namespace SeriLovers.API.Controllers
                 return BadRequest(new { message = $"A collection with the name '{dto.Name}' already exists." });
             }
 
+            // Specifically prevent creating duplicate "Favorites" folders
+            var nameLower = dto.Name.Trim().ToLower();
+            if (nameLower == "favorites" || nameLower == "favourite")
+            {
+                var favoritesExists = await _context.WatchlistCollections
+                    .AnyAsync(c => c.UserId == currentUserId.Value && 
+                                  (c.Name.ToLower() == "favorites" || c.Name.ToLower() == "favourite"));
+
+                if (favoritesExists)
+                {
+                    return BadRequest(new { message = "A Favorites folder already exists. You cannot create duplicate Favorites folders." });
+                }
+            }
+
             var collection = _mapper.Map<WatchlistCollection>(dto);
             collection.UserId = currentUserId.Value;
             collection.CreatedAt = DateTime.UtcNow;
@@ -162,6 +203,19 @@ namespace SeriLovers.API.Controllers
             if (collection == null)
             {
                 return NotFound(new { message = $"Collection with ID {id} not found." });
+            }
+
+            // Prevent renaming the Favorites folder
+            var isFavorites = collection.Name.Equals("Favorites", StringComparison.OrdinalIgnoreCase) ||
+                             collection.Name.Equals("Favourite", StringComparison.OrdinalIgnoreCase);
+            
+            if (isFavorites && !string.IsNullOrWhiteSpace(dto.Name))
+            {
+                var newNameLower = dto.Name.Trim().ToLower();
+                if (newNameLower != "favorites" && newNameLower != "favourite")
+                {
+                    return BadRequest(new { message = "The Favorites folder cannot be renamed." });
+                }
             }
 
             // Check if new name conflicts with existing collection
@@ -205,6 +259,15 @@ namespace SeriLovers.API.Controllers
             if (collection == null)
             {
                 return NotFound(new { message = $"Collection with ID {id} not found." });
+            }
+
+            // Prevent deletion of the default Favorites folder
+            var isFavorites = collection.Name.Equals("Favorites", StringComparison.OrdinalIgnoreCase) ||
+                             collection.Name.Equals("Favourite", StringComparison.OrdinalIgnoreCase);
+            
+            if (isFavorites)
+            {
+                return BadRequest(new { message = "The default Favorites folder cannot be deleted." });
             }
 
             // Remove collection ID from watchlists (they'll become default watchlist items)

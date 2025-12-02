@@ -51,12 +51,65 @@ class WatchlistProvider extends ChangeNotifier {
     try {
       final token = _authProvider?.token;
       lists = await service!.getWatchlistsForUser(userId, token: token);
+      
+      // Clean up duplicate Favorites folders - keep only the first one
+      await _cleanupDuplicateFavorites(token);
+      
+      // Ensure default Favorites folder exists (create if missing)
+      final hasFavorites = lists.any((list) {
+        final name = list.name.toLowerCase();
+        return name == 'favorites' || name == 'favourite';
+      });
+      
+      if (!hasFavorites && token != null && token.isNotEmpty) {
+        // Create default Favorites folder for new users
+        try {
+          await getOrCreateFavoritesList();
+        } catch (e) {
+          // If creation fails, continue - it will be created when needed
+          print('Could not create default Favorites folder: $e');
+        }
+      }
+      
       error = null;
     } catch (e) {
       error = e.toString();
     } finally {
       loading = false;
       notifyListeners();
+    }
+  }
+
+  /// Remove duplicate Favorites folders, keeping only the first one
+  Future<void> _cleanupDuplicateFavorites(String? token) async {
+    if (token == null || token.isEmpty || service == null) return;
+    
+    final favoritesLists = lists.where((list) {
+      final name = list.name.toLowerCase();
+      return name == 'favorites' || name == 'favourite';
+    }).toList();
+    
+    // If there's more than one Favorites folder, delete the duplicates
+    if (favoritesLists.length > 1) {
+      // Keep the first one (oldest or first in list)
+      final keepList = favoritesLists.first;
+      
+      // Delete all others
+      for (var duplicate in favoritesLists.skip(1)) {
+        try {
+          await service!.deleteWatchlistCollection(duplicate.id, token: token);
+          lists.removeWhere((list) => list.id == duplicate.id);
+        } catch (e) {
+          // Log error but continue with other deletions
+          print('Error deleting duplicate Favorites folder: $e');
+        }
+      }
+      
+      // Update cache to the kept list
+      _cachedFavoritesList = keepList;
+    } else if (favoritesLists.length == 1) {
+      // Update cache to the single Favorites list
+      _cachedFavoritesList = favoritesLists.first;
     }
   }
 
@@ -81,6 +134,23 @@ class WatchlistProvider extends ChangeNotifier {
         throw Exception('Authentication required');
       }
 
+      // Prevent creating duplicate Favorites folders
+      final nameLower = name.toLowerCase();
+      if (nameLower == 'favorites' || nameLower == 'favourite') {
+        // Check if Favorites already exists
+        final existingFavorites = lists.firstWhere(
+          (list) {
+            final listName = list.name.toLowerCase();
+            return listName == 'favorites' || listName == 'favourite';
+          },
+          orElse: () => Watchlist(id: -1, name: '', coverUrl: '', totalSeries: 0, createdAt: DateTime.now()),
+        );
+        
+        if (existingFavorites.id != -1) {
+          throw Exception('A Favorites folder already exists. You cannot create duplicate Favorites folders.');
+        }
+      }
+
       final payload = <String, dynamic>{
         'name': name,
         if (coverUrl != null && coverUrl.isNotEmpty) 'coverUrl': coverUrl,
@@ -93,7 +163,7 @@ class WatchlistProvider extends ChangeNotifier {
       lists = List<Watchlist>.from(lists)..add(created);
       error = null;
       
-      // Clear favorites cache if a new favorites list was created
+      // Update favorites cache if a new favorites list was created
       if (created.name.toLowerCase() == 'favorites' || created.name.toLowerCase() == 'favourite') {
         _cachedFavoritesList = created;
       }
@@ -109,6 +179,9 @@ class WatchlistProvider extends ChangeNotifier {
   Future<void> addSeries(int listId, int seriesId) async {
     if (service == null) return;
     
+    loading = true;
+    notifyListeners();
+    
     try {
       final token = _authProvider?.token;
       if (token == null || token.isEmpty) {
@@ -116,9 +189,43 @@ class WatchlistProvider extends ChangeNotifier {
       }
       await service!.addSeriesToList(listId, seriesId, token: token);
       error = null;
+      
+      // Always refresh all lists to get accurate counts from backend
+      final authProvider = _authProvider;
+      if (authProvider?.token != null) {
+        try {
+          final decoded = JwtDecoder.decode(authProvider!.token!);
+          final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+          int? userId;
+          if (rawId is int) {
+            userId = rawId;
+          } else if (rawId is String) {
+            userId = int.tryParse(rawId);
+          }
+          if (userId != null) {
+            // Reload all lists to get accurate counts from backend
+            await loadUserWatchlists(userId);
+          }
+        } catch (_) {
+          // If refresh fails, try to update the specific list manually
+          final index = lists.indexWhere((list) => list.id == listId);
+          if (index != -1) {
+            lists[index] = Watchlist(
+              id: lists[index].id,
+              name: lists[index].name,
+              coverUrl: lists[index].coverUrl,
+              totalSeries: lists[index].totalSeries + 1,
+              createdAt: lists[index].createdAt,
+            );
+            notifyListeners();
+          }
+        }
+      }
     } catch (e) {
       error = e.toString();
+      rethrow;
     } finally {
+      loading = false;
       notifyListeners();
     }
   }
@@ -177,6 +284,36 @@ class WatchlistProvider extends ChangeNotifier {
       }
     } catch (_) {
       // Continue to create if reload fails
+    }
+
+    // Create Favorites list if it doesn't exist
+    // First, check again if it was created by another request
+    try {
+      final authProvider = _authProvider;
+      if (authProvider?.token != null) {
+        final decoded = JwtDecoder.decode(authProvider!.token!);
+        final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+        int? userId;
+        if (rawId is int) {
+          userId = rawId;
+        } else if (rawId is String) {
+          userId = int.tryParse(rawId);
+        }
+        if (userId != null) {
+          await loadUserWatchlists(userId);
+          // Check again if Favorites exists
+          final existing = lists.firstWhere(
+            (list) => list.name.toLowerCase() == 'favorites' || list.name.toLowerCase() == 'favourite',
+            orElse: () => Watchlist(id: -1, name: '', coverUrl: '', totalSeries: 0, createdAt: DateTime.now()),
+          );
+          if (existing.id != -1) {
+            _cachedFavoritesList = existing;
+            return existing;
+          }
+        }
+      }
+    } catch (_) {
+      // Continue to create
     }
 
     // Create Favorites list if it doesn't exist
@@ -303,6 +440,9 @@ class WatchlistProvider extends ChangeNotifier {
   Future<void> removeSeriesFromList(int listId, int seriesId) async {
     if (service == null) return;
     
+    loading = true;
+    notifyListeners();
+    
     try {
       final token = _authProvider?.token;
       if (token == null || token.isEmpty) {
@@ -310,9 +450,84 @@ class WatchlistProvider extends ChangeNotifier {
       }
       await service!.removeSeriesFromList(listId, seriesId, token: token);
       error = null;
+      
+      // Always refresh all lists to get accurate counts from backend
+      final authProvider = _authProvider;
+      if (authProvider?.token != null) {
+        try {
+          final decoded = JwtDecoder.decode(authProvider!.token!);
+          final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+          int? userId;
+          if (rawId is int) {
+            userId = rawId;
+          } else if (rawId is String) {
+            userId = int.tryParse(rawId);
+          }
+          if (userId != null) {
+            // Reload all lists to get accurate counts from backend
+            await loadUserWatchlists(userId);
+          }
+        } catch (_) {
+          // If refresh fails, try to update the specific list manually
+          final index = lists.indexWhere((list) => list.id == listId);
+          if (index != -1) {
+            lists[index] = Watchlist(
+              id: lists[index].id,
+              name: lists[index].name,
+              coverUrl: lists[index].coverUrl,
+              totalSeries: (lists[index].totalSeries - 1).clamp(0, double.infinity).toInt(),
+              createdAt: lists[index].createdAt,
+            );
+            notifyListeners();
+          }
+        }
+      }
     } catch (e) {
       error = e.toString();
+      rethrow;
     } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Delete a watchlist collection
+  Future<void> deleteList(int listId) async {
+    if (service == null) return;
+
+    loading = true;
+    notifyListeners();
+
+    try {
+      final token = _authProvider?.token;
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      // Check if this is the Favorites list - prevent deletion
+      final listToDelete = lists.firstWhere(
+        (list) => list.id == listId,
+        orElse: () => Watchlist(id: -1, name: '', coverUrl: '', totalSeries: 0, createdAt: DateTime.now()),
+      );
+
+      if (listToDelete.id == -1) {
+        throw Exception('List not found');
+      }
+
+      final nameLower = listToDelete.name.toLowerCase();
+      if (nameLower == 'favorites' || nameLower == 'favourite') {
+        throw Exception('The default Favorites folder cannot be deleted.');
+      }
+
+      await service!.deleteWatchlistCollection(listId, token: token);
+      lists.removeWhere((list) => list.id == listId);
+      _cachedFavoritesList = null; // Clear cache if needed
+      error = null;
+    } catch (e) {
+      error = e.toString();
+      rethrow;
+    } finally {
+      loading = false;
       notifyListeners();
     }
   }

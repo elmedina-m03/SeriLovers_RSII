@@ -141,11 +141,26 @@ class AuthProvider extends ChangeNotifier {
   /// Notifies listeners on success
   Future<bool> updateUser(Map<String, dynamic> updateData) async {
     try {
-      await _authService.updateUser(updateData);
+      final response = await _authService.updateUser(updateData);
       
-      // Reload token from storage (in case it was refreshed)
-      token = await _authService.getToken();
-      isAuthenticated = token != null && token!.isNotEmpty;
+      // Check if response contains a new token and save it
+      if (response is Map<String, dynamic>) {
+        final newToken = response['token'] as String?;
+        if (newToken != null && newToken.isNotEmpty) {
+          // Save the new token (which includes updated user info)
+          await _authService.saveToken(newToken);
+          token = newToken;
+          isAuthenticated = true;
+        } else {
+          // Reload token from storage (in case it was refreshed)
+          token = await _authService.getToken();
+          isAuthenticated = token != null && token!.isNotEmpty;
+        }
+      } else {
+        // Reload token from storage
+        token = await _authService.getToken();
+        isAuthenticated = token != null && token!.isNotEmpty;
+      }
       
       notifyListeners();
       return true;

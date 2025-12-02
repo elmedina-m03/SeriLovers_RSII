@@ -9,7 +9,7 @@ class FilePickerHelper {
   static Future<FilePickerResult?> pickImage() async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
+        type: FileType.custom,
         allowMultiple: false,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
       );

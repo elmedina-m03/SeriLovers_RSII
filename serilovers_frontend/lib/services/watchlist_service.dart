@@ -65,6 +65,14 @@ class WatchlistService {
       throw Exception('Invalid response format');
     }
   }
+
+  /// Delete a watchlist collection
+  Future<void> deleteWatchlistCollection(int collectionId, {String? token}) async {
+    await _apiService.delete(
+      '/WatchlistCollection/$collectionId',
+      token: token,
+    );
+  }
 }
 
 

@@ -6,6 +6,7 @@ import '../../core/theme/app_dim.dart';
 import '../../models/series.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/episode_progress_provider.dart';
 import '../../core/widgets/image_with_placeholder.dart';
 import '../widgets/mobile_page_route.dart';
 import 'mobile_series_detail_screen.dart';
@@ -60,6 +61,7 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
   Future<void> _loadUserData() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
+    final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
     
     final userId = _extractUserId(auth.token);
     if (userId == null) return;
@@ -73,15 +75,45 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
       // Load watchlist items
       await watchlistProvider.loadWatchlist();
       
-      // For now, we'll categorize based on watchlist items
-      // In a real implementation, you'd check episode progress to determine status
       final allItems = watchlistProvider.items;
       
-      // This is a simplified categorization - in reality you'd check episode progress
+      // Categorize based on actual episode progress
+      final toDo = <Series>[];
+      final inProgress = <Series>[];
+      final finished = <Series>[];
+      
+      for (final series in allItems) {
+        try {
+          // Load progress for this series
+          final progress = await progressProvider.loadSeriesProgress(series.id);
+          
+          // Get total episodes from series (with seasons)
+          final totalEpisodes = series.totalEpisodes > 0 
+              ? series.totalEpisodes 
+              : (progress?.totalEpisodes ?? 0);
+          
+          final watchedEpisodes = progress?.watchedEpisodes ?? 0;
+          
+          if (progress == null || watchedEpisodes == 0) {
+            // Not started - To Do
+            toDo.add(series);
+          } else if (totalEpisodes > 0 && watchedEpisodes >= totalEpisodes) {
+            // Finished - all episodes watched
+            finished.add(series);
+          } else {
+            // In Progress (some episodes watched but not all)
+            inProgress.add(series);
+          }
+        } catch (e) {
+          // If we can't load progress, assume it's not started
+          toDo.add(series);
+        }
+      }
+      
       setState(() {
-        _toDoSeries = allItems.take(allItems.length ~/ 3).toList();
-        _inProgressSeries = allItems.skip(allItems.length ~/ 3).take(allItems.length ~/ 3).toList();
-        _finishedSeries = allItems.skip(2 * (allItems.length ~/ 3)).toList();
+        _toDoSeries = toDo;
+        _inProgressSeries = inProgress;
+        _finishedSeries = finished;
         _isLoading = false;
       });
     } catch (e) {
@@ -165,14 +197,67 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : TabBarView(
-              controller: _tabController,
+          : Column(
               children: [
-                _buildSeriesList(_toDoSeries, theme),
-                _buildSeriesList(_inProgressSeries, theme),
-                _buildSeriesList(_finishedSeries, theme, showFullProgress: true),
+                // User Profile Section at top
+                _buildUserProfileSection(theme),
+                // Tabs with series lists
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildSeriesList(_toDoSeries, theme),
+                      _buildSeriesList(_inProgressSeries, theme),
+                      _buildSeriesList(_finishedSeries, theme, showFullProgress: true),
+                    ],
+                  ),
+                ),
               ],
             ),
+    );
+  }
+
+  Widget _buildUserProfileSection(ThemeData theme) {
+    final auth = Provider.of<AuthProvider>(context);
+    final userInfo = _getUserInfo(auth.token);
+    final initials = _getInitials(userInfo['email']!);
+    final username = userInfo['email']!.split('@')[0];
+
+    return Container(
+      padding: const EdgeInsets.all(AppDim.paddingLarge),
+      color: AppColors.backgroundColor,
+      child: Row(
+        children: [
+          AvatarImage(
+            avatarUrl: userInfo['avatarUrl'],
+            radius: 30,
+            initials: initials,
+            placeholderIcon: Icons.person,
+          ),
+          const SizedBox(width: AppDim.paddingMedium),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  userInfo['name']!,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '@$username',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -210,10 +295,17 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
   }
 
   Widget _buildSeriesCard(Series series, ThemeData theme, bool showFullProgress) {
-    // Calculate progress (simplified - in reality you'd get this from episode progress)
-    final progress = showFullProgress ? 1.0 : 0.5; // 50% for in progress, 100% for finished
-    final totalEpisodes = 12; // This should come from series data
-    final currentEpisode = (totalEpisodes * progress).round();
+    // Get actual progress from provider
+    return Consumer<EpisodeProgressProvider>(
+      builder: (context, progressProvider, child) {
+        final progress = progressProvider.getSeriesProgress(series.id);
+        // Get total episodes from series data (already has seasons loaded)
+        final totalEpisodes = series.totalEpisodes > 0 
+            ? series.totalEpisodes 
+            : (progress?.totalEpisodes ?? 0);
+        final currentEpisode = progress?.currentEpisodeNumber ?? 0;
+        final progressPercentage = progress?.progressPercentage ?? 0.0;
+        final progressValue = progressPercentage / 100;
 
     return Card(
       margin: const EdgeInsets.only(bottom: AppDim.paddingMedium),
@@ -264,7 +356,9 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Episode $currentEpisode of $totalEpisodes',
+                      progress != null && totalEpisodes > 0
+                          ? 'Episode $currentEpisode of $totalEpisodes'
+                          : 'Not started',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: AppColors.textSecondary,
                       ),
@@ -274,7 +368,7 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
-                        value: progress,
+                        value: progressValue,
                         backgroundColor: AppColors.primaryColor.withOpacity(0.2),
                         valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
                         minHeight: 6,
@@ -287,6 +381,8 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
           ),
         ),
       ),
+    );
+      },
     );
   }
 }

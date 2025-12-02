@@ -25,6 +25,10 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
   int? _selectedGenreId; // null means "ALL"
   List<Series> _displayedSeries = [];
   bool _isLoadingSeries = false;
+  int _currentPage = 1;
+  final int _pageSize = 20;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
 
   @override
   void initState() {
@@ -39,17 +43,51 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
     if (_initialized) return;
     _initialized = true;
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-    await seriesProvider.fetchGenres();
+    try {
+      await seriesProvider.fetchGenres();
+      // Ensure genres are loaded before filtering
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading genres: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
   }
 
-  Future<void> _loadAllSeries() async {
-    setState(() {
-      _isLoadingSeries = true;
-    });
+  Future<void> _loadAllSeries({bool append = false}) async {
+    if (append) {
+      _isLoadingMore = true;
+    } else {
+      setState(() {
+        _isLoadingSeries = true;
+        _currentPage = 1;
+        _hasMore = true;
+      });
+    }
     
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
     try {
-      await seriesProvider.fetchSeries(page: 1, pageSize: 100);
+      await seriesProvider.fetchSeries(
+        page: _currentPage,
+        pageSize: _pageSize,
+        append: append,
+      );
+      
+      if (append) {
+        _currentPage++;
+        _hasMore = seriesProvider.hasMore;
+      } else {
+        _currentPage = 1;
+        _hasMore = seriesProvider.hasMore;
+      }
+      
       _filterSeries();
     } catch (e) {
       if (mounted) {
@@ -64,23 +102,49 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
       if (mounted) {
         setState(() {
           _isLoadingSeries = false;
+          _isLoadingMore = false;
         });
       }
     }
   }
 
-  Future<void> _loadSeriesByGenre(int genreId) async {
-    setState(() {
-      _isLoadingSeries = true;
-    });
+  Future<void> _loadMoreSeries() async {
+    if (!_hasMore || _isLoadingMore) return;
+    await _loadAllSeries(append: true);
+  }
+
+  Future<void> _loadSeriesByGenre(int genreId, {bool append = false}) async {
+    if (append) {
+      _isLoadingMore = true;
+    } else {
+      setState(() {
+        _isLoadingSeries = true;
+        _currentPage = 1;
+        _hasMore = true;
+      });
+    }
     
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
     try {
-      // Use fetchSeries with genreId filter instead
-      await seriesProvider.fetchSeries(page: 1, pageSize: 100, genreId: genreId);
+      await seriesProvider.fetchSeries(
+        page: _currentPage,
+        pageSize: _pageSize,
+        genreId: genreId,
+        append: append,
+      );
+      
+      if (append) {
+        _currentPage++;
+        _hasMore = seriesProvider.hasMore;
+      } else {
+        _currentPage = 1;
+        _hasMore = seriesProvider.hasMore;
+      }
+      
       setState(() {
         _displayedSeries = seriesProvider.items;
         _isLoadingSeries = false;
+        _isLoadingMore = false;
       });
     } catch (e) {
       if (mounted) {
@@ -92,9 +156,15 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
         );
         setState(() {
           _isLoadingSeries = false;
+          _isLoadingMore = false;
         });
       }
     }
+  }
+
+  Future<void> _loadMoreSeriesByGenre(int genreId) async {
+    if (!_hasMore || _isLoadingMore) return;
+    await _loadSeriesByGenre(genreId, append: true);
   }
 
   void _filterSeries() {
@@ -125,6 +195,8 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
     setState(() {
       _selectedGenreId = genreId;
       _isLoadingSeries = true;
+      _currentPage = 1;
+      _hasMore = true;
     });
     
     if (genreId == null) {
@@ -177,59 +249,57 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
             return Column(
               children: [
                 // Horizontal scrollable filter tags - Show ALL genres
-                Container(
+                SizedBox(
                   height: 50,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: ListView.builder(
+                  child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                    itemCount: genres.length + 1, // +1 for "ALL"
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
+                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                    padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium, vertical: 8),
+                    child: Row(
+                      children: [
                         // "ALL" option
-                        final isSelected = _selectedGenreId == null;
-                        return Padding(
+                        Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: FilterChip(
                             label: const Text('ALL'),
-                            selected: isSelected,
+                            selected: _selectedGenreId == null,
                             onSelected: (selected) {
                               _onGenreSelected(null);
                             },
                             selectedColor: AppColors.primaryColor,
                             checkmarkColor: AppColors.textLight,
                             labelStyle: TextStyle(
-                              color: isSelected ? AppColors.textLight : AppColors.textPrimary,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: _selectedGenreId == null ? AppColors.textLight : AppColors.textPrimary,
+                              fontWeight: _selectedGenreId == null ? FontWeight.bold : FontWeight.normal,
                               fontSize: 12,
                             ),
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           ),
-                        );
-                      }
-                      
-                      final genre = genres[index - 1];
-                      final isSelected = _selectedGenreId == genre.id;
-                      
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(genre.name.toUpperCase()),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            _onGenreSelected(selected ? genre.id : null);
-                          },
-                          selectedColor: AppColors.primaryColor,
-                          checkmarkColor: AppColors.textLight,
-                          labelStyle: TextStyle(
-                            color: isSelected ? AppColors.textLight : AppColors.textPrimary,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                            fontSize: 12,
-                          ),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
-                      );
-                    },
+                        // Genre chips
+                        ...genres.map((genre) {
+                          final isSelected = _selectedGenreId == genre.id;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(genre.name.toUpperCase()),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                _onGenreSelected(selected ? genre.id : null);
+                              },
+                              selectedColor: AppColors.primaryColor,
+                              checkmarkColor: AppColors.textLight,
+                              labelStyle: TextStyle(
+                                color: isSelected ? AppColors.textLight : AppColors.textPrimary,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontSize: 12,
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
                   ),
                 ),
                 
@@ -257,16 +327,41 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
                                 ],
                               ),
                             )
-                          : ListView.builder(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppDim.paddingMedium,
-                                horizontal: AppDim.paddingMedium,
-                              ),
-                              itemCount: _displayedSeries.length,
-                              itemBuilder: (context, index) {
-                                final series = _displayedSeries[index];
-                                return _buildSeriesCard(series, context, theme);
+                          : NotificationListener<ScrollNotification>(
+                              onNotification: (ScrollNotification scrollInfo) {
+                                // Load more when scrolled to bottom
+                                if (scrollInfo.metrics.pixels >= 
+                                    scrollInfo.metrics.maxScrollExtent - 200) {
+                                  if (_hasMore && !_isLoadingMore) {
+                                    if (_selectedGenreId == null) {
+                                      _loadMoreSeries();
+                                    } else {
+                                      _loadMoreSeriesByGenre(_selectedGenreId!);
+                                    }
+                                  }
+                                }
+                                return false;
                               },
+                              child: ListView.builder(
+                                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: AppDim.paddingMedium,
+                                  horizontal: AppDim.paddingMedium,
+                                ),
+                                itemCount: _displayedSeries.length + (_hasMore && _isLoadingMore ? 1 : 0),
+                                itemBuilder: (context, index) {
+                                  if (index == _displayedSeries.length) {
+                                    return const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(16.0),
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  }
+                                  final series = _displayedSeries[index];
+                                  return _buildSeriesCard(series, context, theme);
+                                },
+                              ),
                             ),
                 ),
               ],

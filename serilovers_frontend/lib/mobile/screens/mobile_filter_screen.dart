@@ -20,7 +20,7 @@ class _MobileFilterScreenState extends State<MobileFilterScreen> {
   Genre? _selectedGenre;
   int? _startYear;
   int? _endYear;
-  final List<int> _years = [2020, 2021, 2022, 2023, 2024, 2025];
+  late List<int> _years; // Will be initialized in initState
   bool _requestedGenres = false;
 
   @override
@@ -29,6 +29,11 @@ class _MobileFilterScreenState extends State<MobileFilterScreen> {
     _selectedGenre = widget.initialFilter?.genre;
     _startYear = widget.initialFilter?.startYear;
     _endYear = widget.initialFilter?.endYear;
+    
+    // Generate years from 1950 to current year + 5
+    final currentYear = DateTime.now().year;
+    _years = List.generate(currentYear + 5 - 1950 + 1, (index) => 1950 + index);
+    _years = _years.reversed.toList(); // Most recent first
   }
 
   Future<void> _ensureGenresLoaded(BuildContext context) async {

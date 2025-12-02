@@ -133,7 +133,9 @@ class MobileChallengesProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('❌ MobileChallengesProvider: Error starting challenge: $e');
-      rethrow;
+      // Don't rethrow - let the UI handle the error gracefully
+      // The error will be shown in the UI via SnackBar
+      throw Exception('Failed to start challenge. Please try again later.');
     }
   }
 

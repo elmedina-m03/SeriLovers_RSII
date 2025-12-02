@@ -26,7 +26,7 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       case 1:
         return const MobileCategoriesScreen();
       case 2:
-        return const MyListsScreen(); // Show My Lists screen (Watchlist)
+        return const MyListsScreen(); // Watchlist
       case 3:
         return const MobileChallengesScreen();
       case 4:
@@ -88,7 +88,7 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.bookmark_outline),
             activeIcon: Icon(Icons.bookmark),
-            label: 'Lists',
+            label: 'Watchlist',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.flag_outlined),

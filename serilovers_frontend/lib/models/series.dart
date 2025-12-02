@@ -1,3 +1,5 @@
+import 'season.dart';
+
 /// Model representing a TV Series
 class Series {
   final int id;
@@ -10,6 +12,7 @@ class Series {
   final int ratingsCount;
   final int watchlistsCount;
   final String? imageUrl;
+  final List<Season> seasons;
 
   Series({
     required this.id,
@@ -22,6 +25,7 @@ class Series {
     required this.ratingsCount,
     required this.watchlistsCount,
     this.imageUrl,
+    this.seasons = const [],
   });
 
 
@@ -41,6 +45,10 @@ class Series {
       ratingsCount: json['ratingsCount'] as int? ?? 0,
       watchlistsCount: json['watchlistsCount'] as int? ?? 0,
       imageUrl: json['imageUrl'] as String?,
+      seasons: (json['seasons'] as List<dynamic>?)
+              ?.map((s) => Season.fromJson(s as Map<String, dynamic>))
+              .toList() ??
+          [],
     );
   }
 
@@ -57,7 +65,18 @@ class Series {
       'ratingsCount': ratingsCount,
       'watchlistsCount': watchlistsCount,
       'imageUrl': imageUrl,
+      'seasons': seasons.map((s) => s.toJson()).toList(),
     };
+  }
+
+  /// Get total number of episodes across all seasons
+  int get totalEpisodes {
+    return seasons.fold(0, (sum, season) => sum + season.episodes.length);
+  }
+
+  /// Get total number of seasons
+  int get totalSeasons {
+    return seasons.length;
   }
 }
 

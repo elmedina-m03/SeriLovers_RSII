@@ -60,12 +60,28 @@ class SeriesProvider extends ChangeNotifier {
     }
   }
 
+  /// Current page number
+  int _currentPage = 1;
+  
+  /// Current page size
+  int _currentPageSize = 20;
+  
+  /// Current search query
+  String? _currentSearch;
+  
+  /// Current genre filter
+  int? _currentGenreId;
+  
+  /// Whether there are more items to load
+  bool get hasMore => items.length < totalCount;
+
   /// Fetches series from the API with optional filtering and pagination
   /// 
   /// [page] - Page number (default: 1)
   /// [pageSize] - Number of items per page (default: 20)
   /// [search] - Optional search keyword to filter by title/description
   /// [genreId] - Optional genre ID to filter by genre
+  /// [append] - If true, appends to existing items instead of replacing
   /// 
   /// Updates [items], [totalCount], and [isLoading] state.
   /// Notifies listeners on completion or error.
@@ -74,6 +90,7 @@ class SeriesProvider extends ChangeNotifier {
     int pageSize = 20,
     String? search,
     int? genreId,
+    bool append = false,
   }) async {
     isLoading = true;
     notifyListeners();
@@ -123,7 +140,7 @@ class SeriesProvider extends ChangeNotifier {
         final itemsList = response['items'] as List<dynamic>? ?? [];
         print('Items list length: ${itemsList.length}');
         
-        items = itemsList
+        final newItems = itemsList
             .map((item) {
               try {
                 return Series.fromJson(item as Map<String, dynamic>);
@@ -135,8 +152,24 @@ class SeriesProvider extends ChangeNotifier {
             })
             .toList();
 
+        // Append or replace items
+        if (append) {
+          // Remove duplicates by ID
+          final existingIds = items.map((s) => s.id).toSet();
+          final uniqueNewItems = newItems.where((s) => !existingIds.contains(s.id)).toList();
+          items = [...items, ...uniqueNewItems];
+        } else {
+          items = newItems;
+        }
+
         // Parse total count
         totalCount = response['totalItems'] as int? ?? 0;
+        
+        // Store current pagination state
+        _currentPage = page;
+        _currentPageSize = pageSize;
+        _currentSearch = search;
+        _currentGenreId = genreId;
         print('Total count: $totalCount');
         print('Parsed ${items.length} series');
       } else {
@@ -173,6 +206,57 @@ class SeriesProvider extends ChangeNotifier {
     } catch (e) {
       return null;
     }
+  }
+
+  /// Fetches full series detail including seasons and episodes
+  /// 
+  /// [id] - Series ID to fetch
+  /// 
+  /// Returns the Series with full details including seasons and episodes
+  Future<Series?> fetchSeriesDetail(int id) async {
+    try {
+      final token = _authProvider.token;
+      final response = await _apiService.get(
+        '/Series/$id',
+        token: token,
+      );
+
+      if (response is Map<String, dynamic>) {
+        final series = Series.fromJson(response);
+        
+        // Update or add to items list
+        final index = items.indexWhere((s) => s.id == id);
+        if (index >= 0) {
+          items[index] = series;
+        } else {
+          items.add(series);
+        }
+        
+        notifyListeners();
+        return series;
+      }
+      
+      return null;
+    } catch (e) {
+      print('Error fetching series detail: $e');
+      return null;
+    }
+  }
+
+  /// Loads more series (next page) for pagination
+  /// 
+  /// Uses the current filter/search state to load the next page
+  Future<void> loadMoreSeries() async {
+    if (!hasMore || isLoading) return;
+    
+    final nextPage = _currentPage + 1;
+    await fetchSeries(
+      page: nextPage,
+      pageSize: _currentPageSize,
+      search: _currentSearch,
+      genreId: _currentGenreId,
+      append: true,
+    );
   }
 
   /// Searches series by query string.

@@ -2,14 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../../models/series.dart';
-import '../../models/watchlist.dart';
+import '../../models/season.dart';
 import '../../providers/series_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/episode_review_provider.dart';
+import '../../providers/episode_progress_provider.dart';
+import '../../providers/rating_provider.dart';
+import '../../models/episode_progress.dart';
+import '../../services/episode_progress_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../widgets/mark_episodes_dialog.dart';
+import '../widgets/mobile_page_route.dart';
+import '../widgets/season_selector.dart';
+import 'mobile_reviews_screen.dart';
+import 'mobile_series_description_screen.dart';
 
 /// Mobile series detail screen with banner, info, and watchlist button
 class MobileSeriesDetailScreen extends StatefulWidget {
@@ -29,6 +37,10 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
   bool _isDescriptionExpanded = false;
   int? _userRating; // User's rating (1-5)
   bool _isRatingLoading = false;
+  int? _selectedSeasonNumber; // Currently selected season
+  bool _isLoadingDetail = false;
+  Set<int> _watchedEpisodeIds = {}; // Track watched episode IDs for UI updates
+  Future<SeriesProgress?>? _progressFuture; // Cache the progress future to avoid rebuild loops
 
   @override
   void initState() {
@@ -46,8 +58,15 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       if (updated != null) {
         setState(() {
           _series = updated;
+          // Auto-select first season if available
+          if (_series.seasons.isNotEmpty && _selectedSeasonNumber == null) {
+            _selectedSeasonNumber = _series.seasons.first.seasonNumber;
+          }
         });
       }
+      
+      // Load full series detail with seasons and episodes
+      _loadSeriesDetail();
       
       // Load legacy watchlist
       if (token != null && token.isNotEmpty && watchlistProvider.items.isEmpty) {
@@ -74,6 +93,28 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         } catch (_) {
           // Silently fail
         }
+      }
+
+      // Load reviews for this series (public - doesn't require authentication)
+      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+      ratingProvider.loadSeriesRatings(widget.series.id).catchError((_) {});
+      
+      // Load progress for this series (requires authentication)
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      if (token != null && token.isNotEmpty) {
+        // Load progress in post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _progressFuture = progressProvider.loadSeriesProgress(widget.series.id);
+          _progressFuture!.then((_) {
+            // Load watched episodes for UI indicators
+            if (mounted) {
+              _loadWatchedEpisodes();
+            }
+          }).catchError((_) {
+            // Silently fail - progress will show as not started
+            return null;
+          });
+        });
       }
     });
   }
@@ -180,15 +221,35 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
 
                   const SizedBox(height: AppDim.paddingSmall),
 
-                  // Episode count and release year with heart icon
+                  // Release year and season/episode info with heart icon
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        '${_series.releaseDate.year}',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            '${_series.releaseDate.year}',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          if (_series.seasons.isNotEmpty) ...[
+                            const SizedBox(width: AppDim.paddingSmall),
+                            Text(
+                              '• ${_series.totalSeasons} season${_series.totalSeasons > 1 ? 's' : ''}',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(width: AppDim.paddingSmall),
+                            Text(
+                              '• ${_series.totalEpisodes} episodes',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       // Heart icon positioned like in prototype
                       Consumer<WatchlistProvider>(
@@ -197,56 +258,60 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                             future: watchlistProvider.isInFavorites(_series.id),
                             builder: (context, snapshot) {
                               final isFavorite = snapshot.data ?? false;
-                              return IconButton(
-                                icon: Icon(
-                                  isFavorite ? Icons.favorite : Icons.favorite_border,
-                                  color: isFavorite ? Colors.red : AppColors.textSecondary,
-                                  size: 28,
-                                ),
-                                onPressed: () async {
-                                  final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                                  if (!authProvider.isAuthenticated) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Please log in to add favorites'),
-                                          backgroundColor: AppColors.dangerColor,
-                                        ),
-                                      );
-                                    }
-                                    return;
-                                  }
-                                  
-                                  try {
-                                    await watchlistProvider.toggleFavorites(_series.id);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            isFavorite 
-                                              ? 'Removed from favorites' 
-                                              : 'Added to favorites',
+                              return AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 300),
+                                child: IconButton(
+                                  key: ValueKey(isFavorite),
+                                  icon: Icon(
+                                    isFavorite ? Icons.favorite : Icons.favorite_border,
+                                    color: isFavorite ? Colors.red : AppColors.textSecondary,
+                                    size: 28,
+                                  ),
+                                  onPressed: () async {
+                                    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                                    if (!authProvider.isAuthenticated) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Please log in to add favorites'),
+                                            backgroundColor: AppColors.dangerColor,
                                           ),
-                                          backgroundColor: AppColors.successColor,
-                                          duration: const Duration(seconds: 1),
-                                        ),
-                                      );
-                                      // Refresh the screen
-                                      setState(() {});
+                                        );
+                                      }
+                                      return;
                                     }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Error: $e'),
-                                          backgroundColor: AppColors.dangerColor,
-                                        ),
-                                      );
+                                    
+                                    try {
+                                      await watchlistProvider.toggleFavorites(_series.id);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              isFavorite 
+                                                ? 'Removed from favorites' 
+                                                : 'Added to favorites',
+                                            ),
+                                            backgroundColor: AppColors.successColor,
+                                            duration: const Duration(seconds: 1),
+                                          ),
+                                        );
+                                        // Refresh the screen state
+                                        setState(() {});
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $e'),
+                                            backgroundColor: AppColors.dangerColor,
+                                          ),
+                                        );
+                                      }
                                     }
-                                  }
-                                },
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
+                                  },
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
                               );
                             },
                           );
@@ -382,6 +447,161 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
 
                   const SizedBox(height: AppDim.paddingLarge),
 
+                  // Progress Section
+                  Consumer<EpisodeProgressProvider>(
+                    builder: (context, progressProvider, child) {
+                      // Use cached future or create new one if not exists
+                      if (_progressFuture == null) {
+                        _progressFuture = _loadProgress(progressProvider);
+                      }
+                      
+                      return FutureBuilder<SeriesProgress?>(
+                        future: _progressFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const SizedBox(
+                              height: 100,
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          
+                          final progress = snapshot.data ?? progressProvider.getSeriesProgress(_series.id);
+                          
+                          // Calculate progress for selected season if available
+                          int totalEpisodes = progress?.totalEpisodes ?? _series.totalEpisodes;
+                          int currentEpisode = progress?.currentEpisodeNumber ?? 0;
+                          double progressPercentage = progress?.progressPercentage ?? 0.0;
+                          
+                          // If a season is selected and seasons are loaded, show season-specific progress
+                          final selectedSeason = _selectedSeason;
+                          if (selectedSeason != null && _series.seasons.isNotEmpty && selectedSeason.episodes.isNotEmpty) {
+                            final seasonEpisodes = selectedSeason.episodes;
+                            final watchedInSeason = _watchedEpisodeIds
+                                .where((epId) => seasonEpisodes.any((e) => e.id == epId))
+                                .length;
+                            totalEpisodes = seasonEpisodes.length;
+                            currentEpisode = watchedInSeason;
+                            progressPercentage = totalEpisodes > 0 
+                                ? (watchedInSeason / totalEpisodes * 100) 
+                                : 0.0;
+                          } else if (totalEpisodes == 0 && _series.seasons.isNotEmpty) {
+                            // If no progress but seasons exist, calculate from seasons
+                            totalEpisodes = _series.totalEpisodes;
+                            currentEpisode = 0;
+                            progressPercentage = 0.0;
+                          }
+                          
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Your Progress',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      color: AppColors.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () => _showMarkEpisodesDialog(
+                                      context,
+                                      progressProvider,
+                                      totalEpisodes,
+                                      currentEpisode,
+                                    ),
+                                    icon: const Icon(Icons.check_circle_outline, size: 20),
+                                    label: const Text('Mark Episodes'),
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.primaryColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppDim.paddingSmall),
+                              // Always show progress bar
+                              Text(
+                                _selectedSeason != null && _series.seasons.isNotEmpty
+                                    ? 'Season ${_selectedSeason!.seasonNumber}: $currentEpisode of $totalEpisodes episodes'
+                                    : totalEpisodes > 0
+                                        ? 'Episode $currentEpisode of $totalEpisodes'
+                                        : 'Not started',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              const SizedBox(height: AppDim.paddingSmall),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: totalEpisodes > 0 ? (progressPercentage / 100).clamp(0.0, 1.0) : 0.0,
+                                  minHeight: 8,
+                                  backgroundColor: AppColors.primaryColor.withOpacity(0.2),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    totalEpisodes > 0 
+                                        ? AppColors.primaryColor 
+                                        : AppColors.primaryColor.withOpacity(0.3),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                totalEpisodes > 0
+                                    ? '${progressPercentage.toStringAsFixed(1)}% complete'
+                                    : '0% complete',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: AppDim.paddingLarge),
+
+                  // Seasons and Episodes Section
+                  if (_series.seasons.isNotEmpty) ...[
+                    Text(
+                      'Seasons & Episodes',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: AppDim.paddingMedium),
+                    
+                    // Season Selector
+                    SeasonSelector(
+                      seasons: _series.seasons,
+                      selectedSeasonNumber: _selectedSeasonNumber,
+                      onSeasonSelected: (seasonNumber) {
+                        setState(() {
+                          _selectedSeasonNumber = seasonNumber;
+                        });
+                      },
+                    ),
+                    
+                    const SizedBox(height: AppDim.paddingMedium),
+                    
+                    // Episodes List for Selected Season
+                    if (_selectedSeason != null) ...[
+                      _buildEpisodesList(_selectedSeason!, theme),
+                    ] else if (_isLoadingDetail) ...[
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(AppDim.paddingLarge),
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: AppDim.paddingLarge),
+                  ],
+
                   // Description with Read more
                   if (_series.description != null && _series.description!.isNotEmpty) ...[
                     _buildDescription(_series.description!, theme),
@@ -402,10 +622,15 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                       height: 100,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
                         itemCount: _series.actors.length,
                         itemBuilder: (context, index) {
                           final actor = _series.actors[index];
-                          return _buildActorCard(actor, context, theme);
+                          return Padding(
+                            padding: const EdgeInsets.only(right: AppDim.paddingSmall),
+                            child: _buildActorCard(actor, context, theme),
+                          );
                         },
                       ),
                     ),
@@ -465,11 +690,10 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                     width: double.infinity,
                     child: OutlinedButton(
                       onPressed: () {
-                        // Navigate to full reviews screen
-                        // For now, show a placeholder
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Reviews feature coming soon'),
+                        Navigator.push(
+                          context,
+                          MobilePageRoute(
+                            builder: (context) => MobileReviewsScreen(series: _series),
                           ),
                         );
                       },
@@ -565,49 +789,284 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
   }
 
   Widget _buildReviewsPreview(BuildContext context, ThemeData theme) {
-    // Placeholder reviews - in real implementation, fetch from API
-    final placeholderReviews = [
-      {'name': 'Adina K.', 'rating': 5, 'comment': 'Loved every episode!'},
-      {'name': 'Emma K.', 'rating': 5, 'comment': 'Amazing story!'},
-    ];
+    return Consumer<RatingProvider>(
+      builder: (context, ratingProvider, child) {
+        final reviews = ratingProvider.getSeriesRatings(_series.id);
+        final previewReviews = reviews.take(2).toList();
 
-    return Column(
-      children: placeholderReviews.map((review) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: AppDim.paddingSmall),
-          child: ListTile(
-            title: Text(
-              review['name'] as String,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+        if (previewReviews.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppDim.paddingMedium),
+            child: Text(
+              'No reviews yet. Be the first to review!',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: AppColors.textSecondary,
+                fontStyle: FontStyle.italic,
               ),
             ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                Row(
-                  children: List.generate(5, (index) {
-                    return Icon(
-                      index < (review['rating'] as int)
-                          ? Icons.star
-                          : Icons.star_border,
-                      size: 16,
-                      color: Colors.amber,
-                    );
-                  }),
+          );
+        }
+
+        return Column(
+          children: previewReviews.map((review) {
+            return Card(
+              margin: const EdgeInsets.only(bottom: AppDim.paddingSmall),
+              child: ListTile(
+                title: Text(
+                  review.userName ?? 'Anonymous',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  review['comment'] as String,
-                  style: theme.textTheme.bodySmall,
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 4),
+                    Row(
+                      children: List.generate(5, (index) {
+                        return Icon(
+                          index < review.starRating
+                              ? Icons.star
+                              : Icons.star_border,
+                          size: 16,
+                          color: Colors.amber,
+                        );
+                      }),
+                    ),
+                    if (review.comment != null && review.comment!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        review.comment!,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
                 ),
-              ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  /// Build episodes list for a season
+  Widget _buildEpisodesList(Season season, ThemeData theme) {
+    if (season.episodes.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(AppDim.paddingMedium),
+        child: Text(
+          'No episodes available for this season.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: AppColors.textSecondary,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
+    // Sort episodes by episode number
+    final sortedEpisodes = List<Episode>.from(season.episodes)
+      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Season ${season.seasonNumber} • ${season.episodes.length} episodes',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: AppDim.paddingMedium),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: sortedEpisodes.length,
+          itemBuilder: (context, index) {
+            final episode = sortedEpisodes[index];
+            return _buildEpisodeCard(episode, season, theme);
+          },
+        ),
+      ],
+    );
+  }
+
+  /// Build a single episode card
+  Widget _buildEpisodeCard(Episode episode, Season season, ThemeData theme) {
+    final isWatched = _watchedEpisodeIds.contains(episode.id);
+    final episodeNumber = 'S${season.seasonNumber.toString().padLeft(2, '0')}E${episode.episodeNumber.toString().padLeft(2, '0')}';
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppDim.paddingSmall),
+      color: isWatched 
+          ? AppColors.primaryColor.withOpacity(0.1) 
+          : AppColors.cardBackground,
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isWatched 
+              ? AppColors.successColor 
+              : AppColors.primaryColor,
+          child: Text(
+            episodeNumber,
+            style: TextStyle(
+              color: AppColors.textLight,
+              fontWeight: FontWeight.bold,
+              fontSize: 10,
             ),
           ),
-        );
-      }).toList(),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                episode.title,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (isWatched)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Icon(
+                  Icons.check_circle,
+                  size: 20,
+                  color: AppColors.successColor,
+                ),
+              ),
+          ],
+        ),
+        subtitle: episode.description != null && episode.description!.isNotEmpty
+            ? Text(
+                episode.description!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              )
+            : episode.airDate != null
+                ? Text(
+                    'Aired: ${episode.airDate!.year}-${episode.airDate!.month.toString().padLeft(2, '0')}-${episode.airDate!.day.toString().padLeft(2, '0')}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  )
+                : null,
+        trailing: episode.rating != null
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.star,
+                    size: 16,
+                    color: Colors.amber,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    episode.rating!.toStringAsFixed(1),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              )
+            : IconButton(
+                icon: Icon(
+                  isWatched ? Icons.check_circle : Icons.check_circle_outline,
+                  color: isWatched ? AppColors.successColor : AppColors.textSecondary,
+                ),
+                onPressed: () => _toggleEpisodeWatched(episode.id, isWatched),
+                tooltip: isWatched ? 'Mark as unwatched' : 'Mark as watched',
+              ),
+        onTap: () => _toggleEpisodeWatched(episode.id, isWatched),
+      ),
     );
+  }
+
+  /// Toggle episode watched status
+  Future<void> _toggleEpisodeWatched(int episodeId, bool isCurrentlyWatched) async {
+    try {
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      
+      if (isCurrentlyWatched) {
+        // Mark as unwatched (remove progress)
+        await progressProvider.removeProgress(episodeId);
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _watchedEpisodeIds.remove(episodeId);
+              });
+            }
+          });
+        }
+      } else {
+        // Mark as watched
+        await progressProvider.markEpisodeWatched(episodeId);
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _watchedEpisodeIds.add(episodeId);
+              });
+            }
+          });
+        }
+      }
+      
+      // Refresh series progress and watched episodes
+      _progressFuture = progressProvider.loadSeriesProgress(_series.id);
+      await _progressFuture;
+      await _loadWatchedEpisodes();
+      
+      // Small delay to ensure watched episodes list is updated
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      if (mounted) {
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+          if (mounted) {
+            // Check if all episodes are now watched (only if we marked as watched, not unwatched)
+            if (!isCurrentlyWatched) {
+              final isComplete = await _checkIfSeriesComplete();
+              if (isComplete) {
+                _showCompletionNotification();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Episode marked as watched!'),
+                    backgroundColor: AppColors.successColor,
+                  ),
+                );
+              }
+            } else {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Episode marked as unwatched'),
+                  backgroundColor: AppColors.successColor,
+                ),
+              );
+            }
+            setState(() {}); // Refresh UI
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating episode: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildDescription(String description, ThemeData theme) {
@@ -630,12 +1089,16 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         if (isLong)
           TextButton(
             onPressed: () {
-              setState(() {
-                _isDescriptionExpanded = !_isDescriptionExpanded;
-              });
+              // Navigate to full description screen
+              Navigator.push(
+                context,
+                MobilePageRoute(
+                  builder: (context) => MobileSeriesDescriptionScreen(series: _series),
+                ),
+              );
             },
-            child: Text(
-              _isDescriptionExpanded ? 'Read less' : 'Read more',
+            child: const Text(
+              'See more',
               style: TextStyle(color: AppColors.primaryColor),
             ),
           ),
@@ -645,6 +1108,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
 
   Future<void> _handleRatingTap(int rating) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
     final token = authProvider.token;
     
     if (token == null || token.isEmpty) {
@@ -665,10 +1129,17 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
     });
 
     try {
-      // For now, show a message that rating is saved
-      // In a full implementation, you would need to get the first episode ID
-      // and submit a review for that episode, or use a series-level rating endpoint
-      await Future.delayed(const Duration(milliseconds: 500)); // Simulate API call
+      // Convert star rating (1-5) to score (1-10)
+      final score = rating * 2;
+      
+      await ratingProvider.createOrUpdateRating(
+        seriesId: _series.id,
+        score: score,
+        comment: null, // Just rating, no comment
+      );
+      
+      // Refresh reviews to show updated rating
+      await ratingProvider.loadSeriesRatings(_series.id);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -677,6 +1148,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
             backgroundColor: AppColors.successColor,
           ),
         );
+        setState(() {}); // Refresh UI
       }
     } catch (e) {
       if (mounted) {
@@ -695,6 +1167,315 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         setState(() {
           _isRatingLoading = false;
         });
+      }
+    }
+  }
+
+  /// Load full series detail with seasons and episodes
+  Future<void> _loadSeriesDetail() async {
+    if (_isLoadingDetail) return;
+    
+    setState(() {
+      _isLoadingDetail = true;
+    });
+
+    try {
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+      final detail = await seriesProvider.fetchSeriesDetail(_series.id);
+      
+      if (detail != null && mounted) {
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _series = detail;
+              // Auto-select first season if available and none selected
+              if (_series.seasons.isNotEmpty && _selectedSeasonNumber == null) {
+                final sortedSeasons = List<Season>.from(_series.seasons)
+                  ..sort((a, b) => a.seasonNumber.compareTo(b.seasonNumber));
+                _selectedSeasonNumber = sortedSeasons.first.seasonNumber;
+              }
+              _isLoadingDetail = false;
+            });
+            // Reload watched episodes after series detail loads
+            _loadWatchedEpisodes();
+            // Reset progress future to reload with new series data
+            _progressFuture = null;
+          }
+        });
+      } else if (mounted) {
+        setState(() {
+          _isLoadingDetail = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingDetail = false;
+        });
+      }
+    }
+  }
+
+  /// Load progress for the series
+  Future<SeriesProgress?> _loadProgress(EpisodeProgressProvider provider) async {
+    try {
+      return await provider.loadSeriesProgress(_series.id);
+    } catch (e) {
+      // Return cached progress if available, or null if not found
+      return provider.getSeriesProgress(_series.id);
+    }
+  }
+
+  /// Check if all episodes across all seasons are watched
+  Future<bool> _checkIfSeriesComplete() async {
+    try {
+      // Ensure series detail is loaded with seasons
+      if (_series.seasons.isEmpty) {
+        return false;
+      }
+
+      // Get all episode IDs from all seasons
+      final allEpisodeIds = <int>{};
+      for (var season in _series.seasons) {
+        for (var episode in season.episodes) {
+          allEpisodeIds.add(episode.id);
+        }
+      }
+
+      if (allEpisodeIds.isEmpty) {
+        return false;
+      }
+
+      // Check if all episodes are in watched list
+      return allEpisodeIds.every((epId) => _watchedEpisodeIds.contains(epId));
+    } catch (e) {
+      print('Error checking series completion: $e');
+      return false;
+    }
+  }
+
+  /// Show completion notification with option to rate
+  void _showCompletionNotification() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.celebration, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '🎉 Series Complete!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'You\'ve finished ${_series.title}. Rate it now!',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.primaryColor,
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Rate',
+          textColor: Colors.white,
+          onPressed: () {
+            Navigator.push(
+              context,
+              MobilePageRoute(
+                builder: (context) => MobileReviewsScreen(series: _series),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Load watched episode IDs for UI indicators
+  Future<void> _loadWatchedEpisodes() async {
+    if (!mounted) return;
+    
+    try {
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      
+      if (token == null || token.isEmpty) {
+        return;
+      }
+
+      final progressService = EpisodeProgressService();
+      final userProgress = await progressService.getUserProgress(token: token);
+      
+      // Use post-frame callback to avoid setState during build
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _watchedEpisodeIds = userProgress
+                  .where((p) => p.seriesId == _series.id)
+                  .map((p) => p.episodeId)
+                  .toSet();
+            });
+          }
+        });
+      }
+    } catch (e) {
+      // Silently fail - watched indicators just won't show
+      print('Error loading watched episodes: $e');
+    }
+  }
+
+  /// Get the currently selected season
+  Season? get _selectedSeason {
+    if (_selectedSeasonNumber == null || _series.seasons.isEmpty) return null;
+    try {
+      return _series.seasons.firstWhere(
+        (s) => s.seasonNumber == _selectedSeasonNumber,
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Show dialog to mark episodes as watched
+  Future<void> _showMarkEpisodesDialog(
+    BuildContext context,
+    EpisodeProgressProvider progressProvider,
+    int totalEpisodes,
+    int currentEpisode,
+  ) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (!authProvider.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in to track progress'),
+          backgroundColor: AppColors.dangerColor,
+        ),
+      );
+      return;
+    }
+
+    // Ensure totalEpisodes is valid (at least 1)
+    if (totalEpisodes <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No episodes available to mark'),
+          backgroundColor: AppColors.dangerColor,
+        ),
+      );
+      return;
+    }
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => MarkEpisodesDialog(
+        totalEpisodes: totalEpisodes,
+        currentEpisode: currentEpisode,
+        seriesTitle: _series.title,
+      ),
+    );
+
+    if (result != null && mounted) {
+      // Mark episodes sequentially up to the selected number
+      await _markEpisodesUpTo(progressProvider, result);
+    }
+  }
+
+  /// Mark episodes sequentially up to a certain episode number
+  Future<void> _markEpisodesUpTo(
+    EpisodeProgressProvider progressProvider,
+    int targetEpisode,
+  ) async {
+    try {
+      // Show loading indicator
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Marking episodes...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+
+      // Get current progress to know where we are
+      final currentProgress = progressProvider.getSeriesProgress(_series.id);
+      final currentEpisode = currentProgress?.currentEpisodeNumber ?? 0;
+      
+      // We need to mark episodes from currentEpisode + 1 to targetEpisode
+      // Since we don't have direct access to episode IDs, we'll use the "next episode" API
+      // to get episodes and mark them sequentially
+      
+      int episodesToMark = targetEpisode - currentEpisode;
+      if (episodesToMark <= 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No new episodes to mark'),
+              backgroundColor: AppColors.dangerColor,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Mark episodes one by one using the next episode API
+      for (int i = 0; i < episodesToMark; i++) {
+        final nextEpisodeData = await progressProvider.getNextEpisodeId(_series.id);
+        if (nextEpisodeData != null) {
+          await progressProvider.markEpisodeWatched(nextEpisodeData);
+        } else {
+          // No more episodes to mark
+          break;
+        }
+      }
+
+      // Refresh progress and watched episodes
+      await progressProvider.loadSeriesProgress(_series.id);
+      await _loadWatchedEpisodes();
+      
+      // Small delay to ensure watched episodes list is updated
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (mounted) {
+        // Check if all episodes are now watched
+        final isComplete = await _checkIfSeriesComplete();
+        
+        if (isComplete) {
+          _showCompletionNotification();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Marked ${episodesToMark} episode${episodesToMark > 1 ? 's' : ''} as watched!'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+        }
+        // Refresh the UI
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error marking episodes: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
       }
     }
   }

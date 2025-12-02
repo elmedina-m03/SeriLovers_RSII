@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/scheduler.dart';
 
 import '../providers/watchlist_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/series_provider.dart';
 import '../core/theme/app_colors.dart';
 import '../utils/file_picker_helper.dart';
 import '../services/api_service.dart';
@@ -27,6 +29,19 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
   String? _selectedCategory;
   String? _selectedStatus;
   String? _uploadedImageUrl;
+  List<String> _selectedGenres = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Load genres when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+      if (seriesProvider.genres.isEmpty) {
+        seriesProvider.fetchGenres();
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -337,9 +352,73 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                 },
               ),
               const SizedBox(height: 24),
-              // Category section
+              // Genres section (multiple selection)
               Text(
-                'Category',
+                'Genres (select multiple)',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Consumer<SeriesProvider>(
+                builder: (context, seriesProvider, child) {
+                  if (seriesProvider.isGenresLoading) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    );
+                  }
+
+                  final genres = seriesProvider.genres;
+                  if (genres.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        'No genres available',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: genres.map((genre) {
+                      final isSelected = _selectedGenres.contains(genre.name.toUpperCase());
+                      return FilterChip(
+                        label: Text(genre.name.toUpperCase()),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _selectedGenres.add(genre.name.toUpperCase());
+                            } else {
+                              _selectedGenres.remove(genre.name.toUpperCase());
+                            }
+                          });
+                        },
+                        selectedColor: AppColors.primaryColor,
+                        checkmarkColor: AppColors.textLight,
+                        labelStyle: TextStyle(
+                          color: isSelected ? AppColors.textLight : AppColors.textPrimary,
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+              // Keep old Category field for backward compatibility (optional)
+              const SizedBox(height: 24),
+              Text(
+                'Category (optional)',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

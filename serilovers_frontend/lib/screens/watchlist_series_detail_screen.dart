@@ -5,6 +5,7 @@ import '../models/series.dart';
 import '../providers/episode_progress_provider.dart';
 import '../providers/episode_review_provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/series_provider.dart';
 import '../core/theme/app_colors.dart';
 import 'episode_reviews_screen.dart';
 import 'add_episode_review_screen.dart';
@@ -65,10 +66,13 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
         _isFinished = progress.watchedEpisodes >= progress.totalEpisodes;
       });
     } catch (_) {
-      // If no progress, set defaults
+      // If no progress, set defaults from series data
       setState(() {
         _currentEpisode = 0;
-        _totalEpisodes = 20; // Default fallback - will be updated from progress API
+        // Try to get total episodes from series if available
+        final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+        final series = seriesProvider.getById(widget.series.id);
+        _totalEpisodes = series?.totalEpisodes ?? widget.series.totalEpisodes;
         _isFinished = false;
       });
     }

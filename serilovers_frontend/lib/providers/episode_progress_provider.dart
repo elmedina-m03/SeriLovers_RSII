@@ -28,7 +28,7 @@ class EpisodeProgressProvider extends ChangeNotifier {
   }
 
   /// Mark an episode as watched
-  Future<void> markEpisodeWatched(int episodeId, {bool isCompleted = true}) async {
+  Future<EpisodeProgress> markEpisodeWatched(int episodeId, {bool isCompleted = true}) async {
     loading = true;
     notifyListeners();
 
@@ -38,12 +38,15 @@ class EpisodeProgressProvider extends ChangeNotifier {
         throw Exception('Authentication required');
       }
 
-      await _service.markEpisodeWatched(episodeId, isCompleted: isCompleted, token: token);
+      final result = await _service.markEpisodeWatched(episodeId, isCompleted: isCompleted, token: token);
       error = null;
 
-      // Invalidate cache for the series
-      // We'll need to get the seriesId from the episode, but for now just clear cache
-      _seriesProgressCache.clear();
+      // Refresh progress for the series after marking episode
+      if (result.seriesId > 0) {
+        await loadSeriesProgress(result.seriesId);
+      }
+      
+      return result;
     } catch (e) {
       error = e.toString();
       rethrow;
@@ -52,6 +55,7 @@ class EpisodeProgressProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
 
   /// Load progress for a series
   Future<SeriesProgress> loadSeriesProgress(int seriesId) async {

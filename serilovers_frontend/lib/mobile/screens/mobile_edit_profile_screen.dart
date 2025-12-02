@@ -44,11 +44,17 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
     
     _nameController.text = userInfo['name'] ?? '';
     _emailController.text = userInfo['email'] ?? '';
+    
+    // Load existing avatar URL if available
+    final avatarUrl = userInfo['avatarUrl'];
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      _uploadedAvatarUrl = avatarUrl;
+    }
   }
 
-  Map<String, String> _getUserInfo(String? token) {
+  Map<String, String?> _getUserInfo(String? token) {
     if (token == null || token.isEmpty) {
-      return {'email': '', 'name': ''};
+      return {'email': '', 'name': '', 'avatarUrl': null};
     }
 
     try {
@@ -57,8 +63,9 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                    decodedToken['sub'] as String? ?? 
                    '';
       
-      String name = '';
-      if (email.isNotEmpty) {
+      // Try to get name from token claim, otherwise extract from email
+      String name = decodedToken['name'] as String? ?? '';
+      if (name.isEmpty && email.isNotEmpty) {
         final parts = email.split('@');
         if (parts.isNotEmpty) {
           final namePart = parts[0];
@@ -66,9 +73,11 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
         }
       }
       
-      return {'email': email, 'name': name};
+      final avatarUrl = decodedToken['avatarUrl'] as String?;
+      
+      return {'email': email, 'name': name, 'avatarUrl': avatarUrl};
     } catch (e) {
-      return {'email': '', 'name': ''};
+      return {'email': '', 'name': '', 'avatarUrl': null};
     }
   }
 
@@ -256,19 +265,28 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
         updateData['avatarUrl'] = _uploadedAvatarUrl;
       }
 
-      await authProvider.updateUser(updateData);
+      final success = await authProvider.updateUser(updateData);
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile updated successfully'),
-          backgroundColor: AppColors.successColor,
-        ),
-      );
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile updated successfully'),
+            backgroundColor: AppColors.successColor,
+          ),
+        );
 
-      // Navigate back
-      Navigator.of(context).pop(true);
+        // Navigate back and refresh profile screen
+        Navigator.of(context).pop(true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to update profile'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       
@@ -316,8 +334,8 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(height: AppDim.paddingMedium),
 
                 // Avatar Section
                 Center(
@@ -325,14 +343,22 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                     children: [
                       Stack(
                         children: [
-                          CircleAvatar(
-                            radius: 60,
-                            backgroundColor: AppColors.primaryColor,
-                            backgroundImage: _uploadedAvatarUrl != null
-                                ? NetworkImage(_getImageUrl(_uploadedAvatarUrl!))
-                                : null,
-                            child: _uploadedAvatarUrl == null
-                                ? Text(
+                          _uploadedAvatarUrl != null
+                              ? CircleAvatar(
+                                  radius: 60,
+                                  backgroundColor: AppColors.primaryColor,
+                                  backgroundImage: NetworkImage(_getImageUrl(_uploadedAvatarUrl!)),
+                                  onBackgroundImageError: (exception, stackTrace) {
+                                    // Handle image load error - show placeholder
+                                    setState(() {
+                                      _uploadedAvatarUrl = null;
+                                    });
+                                  },
+                                )
+                              : CircleAvatar(
+                                  radius: 60,
+                                  backgroundColor: AppColors.primaryColor,
+                                  child: Text(
                                     _nameController.text.isNotEmpty
                                         ? _nameController.text[0].toUpperCase()
                                         : 'U',
@@ -341,9 +367,8 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                                       fontWeight: FontWeight.bold,
                                       fontSize: 36,
                                     ),
-                                  )
-                                : null,
-                          ),
+                                  ),
+                                ),
                           Positioned(
                             bottom: 0,
                             right: 0,
@@ -554,7 +579,7 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                   validator: _validateConfirmPassword,
                 ),
 
-                const SizedBox(height: AppDim.paddingLarge * 2),
+                const SizedBox(height: AppDim.paddingLarge),
 
                 // Save Button
                 SizedBox(
@@ -591,7 +616,7 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                   ),
                 ),
 
-                const SizedBox(height: AppDim.paddingLarge),
+                const SizedBox(height: AppDim.paddingMedium),
               ],
             ),
           ),

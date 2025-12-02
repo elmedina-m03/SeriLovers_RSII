@@ -18,7 +18,7 @@ class Watchlist {
       id: json['id'] as int,
       name: json['name'] as String,
       coverUrl: (json['coverUrl'] ?? json['cover_url'] ?? '') as String,
-      totalSeries: (json['totalSeries'] ?? json['total_series'] ?? 0) as int,
+      totalSeries: (json['totalSeries'] ?? json['total_series'] ?? json['seriesCount'] ?? json['series_count'] ?? 0) as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
