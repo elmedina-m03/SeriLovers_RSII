@@ -40,7 +40,19 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
 
   void _loadUserData() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final userInfo = _getUserInfo(authProvider.token);
+    
+    // Prefer currentUser (fresh from backend), fallback to token
+    Map<String, String?> userInfo;
+    final current = authProvider.currentUser;
+    if (current != null) {
+      userInfo = {
+        'email': current['email'] as String? ?? '',
+        'name': current['name'] as String? ?? '',
+        'avatarUrl': current['avatarUrl'] as String?,
+      };
+    } else {
+      userInfo = _getUserInfo(authProvider.token);
+    }
     
     _nameController.text = userInfo['name'] ?? '';
     _emailController.text = userInfo['email'] ?? '';
@@ -83,28 +95,16 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
 
   /// Constructs the full image URL, removing /api from base URL for static files
   String _getImageUrl(String imageUrl) {
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      return imageUrl;
-    }
-    
-    var baseUrl = ApiService().baseUrl;
-    if (baseUrl.isNotEmpty) {
-      // Remove /api from the end of base URL if present (static files are at root, not /api)
-      if (baseUrl.endsWith('/api')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 4);
-      } else if (baseUrl.endsWith('/api/')) {
-        baseUrl = baseUrl.substring(0, baseUrl.length - 5);
-      }
-      return '$baseUrl$imageUrl';
-    }
-    return imageUrl;
+    // Use ApiService helper to convert file:// URLs and relative paths to HTTP URLs
+    return ApiService.convertToHttpUrl(imageUrl) ?? imageUrl;
   }
 
   Future<void> _pickAvatar() async {
     try {
       final result = await FilePickerHelper.pickImage();
-      if (result == null) return; // User cancelled
-
+      if (result == null) {
+        return; // User cancelled
+      }
       setState(() {
         _isUploadingAvatar = true;
       });
@@ -114,7 +114,7 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
       final token = authProvider.token;
 
       if (token == null || token.isEmpty) {
-        throw Exception('Authentication required');
+        throw Exception('Authentication required. Please log in again.');
       }
 
       dynamic uploadResponse;
@@ -124,7 +124,7 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
         final bytes = FilePickerHelper.getBytes(result);
         final fileName = FilePickerHelper.getFileName(result);
         if (bytes == null || fileName == null) {
-          throw Exception('Failed to read file');
+          throw Exception('Failed to read file. Please try again.');
         }
         uploadResponse = await apiService.uploadFileFromBytes(
           '/ImageUpload/upload',
@@ -137,8 +137,14 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
         // Desktop/Mobile: use File
         final file = FilePickerHelper.getFile(result);
         if (file == null) {
-          throw Exception('Failed to read file');
+          throw Exception('Failed to read file. Please try selecting the file again.');
         }
+        
+        // Check if file exists and is readable
+        if (!await file.exists()) {
+          throw Exception('Selected file does not exist. Please try again.');
+        }
+        
         uploadResponse = await apiService.uploadFile(
           '/ImageUpload/upload',
           file,
@@ -148,32 +154,58 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
       }
 
       if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
-        setState(() {
-          _uploadedAvatarUrl = uploadResponse['imageUrl'] as String;
-          _isUploadingAvatar = false;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Avatar uploaded successfully'),
-              backgroundColor: AppColors.successColor,
-            ),
-          );
+        final imageUrl = uploadResponse['imageUrl'] as String;
+        
+        // Immediately update user profile with new avatar URL
+        try {
+          final updateSuccess = await authProvider.updateUser({
+            'avatarUrl': imageUrl,
+          });
+          
+          if (updateSuccess) {
+            // Update local state - updateUser already updates token and notifies listeners
+            setState(() {
+              _uploadedAvatarUrl = imageUrl;
+              _isUploadingAvatar = false;
+            });
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Avatar uploaded successfully'),
+                  backgroundColor: AppColors.successColor,
+                ),
+              );
+            }
+          } else {
+            throw Exception('Failed to update user profile with new avatar');
+          }
+        } catch (e) {
+          setState(() {
+            _isUploadingAvatar = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Avatar uploaded but failed to update profile: $e'),
+                backgroundColor: AppColors.dangerColor,
+              ),
+            );
+          }
         }
       } else {
-        throw Exception('Invalid response from server');
+        throw Exception('Invalid response from server. Response: ${uploadResponse?.toString() ?? "null"}');
       }
     } catch (e) {
-      print('Error uploading avatar: $e');
       if (mounted) {
         setState(() {
           _isUploadingAvatar = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error picking image: $e'),
+            content: Text('Error uploading avatar: ${e.toString()}'),
             backgroundColor: AppColors.dangerColor,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -270,10 +302,18 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
       if (!mounted) return;
 
       if (success) {
+        // updateUser already updates token and notifies listeners
+        // Reload user data from AuthProvider to show updated values
+        _loadUserData();
+        
+        // Force UI update
+        setState(() {});
+        
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Profile updated successfully'),
             backgroundColor: AppColors.successColor,
+            duration: Duration(seconds: 2),
           ),
         );
 
@@ -345,9 +385,12 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                         children: [
                           _uploadedAvatarUrl != null
                               ? CircleAvatar(
+                                  key: ValueKey(_uploadedAvatarUrl), // Force rebuild on URL change
                                   radius: 60,
                                   backgroundColor: AppColors.primaryColor,
-                                  backgroundImage: NetworkImage(_getImageUrl(_uploadedAvatarUrl!)),
+                                  backgroundImage: NetworkImage(
+                                    '${_getImageUrl(_uploadedAvatarUrl!)}?v=${_uploadedAvatarUrl.hashCode}',
+                                  ), // Cache-busting parameter based on URL hash
                                   onBackgroundImageError: (exception, stackTrace) {
                                     // Handle image load error - show placeholder
                                     setState(() {
@@ -413,7 +456,7 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                   ),
                 ),
 
-                const SizedBox(height: AppDim.paddingLarge * 2),
+                const SizedBox(height: AppDim.paddingLarge),
 
                 // Name Field
                 TextFormField(

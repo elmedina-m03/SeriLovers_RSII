@@ -27,6 +27,7 @@ class AdminTopbar extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // Title only (logo is now in top-left corner above sidebar)
           Text(
             title,
             style: theme.textTheme.titleLarge!.copyWith(

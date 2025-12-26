@@ -19,6 +19,13 @@ namespace SeriLovers.API.Models.DTOs
         [Required]
         [DataType(DataType.DateTime)]
         public DateTime CreatedAt { get; set; }
+        
+        // Additional fields for admin panel display
+        public string? UserName { get; set; }
+        public string? UserEmail { get; set; }
+        public string? UserAvatarUrl { get; set; }
+        public string? SeriesTitle { get; set; }
+        public string? SeriesImageUrl { get; set; }
     }
 
     public class RatingCreateDto

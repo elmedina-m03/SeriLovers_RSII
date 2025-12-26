@@ -11,6 +11,7 @@ SeriLovers.API is a TV series discovery platform that powers authentication, rol
 - **External Login:** OAuth 2.0 Google sign-in
 - **Documentation:** Swagger / OpenAPI (Swashbuckle)
 - **PDF Generation:** QuestPDF
+- **Message Queue:** RabbitMQ (EasyNetQ) for event-driven architecture
 
 ## Getting Started
 
@@ -19,6 +20,7 @@ SeriLovers.API is a TV series discovery platform that powers authentication, rol
 - .NET 8 SDK or newer
 - SQL Server (localdb or full instance)
 - Google OAuth 2.0 client credentials (for external login)
+- RabbitMQ server (optional, for event messaging)
 
 ### Installation
 
@@ -121,11 +123,67 @@ Ensure the database container is running and the connection string matches the d
   - `GET /api/reports/series-summary` – CSV export
   - `GET /api/reports/series-summary/pdf` – PDF export
 
+## RabbitMQ Configuration
+
+The API uses RabbitMQ for event-driven messaging. Events are published when:
+- A review is created (`ReviewCreatedEvent`)
+- An episode is marked as watched (`EpisodeWatchedEvent`)
+- A user is created (`UserCreatedEvent`)
+- A user profile is updated (`UserUpdatedEvent`)
+
+### Configuration
+
+RabbitMQ connection can be configured via:
+1. **Environment Variable:** `RABBITMQ_CONNECTION`
+2. **appsettings.json:** `RabbitMq:Connection`
+3. **Connection String:** `ConnectionStrings:RabbitMQ`
+
+Example connection string:
+```
+host=localhost;username=guest;password=guest
+```
+
+If RabbitMQ is not configured, the application will continue to function without message bus functionality (graceful degradation).
+
+### Background Workers
+
+Background workers automatically consume and log all published events. Check application logs for `[RabbitMQ]` prefixed messages.
+
+### Testing RabbitMQ
+
+**1. Check Connection Status:**
+   - GET `/api/admin/MessageBusTest/status` - Returns whether RabbitMQ is connected
+
+**2. Test Event Publishing:**
+   - POST `/api/admin/MessageBusTest/test/review-created` - Test ReviewCreatedEvent
+   - POST `/api/admin/MessageBusTest/test/episode-watched` - Test EpisodeWatchedEvent
+   - POST `/api/admin/MessageBusTest/test/user-created` - Test UserCreatedEvent
+   - POST `/api/admin/MessageBusTest/test/user-updated` - Test UserUpdatedEvent
+
+**3. Verify Events Are Consumed:**
+   After publishing a test event, check your application logs for messages like:
+   ```
+   [RabbitMQ] ReviewCreatedEvent received - RatingId: 999, User: TestUser (1), Series: Test Series (1), Score: 5, Comment: "This is a test review event"
+   ```
+
+**4. Check Application Startup Logs:**
+   When the application starts, you should see:
+   - `"Successfully connected to RabbitMQ."` - if connected
+   - `"RabbitMQ connection string is not configured..."` - if not configured
+   - `"Successfully subscribed to ReviewCreatedEvent."` - for each event type
+
+**5. Real-World Testing:**
+   - Create a review with a comment → Should publish `ReviewCreatedEvent`
+   - Mark an episode as watched → Should publish `EpisodeWatchedEvent`
+   - Register a new user → Should publish `UserCreatedEvent`
+   - Update user profile → Should publish `UserUpdatedEvent`
+
 ## Development Tips
 
 - Update OAuth credentials in `appsettings.json` / `appsettings.Development.json` under `Authentication:Google`.
 - Seed data includes series, actors, genres, favorite characters, and recommendation logs. Rerun `dotnet ef database update` after changing the seed.
 - Swagger UI highlights which endpoints require authentication. Use the Bearer authorize button to test protected routes.
+- RabbitMQ events are published asynchronously and decoupled from the main request flow - failures won't affect API responses.
 
 ## Credits & License
 

@@ -195,6 +195,28 @@ namespace SeriLovers.API.Controllers
                 avatarUrl = user.AvatarUrl
             });
         }
+
+        [HttpDelete("{id}")]
+        [SwaggerOperation(
+            Summary = "Delete user",
+            Description = "Permanently deletes a user from the system. This action cannot be undone. Admin only.")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var user = await _userManager.FindByIdAsync(id.ToString());
+            if (user == null)
+            {
+                return NotFound(new { message = $"User with ID {id} not found." });
+            }
+
+            // Delete the user
+            var result = await _userManager.DeleteAsync(user);
+            if (!result.Succeeded)
+            {
+                return BadRequest(new { message = "Failed to delete user", errors = result.Errors.Select(e => e.Description) });
+            }
+
+            return NoContent();
+        }
     }
 }
 

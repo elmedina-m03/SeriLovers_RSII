@@ -23,40 +23,101 @@ namespace SeriLovers.API.HostedServices
         {
             _logger.LogInformation("Starting message bus subscriptions...");
 
+            // Check if RabbitMQ is available before attempting subscriptions
+            if (!_messageBusService.IsAvailable)
+            {
+                _logger.LogInformation("RabbitMQ is not available. Skipping message bus subscriptions.");
+                return Task.CompletedTask;
+            }
+
             // Start subscriptions in the background to avoid blocking application startup
             // Use Task.Run to ensure subscriptions don't block the startup process
             _ = Task.Run(async () =>
             {
-                // Add a small delay to ensure RabbitMQ connection is fully established
-                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                // Add a delay to ensure RabbitMQ connection is fully established
+                // Increased delay to give RabbitMQ more time to initialize
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
 
                 // Wrap each subscription individually so one failure doesn't prevent others
+                // Add small delays between subscriptions to avoid overwhelming RabbitMQ
+                
+                // Review Created Event
                 try
                 {
-                    await _messageBusService.SubscribeAsync<SeriesUpdatedEvent>("SeriesUpdatedHandler", async message =>
+                    await _messageBusService.SubscribeAsync<ReviewCreatedEvent>("ReviewCreatedHandler", async message =>
                     {
-                        _logger.LogInformation("Received SeriesUpdatedEvent for SeriesId {SeriesId}", message.SeriesId);
+                        _logger.LogInformation(
+                            "[RabbitMQ] ReviewCreatedEvent received - RatingId: {RatingId}, User: {UserName} ({UserId}), Series: {SeriesTitle} ({SeriesId}), Score: {Score}, Comment: {Comment}",
+                            message.RatingId, message.UserName, message.UserId, message.SeriesTitle, message.SeriesId, message.Score, 
+                            string.IsNullOrEmpty(message.Comment) ? "No comment" : $"\"{message.Comment}\"");
                         await Task.CompletedTask;
                     });
-                    _logger.LogInformation("Successfully subscribed to SeriesUpdatedEvent.");
+                    _logger.LogInformation("Successfully subscribed to ReviewCreatedEvent.");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to subscribe to SeriesUpdatedEvent. The application will continue without this subscription.");
+                    _logger.LogWarning(ex, "Failed to subscribe to ReviewCreatedEvent. The application will continue without this subscription.");
                 }
 
+                // Small delay between subscriptions to avoid overwhelming RabbitMQ
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+                // Episode Watched Event
                 try
                 {
-                    await _messageBusService.SubscribeAsync<ActorCreatedEvent>("ActorCreatedHandler", async message =>
+                    await _messageBusService.SubscribeAsync<EpisodeWatchedEvent>("EpisodeWatchedHandler", async message =>
                     {
-                        _logger.LogInformation("Received ActorCreatedEvent for ActorId {ActorId}", message.ActorId);
+                        _logger.LogInformation(
+                            "[RabbitMQ] EpisodeWatchedEvent received - EpisodeId: {EpisodeId}, User: {UserName} ({UserId}), Series: {SeriesTitle} ({SeriesId}), Season {SeasonNumber} Episode {EpisodeNumber}, Completed: {IsCompleted}",
+                            message.EpisodeId, message.UserName, message.UserId, message.SeriesTitle, message.SeriesId, 
+                            message.SeasonNumber, message.EpisodeNumber, message.IsCompleted);
                         await Task.CompletedTask;
                     });
-                    _logger.LogInformation("Successfully subscribed to ActorCreatedEvent.");
+                    _logger.LogInformation("Successfully subscribed to EpisodeWatchedEvent.");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to subscribe to ActorCreatedEvent. The application will continue without this subscription.");
+                    _logger.LogWarning(ex, "Failed to subscribe to EpisodeWatchedEvent. The application will continue without this subscription.");
+                }
+
+                // Small delay between subscriptions to avoid overwhelming RabbitMQ
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+                // User Created Event
+                try
+                {
+                    await _messageBusService.SubscribeAsync<UserCreatedEvent>("UserCreatedHandler", async message =>
+                    {
+                        _logger.LogInformation(
+                            "[RabbitMQ] UserCreatedEvent received - UserId: {UserId}, UserName: {UserName}, Email: {Email}",
+                            message.UserId, message.UserName, message.Email);
+                        await Task.CompletedTask;
+                    });
+                    _logger.LogInformation("Successfully subscribed to UserCreatedEvent.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to subscribe to UserCreatedEvent. The application will continue without this subscription.");
+                }
+
+                // Small delay between subscriptions to avoid overwhelming RabbitMQ
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+                // User Updated Event
+                try
+                {
+                    await _messageBusService.SubscribeAsync<UserUpdatedEvent>("UserUpdatedHandler", async message =>
+                    {
+                        _logger.LogInformation(
+                            "[RabbitMQ] UserUpdatedEvent received - UserId: {UserId}, UserName: {UserName}, Email: {Email}, Country: {Country}, AvatarUrl: {AvatarUrl}",
+                            message.UserId, message.UserName, message.Email, message.Country ?? "N/A", message.AvatarUrl ?? "N/A");
+                        await Task.CompletedTask;
+                    });
+                    _logger.LogInformation("Successfully subscribed to UserUpdatedEvent.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to subscribe to UserUpdatedEvent. The application will continue without this subscription.");
                 }
 
                 _logger.LogInformation("Message bus subscription initialization completed.");

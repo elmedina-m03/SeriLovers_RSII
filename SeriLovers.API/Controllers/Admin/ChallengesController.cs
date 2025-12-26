@@ -55,6 +55,39 @@ namespace SeriLovers.API.Controllers.Admin
         }
 
         /// <summary>
+        /// Get all user challenge progress
+        /// </summary>
+        [HttpGet("progress")]
+        [SwaggerOperation(
+            Summary = "Get all user challenge progress",
+            Description = "Retrieves all user challenge progress with user details. Admin only.")]
+        public async Task<IActionResult> GetAllProgress()
+        {
+            var progressList = await _context.ChallengeProgresses
+                .Include(cp => cp.User)
+                .Include(cp => cp.Challenge)
+                .Select(cp => new
+                {
+                    id = cp.Id,
+                    userId = cp.UserId,
+                    userName = cp.User != null ? (cp.User.UserName ?? cp.User.Email ?? "Unknown") : "Unknown",
+                    userEmail = cp.User != null ? (cp.User.Email ?? "Unknown") : "Unknown",
+                    challengeId = cp.ChallengeId,
+                    challengeName = cp.Challenge != null ? cp.Challenge.Name : "Unknown",
+                    watchedSeries = cp.ProgressCount,
+                    goal = cp.Challenge != null ? cp.Challenge.TargetCount : 0,
+                    progress = cp.Challenge != null && cp.Challenge.TargetCount > 0
+                        ? (int)((cp.ProgressCount * 100.0) / cp.Challenge.TargetCount)
+                        : 0,
+                    status = cp.Status == ChallengeProgressStatus.Completed ? "Completed" : "Processing"
+                })
+                .OrderByDescending(p => p.watchedSeries)
+                .ToListAsync();
+
+            return Ok(progressList);
+        }
+
+        /// <summary>
         /// Get a challenge by ID
         /// </summary>
         [HttpGet("{id}")]

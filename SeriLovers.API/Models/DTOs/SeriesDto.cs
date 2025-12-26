@@ -38,6 +38,10 @@ namespace SeriLovers.API.Models.DTOs
         [Range(0, int.MaxValue)]
         public int WatchlistsCount { get; set; }
 
+        [Required]
+        [Range(0, int.MaxValue)]
+        public int TotalEpisodes { get; set; }
+
         [StringLength(500)]
         public string? ImageUrl { get; set; }
     }

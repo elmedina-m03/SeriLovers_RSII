@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/scheduler.dart';
+import 'dart:typed_data';
 
 import '../providers/watchlist_provider.dart';
 import '../providers/auth_provider.dart';
@@ -26,9 +25,11 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
   final TextEditingController _notesController = TextEditingController();
   bool _submitting = false;
   bool _isUploadingImage = false;
-  String? _selectedCategory;
   String? _selectedStatus;
   String? _uploadedImageUrl;
+  // Local image preview state so user sees the selected image immediately
+  Uint8List? _previewBytes; // Used on web (and can be used on mobile if bytes are available)
+  File? _previewFile;       // Used on mobile/desktop where File is available
   List<String> _selectedGenres = [];
 
   @override
@@ -65,10 +66,9 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
     // Use uploaded image URL if available, otherwise use URL from text field
     final coverUrl = _uploadedImageUrl ?? 
         (_coverUrlController.text.trim().isEmpty ? null : _coverUrlController.text.trim());
-    final description = _notesController.text.trim().isEmpty 
-        ? null 
+    final description = _notesController.text.trim().isEmpty
+        ? null
         : _notesController.text.trim();
-    final category = _selectedCategory;
     final status = _selectedStatus;
 
     try {
@@ -76,7 +76,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
         name,
         coverUrl: coverUrl,
         description: description,
-        category: category,
+        // Category UI has been removed; backend payload no longer sends a separate category field
         status: status,
       );
 
@@ -156,10 +156,17 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
         if (bytes == null || fileName == null) {
           throw Exception('Failed to read file');
         }
+        // Show immediate preview from bytes while upload is in progress.
+        // Convert List<int> to Uint8List for Image.memory.
+        setState(() {
+          _previewBytes = Uint8List.fromList(bytes);
+          _previewFile = null;
+        });
         uploadResponse = await apiService.uploadFileFromBytes(
           '/ImageUpload/upload',
           bytes,
           fileName,
+          // Use "watchlists" logically, ApiService will normalize to a backend-allowed folder (e.g. "general")
           folder: 'watchlists',
           token: token,
         );
@@ -169,9 +176,15 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
         if (file == null) {
           throw Exception('Failed to read file');
         }
+        // Show immediate preview from local file while upload is in progress
+        setState(() {
+          _previewFile = file;
+          _previewBytes = null;
+        });
         uploadResponse = await apiService.uploadFile(
           '/ImageUpload/upload',
           file,
+          // Use "watchlists" logically, ApiService will normalize to a backend-allowed folder (e.g. "general")
           folder: 'watchlists',
           token: token,
         );
@@ -195,6 +208,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
       }
     } catch (e) {
       setState(() {
+        // If upload fails, clear server image state but keep any local preview
         _isUploadingImage = false;
       });
       if (mounted) {
@@ -206,6 +220,83 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
         );
       }
     }
+  }
+
+  /// Builds the cover image preview widget.
+  ///
+  /// Priority:
+  /// 1. While uploading, show a spinner.
+  /// 2. If the user just picked an image, show the local preview (bytes/file) immediately.
+  /// 3. Otherwise, show the uploaded image URL or the manual URL from the text field.
+  /// 4. If nothing is available, show the default placeholder UI.
+  Widget _buildCoverPreview() {
+    if (_isUploadingImage) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    // Show local preview first so the user gets instant feedback
+    if (_previewBytes != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.memory(
+          _previewBytes!,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+
+    if (_previewFile != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(
+          _previewFile!,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+
+    // Fall back to server URL or manual URL entry
+    final effectiveUrl = _uploadedImageUrl ?? _coverUrlController.text;
+    if (effectiveUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.network(
+          effectiveUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            // If the network image fails, show a neutral placeholder instead of crashing
+            return Container(
+              color: Colors.grey[200],
+              child: const Center(
+                child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    // Default placeholder when no image has been selected or entered
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          Icons.image_outlined,
+          size: 48,
+          color: Colors.grey[600],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Tap to upload cover photo',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 14,
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -259,44 +350,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                     ),
                     color: Colors.grey[100],
                   ),
-                  child: _isUploadingImage
-                      ? const Center(
-                          child: CircularProgressIndicator(),
-                        )
-                      : (_uploadedImageUrl != null || _coverUrlController.text.isNotEmpty)
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                _uploadedImageUrl ?? _coverUrlController.text,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    color: Colors.grey[200],
-                                    child: const Center(
-                                      child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
-                                    ),
-                                  );
-                                },
-                              ),
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.image_outlined,
-                                  size: 48,
-                                  color: Colors.grey[600],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Tap to upload cover photo',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
+                  child: _buildCoverPreview(),
                 ),
               ),
               const SizedBox(height: 8),
@@ -352,7 +406,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                 },
               ),
               const SizedBox(height: 24),
-              // Genres section (multiple selection)
+              // Genres section (multiple selection) - single source of truth for categorization
               Text(
                 'Genres (select multiple)',
                 style: TextStyle(
@@ -414,40 +468,6 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                     }).toList(),
                   );
                 },
-              ),
-              // Keep old Category field for backward compatibility (optional)
-              const SizedBox(height: 24),
-              Text(
-                'Category (optional)',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: ['ROMANCE', 'DRAMA', 'ACTION', 'COMEDY', 'CRIME', 'HISTORICAL', 'FANTASY']
-                    .map((category) {
-                  final isSelected = _selectedCategory == category;
-                  return FilterChip(
-                    label: Text(category),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      setState(() {
-                        _selectedCategory = selected ? category : null;
-                      });
-                    },
-                    selectedColor: AppColors.primaryColor,
-                    checkmarkColor: AppColors.textLight,
-                    labelStyle: TextStyle(
-                      color: isSelected ? AppColors.textLight : AppColors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    ),
-                  );
-                }).toList(),
               ),
               const SizedBox(height: 24),
               // Status section
@@ -539,7 +559,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                           ),
                         )
                       : const Text(
-                          'Apply filters',
+                          'Create list',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,

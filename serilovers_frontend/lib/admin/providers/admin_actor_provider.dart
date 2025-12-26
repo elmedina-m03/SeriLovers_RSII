@@ -335,12 +335,22 @@ class AdminActorProvider extends ChangeNotifier {
       );
 
       print('AdminActorProvider: Update actor response received');
+      print('📸 Update response: $response');
       
       // Parse the updated actor
       final updatedActor = Actor.fromJson(response as Map<String, dynamic>);
+      print('📸 Updated actor imageUrl: ${updatedActor.imageUrl}');
       
-      // Refresh the entire list to ensure consistency
-      await fetchAllActors();
+      // Update the actor in the local list
+      final index = items.indexWhere((actor) => actor.id == id);
+      if (index != -1) {
+        items[index] = updatedActor;
+        print('✅ Updated actor in local list at index $index');
+      } else {
+        print('⚠️ Actor not found in local list, adding it');
+        items.add(updatedActor);
+      }
+      
       notifyListeners();
       
       print('AdminActorProvider: Actor updated successfully with ID: ${updatedActor.id}');

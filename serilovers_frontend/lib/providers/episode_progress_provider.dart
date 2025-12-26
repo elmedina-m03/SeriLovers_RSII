@@ -27,6 +27,12 @@ class EpisodeProgressProvider extends ChangeNotifier {
     return _seriesProgressCache[seriesId];
   }
 
+  /// Clear progress cache for a specific series (useful after completion)
+  void clearProgressCache(int seriesId) {
+    _seriesProgressCache.remove(seriesId);
+    notifyListeners();
+  }
+
   /// Mark an episode as watched
   Future<EpisodeProgress> markEpisodeWatched(int episodeId, {bool isCompleted = true}) async {
     loading = true;
@@ -41,6 +47,9 @@ class EpisodeProgressProvider extends ChangeNotifier {
       final result = await _service.markEpisodeWatched(episodeId, isCompleted: isCompleted, token: token);
       error = null;
 
+      // Clear cache for this series to force fresh reload
+      _seriesProgressCache.remove(result.seriesId);
+      
       // Refresh progress for the series after marking episode
       if (result.seriesId > 0) {
         await loadSeriesProgress(result.seriesId);
@@ -78,6 +87,24 @@ class EpisodeProgressProvider extends ChangeNotifier {
     } finally {
       loading = false;
       notifyListeners();
+    }
+  }
+
+  /// Load progress for a series without setting global loading state (for batch loading)
+  /// This is used when loading multiple series in parallel to avoid UI flickering
+  Future<SeriesProgress?> loadSeriesProgressSilent(int seriesId) async {
+    try {
+      final token = _authProvider?.token;
+      if (token == null || token.isEmpty) {
+        return null;
+      }
+
+      final progress = await _service.getSeriesProgress(seriesId, token: token);
+      _seriesProgressCache[seriesId] = progress;
+      return progress;
+    } catch (e) {
+      // Silently fail for batch operations - don't set error state
+      return null;
     }
   }
 

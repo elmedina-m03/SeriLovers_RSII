@@ -7,6 +7,10 @@ class Rating {
   final String? comment;
   final DateTime createdAt;
   final String? userName; // Optional, from API response
+  final String? userEmail; // Optional, from API response
+  final String? userAvatarUrl; // Optional, from API response
+  final String? seriesTitle; // Optional, from API response
+  final String? seriesImageUrl; // Optional, from API response
 
   Rating({
     required this.id,
@@ -16,6 +20,10 @@ class Rating {
     this.comment,
     required this.createdAt,
     this.userName,
+    this.userEmail,
+    this.userAvatarUrl,
+    this.seriesTitle,
+    this.seriesImageUrl,
   });
 
   factory Rating.fromJson(Map<String, dynamic> json) {
@@ -27,6 +35,10 @@ class Rating {
       comment: json['comment'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       userName: json['userName'] as String?,
+      userEmail: json['userEmail'] as String?,
+      userAvatarUrl: json['userAvatarUrl'] as String?,
+      seriesTitle: json['seriesTitle'] as String?,
+      seriesImageUrl: json['seriesImageUrl'] as String?,
     );
   }
 
@@ -39,6 +51,10 @@ class Rating {
       'comment': comment,
       'createdAt': createdAt.toIso8601String(),
       'userName': userName,
+      'userEmail': userEmail,
+      'userAvatarUrl': userAvatarUrl,
+      'seriesTitle': seriesTitle,
+      'seriesImageUrl': seriesImageUrl,
     };
   }
 

@@ -646,12 +646,12 @@ namespace SeriLovers.API.Data
             await SeedTestSeriesAsync(context);
             await SeedTestRatingsAsync(context);
             await SeedTestWatchlistsAsync(context);
+            await SeedEpisodeReviewsAsync(context);
 
             // Seed challenges
             await SeedChallengesAsync(context);
 
-            // Seed challenge progress
-            await SeedChallengeProgressAsync(context);
+            // Challenge progress is now calculated from real watched data, not seeded
 
             // Seed dummy users (testuser1..testuser8@gmail.com)
             await SeedDummyUsersAsync(userManager);
@@ -915,6 +915,90 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
+        private static async Task SeedEpisodeReviewsAsync(ApplicationDbContext context)
+        {
+            // Check if reviews already exist
+            if (await context.EpisodeReviews.AnyAsync())
+            {
+                return; // Skip if reviews already exist
+            }
+
+            // Get some users
+            var users = await context.Users.Take(3).ToListAsync();
+            if (users.Count == 0)
+            {
+                return; // No users to create reviews for
+            }
+
+            // Get some episodes
+            var episodes = await context.Episodes
+                .Include(e => e.Season)
+                    .ThenInclude(s => s.Series)
+                .Take(10)
+                .ToListAsync();
+
+            if (episodes.Count == 0)
+            {
+                return; // No episodes to create reviews for
+            }
+
+            var reviewTexts = new[]
+            {
+                "Great episode! Really enjoyed it.",
+                "Amazing storytelling and character development.",
+                "One of the best episodes of the season.",
+                "Very very very good!",
+                "Loved every minute of it!",
+                "Excellent writing and acting.",
+                "This episode was a masterpiece.",
+                "Can't wait for the next one!"
+            };
+
+            var reviews = new List<EpisodeReview>();
+
+            foreach (var user in users)
+            {
+                foreach (var episode in episodes)
+                {
+                    // Skip if review already exists
+                    if (await context.EpisodeReviews
+                        .AnyAsync(er => er.UserId == user.Id && er.EpisodeId == episode.Id))
+                    {
+                        continue;
+                    }
+
+                    // Random rating between 3 and 5
+                    var rating = Random.Next(3, 6);
+                    
+                    // Random review text
+                    var reviewText = reviewTexts[Random.Next(reviewTexts.Length)];
+                    
+                    // Random date within last 60 days
+                    var daysAgo = Random.Next(0, 60);
+                    var createdAt = DateTime.UtcNow.AddDays(-daysAgo);
+                    
+                    // 30% chance of being anonymous
+                    var isAnonymous = Random.Next(10) < 3;
+
+                    reviews.Add(new EpisodeReview
+                    {
+                        UserId = user.Id,
+                        EpisodeId = episode.Id,
+                        Rating = rating,
+                        ReviewText = reviewText,
+                        CreatedAt = createdAt,
+                        IsAnonymous = isAnonymous
+                    });
+                }
+            }
+
+            if (reviews.Count > 0)
+            {
+                await context.EpisodeReviews.AddRangeAsync(reviews);
+                await context.SaveChangesAsync();
+            }
+        }
+
         /// <summary>
         /// Seeds 6 dummy users (1 admin + 5 normal users) with emails testuser1..testuser6@gmail.com
         /// Assigns roles: 1 Admin, 5 Users
@@ -1152,86 +1236,6 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
-        /// <summary>
-        /// Seeds challenge progress entries for users
-        /// </summary>
-        private static async Task SeedChallengeProgressAsync(ApplicationDbContext context)
-        {
-            try
-            {
-                // Check if challenge progress already exists
-                // Use try-catch in case table doesn't exist yet
-                if (await context.ChallengeProgresses.AnyAsync())
-                {
-                    return; // Already seeded
-                }
-            }
-            catch (Exception)
-            {
-                // Table might not exist yet, continue to create entries
-                // The migration should create the table before this runs
-            }
-
-            var challenges = await context.Challenges.ToListAsync();
-            var users = await context.Users.Take(8).ToListAsync();
-
-            if (challenges.Count == 0 || users.Count == 0)
-            {
-                return; // No challenges or users to seed
-            }
-
-            var progressEntries = new List<ChallengeProgress>();
-
-            // Assign random challenges to users with random progress
-            foreach (var user in users)
-            {
-                // Each user participates in 1-3 random challenges
-                var userChallenges = challenges.OrderBy(x => Random.Next()).Take(Random.Next(1, 4)).ToList();
-
-                foreach (var challenge in userChallenges)
-                {
-                    // Check if progress entry already exists for this user-challenge pair
-                    var exists = await context.ChallengeProgresses
-                        .AnyAsync(cp => cp.UserId == user.Id && cp.ChallengeId == challenge.Id);
-                    
-                    if (exists)
-                    {
-                        continue; // Skip if already exists
-                    }
-
-                    var progressCount = Random.Next(0, challenge.TargetCount + 1);
-                    var status = progressCount >= challenge.TargetCount
-                        ? ChallengeProgressStatus.Completed
-                        : ChallengeProgressStatus.InProgress;
-
-                    progressEntries.Add(new ChallengeProgress
-                    {
-                        ChallengeId = challenge.Id,
-                        UserId = user.Id,
-                        ProgressCount = progressCount,
-                        Status = status,
-                        CompletedAt = status == ChallengeProgressStatus.Completed
-                            ? DateTime.UtcNow.AddDays(-Random.Next(1, 30))
-                            : null
-                    });
-                }
-            }
-
-            if (progressEntries.Any())
-            {
-                await context.ChallengeProgresses.AddRangeAsync(progressEntries);
-                await context.SaveChangesAsync();
-
-                // Update ParticipantsCount for each challenge
-                foreach (var challenge in challenges)
-                {
-                    var participantCount = await context.ChallengeProgresses
-                        .CountAsync(cp => cp.ChallengeId == challenge.Id);
-                    challenge.ParticipantsCount = participantCount;
-                }
-                await context.SaveChangesAsync();
-            }
-        }
     }
 }
 

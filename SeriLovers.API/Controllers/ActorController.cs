@@ -218,6 +218,7 @@ namespace SeriLovers.API.Controllers
             existingActor.LastName = actorDto.LastName;
             existingActor.DateOfBirth = actorDto.DateOfBirth;
             existingActor.Biography = actorDto.Biography;
+            existingActor.ImageUrl = actorDto.ImageUrl; // Update image URL
 
             try
             {

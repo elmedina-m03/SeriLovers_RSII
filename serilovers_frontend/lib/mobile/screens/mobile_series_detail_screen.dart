@@ -18,6 +18,7 @@ import '../widgets/mobile_page_route.dart';
 import '../widgets/season_selector.dart';
 import 'mobile_reviews_screen.dart';
 import 'mobile_series_description_screen.dart';
+import '../providers/mobile_challenges_provider.dart';
 
 /// Mobile series detail screen with banner, info, and watchlist button
 class MobileSeriesDetailScreen extends StatefulWidget {
@@ -143,6 +144,22 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       if (isInWatchlist) {
         // Remove from watchlist
         await watchlistProvider.removeFromWatchlist(widget.series.id, token);
+        // Refresh watchlist to ensure UI updates
+        try {
+          final decoded = JwtDecoder.decode(token);
+          final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+          int? userId;
+          if (rawId is int) {
+            userId = rawId;
+          } else if (rawId is String) {
+            userId = int.tryParse(rawId);
+          }
+          if (userId != null) {
+            await watchlistProvider.loadUserWatchlists(userId);
+          }
+        } catch (_) {
+          // Silently fail
+        }
         if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -151,10 +168,31 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
               duration: const Duration(seconds: 2),
             ),
           );
+          setState(() {}); // Refresh UI
         }
       } else {
         // Add to watchlist
         await watchlistProvider.addToWatchlist(widget.series.id);
+        // Refresh watchlist to ensure UI updates
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final token = authProvider.token;
+        if (token != null && token.isNotEmpty) {
+          try {
+            final decoded = JwtDecoder.decode(token);
+            final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+            int? userId;
+            if (rawId is int) {
+              userId = rawId;
+            } else if (rawId is String) {
+              userId = int.tryParse(rawId);
+            }
+            if (userId != null) {
+              await watchlistProvider.loadUserWatchlists(userId);
+            }
+          } catch (_) {
+            // Silently fail
+          }
+        }
         if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -163,6 +201,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
               duration: const Duration(seconds: 2),
             ),
           );
+          setState(() {}); // Refresh UI
         }
       }
     } catch (e) {
@@ -602,8 +641,16 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                     const SizedBox(height: AppDim.paddingLarge),
                   ],
 
-                  // Description with Read more
+                  // Description with Read more (SHORT - 2-3 lines only)
                   if (_series.description != null && _series.description!.isNotEmpty) ...[
+                    Text(
+                      'Description',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     _buildDescription(_series.description!, theme),
                     const SizedBox(height: AppDim.paddingLarge),
                   ],
@@ -636,6 +683,8 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                     ),
                     const SizedBox(height: AppDim.paddingLarge),
                   ],
+
+                  const SizedBox(height: AppDim.paddingMedium),
 
                   // Add to list button
                   Consumer<WatchlistProvider>(
@@ -1025,6 +1074,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       await _progressFuture;
       await _loadWatchedEpisodes();
       
+      // Refresh series detail to get any new episodes that might have been added
+      await _loadSeriesDetail();
+      
       // Small delay to ensure watched episodes list is updated
       await Future.delayed(const Duration(milliseconds: 300));
       
@@ -1032,16 +1084,32 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         // Use post-frame callback to avoid setState during build
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           if (mounted) {
+            // Reload watched episodes to ensure persistence
+            await _loadWatchedEpisodes();
+            
+            // Reload progress to ensure it's synced with backend
+            final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+            await progressProvider.loadSeriesProgress(_series.id);
+            
             // Check if all episodes are now watched (only if we marked as watched, not unwatched)
             if (!isCurrentlyWatched) {
-              final isComplete = await _checkIfSeriesComplete();
+              // Use backend's calculated progress to check completion (more reliable)
+              // Backend sums episodes across ALL seasons correctly
+              final progress = progressProvider.getSeriesProgress(_series.id);
+              final isComplete = progress != null && 
+                                 progress.totalEpisodes > 0 && 
+                                 progress.watchedEpisodes >= progress.totalEpisodes;
+              
               if (isComplete) {
+                // Series is complete - refresh challenges and notify everything
+                await _refreshOnSeriesCompletion();
                 _showCompletionNotification();
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Episode marked as watched!'),
                     backgroundColor: AppColors.successColor,
+                    duration: Duration(seconds: 2),
                   ),
                 );
               }
@@ -1050,8 +1118,20 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                 const SnackBar(
                   content: Text('Episode marked as unwatched'),
                   backgroundColor: AppColors.successColor,
+                  duration: Duration(seconds: 2),
                 ),
               );
+              // Also refresh if unwatching might change completion status
+              final progress = progressProvider.getSeriesProgress(_series.id);
+              if (progress != null && progress.totalEpisodes > 0 && progress.watchedEpisodes < progress.totalEpisodes) {
+                // Series no longer complete - refresh challenges too
+                try {
+                  final challengesProvider = Provider.of<MobileChallengesProvider>(context, listen: false);
+                  await challengesProvider.fetchMyProgress();
+                } catch (_) {
+                  // Silently fail
+                }
+              }
             }
             setState(() {}); // Refresh UI
           }
@@ -1070,26 +1150,27 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
   }
 
   Widget _buildDescription(String description, ThemeData theme) {
-    const maxLength = 150;
+    // Show only 2-3 lines (approximately 100-120 characters)
+    const maxLength = 120;
     final isLong = description.length > maxLength;
-    final displayText = _isDescriptionExpanded || !isLong
-        ? description
-        : '${description.substring(0, maxLength)}...';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          displayText,
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: AppColors.textSecondary,
-            height: 1.5,
+    
+    if (!isLong) {
+      // If description is short, show it with a "Read more" button below
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            description,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.5,
+            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
-        if (isLong)
+          const SizedBox(height: AppDim.paddingSmall),
           TextButton(
             onPressed: () {
-              // Navigate to full description screen
               Navigator.push(
                 context,
                 MobilePageRoute(
@@ -1098,10 +1179,50 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
               );
             },
             child: const Text(
-              'See more',
-              style: TextStyle(color: AppColors.primaryColor),
+              'Read more',
+              style: TextStyle(
+                color: AppColors.primaryColor,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.underline,
+              ),
             ),
           ),
+        ],
+      );
+    }
+    
+    // For long descriptions, show 2-3 lines with "Read more" button below
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          description,
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: AppColors.textSecondary,
+            height: 1.5,
+          ),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: AppDim.paddingSmall),
+        TextButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MobilePageRoute(
+                builder: (context) => MobileSeriesDescriptionScreen(series: _series),
+              ),
+            );
+          },
+          child: const Text(
+            'Read more',
+            style: TextStyle(
+              color: AppColors.primaryColor,
+              fontWeight: FontWeight.bold,
+              decoration: TextDecoration.underline,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1227,6 +1348,28 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
     }
   }
 
+  /// Refresh everything when a series is completed
+  Future<void> _refreshOnSeriesCompletion() async {
+    try {
+      // Refresh challenges if user has started any
+      try {
+        final challengesProvider = Provider.of<MobileChallengesProvider>(context, listen: false);
+        await challengesProvider.fetchMyProgress();
+      } catch (e) {
+        // Don't fail - challenges update is optional
+      }
+      
+      // Clear progress cache to force fresh reload
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      progressProvider.clearProgressCache(_series.id);
+      
+      // Reload progress for this series with fresh data
+      await progressProvider.loadSeriesProgress(_series.id);
+    } catch (e) {
+      // Don't throw - refresh is best effort
+    }
+  }
+
   /// Check if all episodes across all seasons are watched
   Future<bool> _checkIfSeriesComplete() async {
     try {
@@ -1250,7 +1393,6 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       // Check if all episodes are in watched list
       return allEpisodeIds.every((epId) => _watchedEpisodeIds.contains(epId));
     } catch (e) {
-      print('Error checking series completion: $e');
       return false;
     }
   }
@@ -1288,7 +1430,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
           ],
         ),
         backgroundColor: AppColors.primaryColor,
-        duration: const Duration(seconds: 5),
+        duration: const Duration(seconds: 3), // Auto-dismiss after 3 seconds
         action: SnackBarAction(
           label: 'Rate',
           textColor: Colors.white,
@@ -1336,7 +1478,6 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       }
     } catch (e) {
       // Silently fail - watched indicators just won't show
-      print('Error loading watched episodes: $e');
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../../core/widgets/admin_data_table_config.dart';
 import '../../models/series.dart';
 import '../providers/admin_series_provider.dart';
 import 'series/series_form_dialog.dart';
@@ -17,6 +18,8 @@ class AdminSeriesScreen extends StatefulWidget {
 
 class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
   final _searchController = TextEditingController();
+  final _horizontalScrollController = ScrollController();
+  final _verticalScrollController = ScrollController();
   String _searchQuery = '';
   String? _selectedGenre;
   int? _selectedYear;
@@ -79,8 +82,11 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
   }
 
   @override
+  @override
   void dispose() {
     _searchController.dispose();
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
@@ -230,25 +236,88 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
             }
 
             if (adminSeriesProvider.items.isEmpty) {
+              final hasActiveFilters = _searchQuery.isNotEmpty || _selectedGenre != null || _selectedYear != null;
+              
               return Center(
-                child: Text(
-                  'No series found',
-                  style: theme.textTheme.bodyLarge,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.search_off,
+                      size: 64,
+                      color: AppColors.textSecondary.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: AppDim.paddingMedium),
+                    Text(
+                      hasActiveFilters
+                          ? 'No series match your search or filters'
+                          : 'No series found',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (hasActiveFilters) ...[
+                      const SizedBox(height: AppDim.paddingSmall),
+                      Text(
+                        'Try clearing your search or filters to see all series',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppDim.paddingLarge),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = '';
+                                _selectedGenre = null;
+                                _selectedYear = null;
+                                _searchController.clear();
+                              });
+                              _loadSeries(page: 1);
+                            },
+                            icon: const Icon(Icons.clear_all),
+                            label: const Text('Clear All Filters'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryColor,
+                              foregroundColor: AppColors.textLight,
+                            ),
+                          ),
+                          const SizedBox(width: AppDim.paddingMedium),
+                          OutlinedButton.icon(
+                            onPressed: _loadSeries,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Refresh'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primaryColor,
+                              side: BorderSide(color: AppColors.primaryColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: AppDim.paddingLarge),
+                      ElevatedButton.icon(
+                        onPressed: _loadSeries,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refresh'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          foregroundColor: AppColors.textLight,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               );
             }
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 // Add button at top-right
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -273,7 +342,7 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                 Card(
                   color: AppColors.cardBackground,
                   child: Padding(
-                    padding: const EdgeInsets.all(AppDim.paddingMedium),
+                    padding: const EdgeInsets.all(AppDim.paddingSmall),
                     child: Column(
                       children: [
                         Row(
@@ -295,7 +364,6 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                                             setState(() {
                                               _searchQuery = '';
                                             });
-                                            _loadSeries();
                                           },
                                         )
                                       : null,
@@ -312,9 +380,10 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                                   setState(() {
                                     _searchQuery = value;
                                   });
+                                  // Don't trigger search automatically - wait for Search button
                                 },
                                 onSubmitted: (value) {
-                                  _loadSeries(page: 1); // Reset to first page on search
+                                  // Don't trigger search on Enter - wait for Search button
                                 },
                               ),
                             ),
@@ -354,12 +423,12 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                                         );
                                       }),
                                     ],
-                                    onChanged: (value) {
-                                      setState(() {
-                                        _selectedGenre = value;
-                                      });
-                                      _loadSeries(page: 1); // Reset to first page on filter change
-                                    },
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedGenre = value;
+                                  });
+                                  // Don't trigger search automatically - wait for Search button
+                                },
                                   );
                                 },
                               ),
@@ -397,7 +466,7 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                                   setState(() {
                                     _selectedYear = value;
                                   });
-                                  _loadSeries(page: 1); // Reset to first page on filter change
+                                  // Don't trigger search automatically - wait for Search button
                                 },
                               ),
                             ),
@@ -419,33 +488,44 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppDim.paddingMedium),
+                const SizedBox(height: AppDim.paddingSmall),
                 
-                // Data Table
-                SizedBox(
-                  height: 400, // Fixed height for table with vertical scroll
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                headingRowColor: MaterialStateProperty.all(AppColors.cardBackground),
-                dataRowColor: MaterialStateProperty.resolveWith((states) {
-                  if (states.contains(MaterialState.selected)) {
-                    return AppColors.primaryColor.withOpacity(0.1);
-                  }
-                  return AppColors.cardBackground;
-                }),
+                // Data Table with proper height constraints and scrolling
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Scrollbar(
+                        controller: _horizontalScrollController,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _horizontalScrollController,
+                          scrollDirection: Axis.horizontal,
+                          child: Scrollbar(
+                            controller: _verticalScrollController,
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              controller: _verticalScrollController,
+                              scrollDirection: Axis.vertical,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minWidth: constraints.maxWidth,
+                                ),
+                                child: DataTable(
+                headingRowColor: AdminDataTableConfig.getTableProperties()['headingRowColor'] as MaterialStateProperty<Color>,
+                dataRowColor: AdminDataTableConfig.getTableProperties()['dataRowColor'] as MaterialStateProperty<Color>,
+                headingRowHeight: AdminDataTableConfig.headingRowHeight,
+                dataRowMinHeight: AdminDataTableConfig.dataRowMinHeight,
+                dataRowMaxHeight: AdminDataTableConfig.dataRowMaxHeight,
                 columns: [
-                  const DataColumn(
-                    label: Text('ID'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('ID'),
                     numeric: true,
                   ),
-                  const DataColumn(
-                    label: Text('Image'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Image'),
                   ),
                   DataColumn(
-                    label: const Text('Title'),
+                    label: AdminDataTableConfig.getColumnLabel('Title'),
                     onSort: (columnIndex, ascending) {
                       setState(() {
                         _sortBy = 'title';
@@ -454,12 +534,12 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                       _loadSeries(page: 1); // Reset to first page on sort
                     },
                   ),
-                  const DataColumn(
-                    label: Text('Episodes'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Episodes'),
                     numeric: true,
                   ),
                   DataColumn(
-                    label: const Text('Year'),
+                    label: AdminDataTableConfig.getColumnLabel('Year'),
                     numeric: true,
                     onSort: (columnIndex, ascending) {
                       setState(() {
@@ -469,23 +549,21 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                       _loadSeries();
                     },
                   ),
-                  const DataColumn(
-                    label: Text('Genre'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Genre'),
                   ),
-                  const DataColumn(
-                    label: Text('Main Actor'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Main Actor'),
                   ),
-                  const DataColumn(
-                    label: Text('Actions'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Actions'),
                   ),
                 ],
                 sortColumnIndex: _sortBy == 'title' ? 2 : _sortBy == 'year' ? 4 : null,
                 sortAscending: _sortAscending,
                 rows: adminSeriesProvider.items.map((series) {
-                  // Calculate total episodes from seasons
-                  int totalEpisodes = 0;
-                  // Note: This would need to be calculated from API if seasons data is available
-                  // For now, using a placeholder
+                  // Calculate total episodes from seasons using the series model's getter
+                  final totalEpisodes = series.totalEpisodes;
                   
                   // Get main actor (first actor or empty)
                   final mainActor = series.actors.isNotEmpty 
@@ -502,7 +580,7 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                       DataCell(
                         Text(
                           series.id.toString(),
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
@@ -510,12 +588,12 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                           builder: (context) {
                             return ImageWithPlaceholder(
                               imageUrl: series.imageUrl,
-                              width: 50,
-                              height: 50,
+                              width: 40,
+                              height: 40,
                               fit: BoxFit.cover,
-                              borderRadius: 8,
+                              borderRadius: 6,
                               placeholderIcon: Icons.movie,
-                              placeholderIconSize: 24,
+                              placeholderIconSize: 20,
                             );
                           },
                         ),
@@ -523,60 +601,82 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                       DataCell(
                         Text(
                           series.title,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           totalEpisodes > 0 ? totalEpisodes.toString() : 'N/A',
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           series.releaseDate.year.toString(),
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           firstGenre,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           mainActor,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              color: AppColors.primaryColor,
-                              onPressed: () => _handleEditSeries(series),
-                              tooltip: 'Edit',
+                            SizedBox(
+                              width: AdminDataTableConfig.actionButtonSize,
+                              child: IconButton(
+                                icon: const Icon(Icons.edit, size: AdminDataTableConfig.actionIconSize),
+                                color: AppColors.primaryColor,
+                                onPressed: () => _handleEditSeries(series),
+                                tooltip: 'Edit',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: AdminDataTableConfig.actionButtonSize,
+                                  minHeight: AdminDataTableConfig.actionButtonSize,
+                                ),
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              color: AppColors.dangerColor,
-                              onPressed: () => _handleDeleteSeries(series),
-                              tooltip: 'Delete',
+                            const SizedBox(width: 2),
+                            SizedBox(
+                              width: AdminDataTableConfig.actionButtonSize,
+                              child: IconButton(
+                                icon: const Icon(Icons.delete, size: AdminDataTableConfig.actionIconSize),
+                                color: AppColors.dangerColor,
+                                onPressed: () => _handleDeleteSeries(series),
+                                tooltip: 'Delete',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: AdminDataTableConfig.actionButtonSize,
+                                  minHeight: AdminDataTableConfig.actionButtonSize,
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ],
                   );
-                }).toList(),
+                      }).toList(),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-                const SizedBox(height: AppDim.paddingMedium),
+              ),
+                const SizedBox(height: AppDim.paddingSmall),
                 
                 // Pagination Controls
                 Consumer<AdminSeriesProvider>(
@@ -584,7 +684,7 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                     return Card(
                       color: AppColors.cardBackground,
                       child: Padding(
-                        padding: const EdgeInsets.all(AppDim.paddingMedium),
+                        padding: const EdgeInsets.all(AppDim.paddingSmall),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -656,12 +756,7 @@ class _AdminSeriesScreenState extends State<AdminSeriesScreen> {
                     );
                   },
                 ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
+              ],
             );
           },
         ),

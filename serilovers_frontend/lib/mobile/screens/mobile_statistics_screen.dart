@@ -8,9 +8,11 @@ import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/series_provider.dart';
 import '../../providers/episode_progress_provider.dart';
+import '../../providers/language_provider.dart';
 import '../../services/episode_progress_service.dart';
 import '../../services/rating_service.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../../models/series.dart';
 
 /// Statistics screen showing user statistics with cards and charts
 class MobileStatisticsScreen extends StatefulWidget {
@@ -22,17 +24,36 @@ class MobileStatisticsScreen extends StatefulWidget {
 
 class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
   int? _currentUserId;
-  int _totalSeries = 0;
-  int _totalEpisodes = 0;
-  int _totalReviews = 0;
-  int _totalHours = 0;
+  int? _totalSeries;
+  int? _totalEpisodes;
+  int? _totalReviews;
+  int? _totalHours;
   Map<String, double> _genreDistribution = {};
+  bool _isLoading = true;
+  String? _errorMessage;
+  DateTime? _lastLoadTime;
+  static const _cacheTimeout = Duration(seconds: 30); // Cache for 30 seconds
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadStatistics();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen (e.g., after completing a series)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isLoading) {
+        final now = DateTime.now();
+        if (_lastLoadTime == null || 
+            now.difference(_lastLoadTime!) > _cacheTimeout) {
+          _loadStatistics();
+        }
+      }
     });
   }
 
@@ -50,6 +71,13 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
   }
 
   Future<void> _loadStatistics() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
+
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
@@ -57,7 +85,15 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
     final ratingService = RatingService();
     
     final userId = _extractUserId(auth.token);
-    if (userId == null) return;
+    if (userId == null) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'User not authenticated';
+        });
+      }
+      return;
+    }
     
     _currentUserId = userId;
 
@@ -65,18 +101,90 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
       final token = auth.token;
       if (token == null || token.isEmpty) return;
 
-      // Load watchlist to get series count
-      await watchlistProvider.loadWatchlist();
+      // Only reload watchlist if it's empty or cache expired
+      final now = DateTime.now();
+      final shouldReload = watchlistProvider.items.isEmpty || 
+                          _lastLoadTime == null ||
+                          now.difference(_lastLoadTime!) > _cacheTimeout;
+      
+      if (shouldReload) {
+        await watchlistProvider.loadWatchlist();
+        _lastLoadTime = now;
+      }
+      
       final watchlistItems = watchlistProvider.items;
       _totalSeries = watchlistItems.length;
       
-      // Get real episode progress data
-      final allProgress = await progressService.getUserProgress(token: token);
-      final completedProgress = allProgress.where((p) => p.isCompleted).toList();
-      _totalEpisodes = completedProgress.length;
+      // Calculate finished series count (all episodes watched)
+      // Load ALL series progress in PARALLEL (much faster!)
+      // Use silent loading to avoid UI flickering from multiple loading state changes
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      final progressFutures = watchlistItems.map((series) async {
+        return await progressProvider.loadSeriesProgressSilent(series.id);
+      }).toList();
       
-      // Calculate hours (assume 45 minutes per episode - standard TV episode length)
-      _totalHours = (_totalEpisodes * 45 / 60).round();
+      // Wait for all progress loads to complete in parallel
+      final progressResults = await Future.wait(progressFutures);
+      
+      // Create lookup maps for O(1) access instead of O(n) searches
+      final seriesMap = <int, Series>{};
+      final episodeMap = <int, int>{}; // episodeId -> durationMinutes
+      for (var series in watchlistItems) {
+        seriesMap[series.id] = series;
+        // Pre-build episode duration map for fast lookup
+        if (series.seasons != null && series.seasons!.isNotEmpty) {
+          for (var season in series.seasons!) {
+            if (season.episodes != null && season.episodes!.isNotEmpty) {
+              for (var episode in season.episodes!) {
+                // Handle nullable durationMinutes
+                final duration = episode.durationMinutes;
+                if (duration != null) {
+                  episodeMap[episode.id] = duration;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      int finishedSeriesCount = 0;
+      int totalWatchedEpisodes = 0;
+      double totalMinutes = 0.0;
+      
+      // Process all progress results in a single pass
+      for (int i = 0; i < watchlistItems.length; i++) {
+        final series = watchlistItems[i];
+        final progress = progressResults[i];
+        
+        if (progress != null) {
+          // Count watched episodes from progress
+          totalWatchedEpisodes += progress.watchedEpisodes;
+          
+          // Calculate total episodes for this series
+          int totalEpisodes = 0;
+          if (series.seasons != null && series.seasons!.isNotEmpty) {
+            totalEpisodes = series.seasons!
+                .map((season) => season.episodes?.length ?? 0)
+                .fold(0, (sum, count) => sum + count);
+          }
+          if (totalEpisodes == 0) {
+            totalEpisodes = progress.totalEpisodes;
+          }
+          
+          // Check if series is finished
+          if (totalEpisodes > 0 && progress.watchedEpisodes >= totalEpisodes) {
+            finishedSeriesCount++;
+          }
+          
+          // Estimate hours from watched episodes (use average 40 min per episode)
+          // This is much faster than loading all individual progress records
+          totalMinutes += progress.watchedEpisodes * 40.0;
+        }
+      }
+      
+      // Use watched episodes count from progress data (more accurate than loading all progress)
+      _totalEpisodes = totalWatchedEpisodes;
+      _totalHours = (totalMinutes / 60).round();
       
       // Calculate genre distribution from watchlist series
       _genreDistribution = {};
@@ -103,12 +211,17 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
       }
       
       if (mounted) {
-        setState(() {});
+        setState(() {
+          _isLoading = false;
+        });
       }
     } catch (e) {
-      // Handle error silently - show default values
+      // Handle error - show error message
       if (mounted) {
-        setState(() {});
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Failed to load statistics: ${e.toString()}';
+        });
       }
     }
   }
@@ -117,13 +230,13 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final auth = Provider.of<AuthProvider>(context);
+    final languageProvider = Provider.of<LanguageProvider>(context);
     final userInfo = _getUserInfo(auth.token);
-    final initials = _getInitials(userInfo['email']!);
 
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
-        title: const Text('Statistics'),
+        title: Text(languageProvider.translate('statistics')),
         backgroundColor: AppColors.primaryColor,
         foregroundColor: AppColors.textLight,
         elevation: 0,
@@ -136,11 +249,14 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
             // Profile Section
             Row(
               children: [
-                AvatarImage(
-                  avatarUrl: userInfo['avatarUrl'],
-                  radius: 40,
-                  initials: initials,
+                ImageWithPlaceholder(
+                  imageUrl: userInfo['avatarUrl'],
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  borderRadius: 6,
                   placeholderIcon: Icons.person,
+                  placeholderIconSize: 20,
                 ),
                 const SizedBox(width: AppDim.paddingMedium),
                 Expanded(
@@ -182,21 +298,74 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
             const SizedBox(height: AppDim.paddingLarge),
             
             // Statistics Cards
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatCard('$_totalSeries SERIES', Colors.blue, theme),
-                ),
-                const SizedBox(width: AppDim.paddingSmall),
-                Expanded(
-                  child: _buildStatCard('$_totalEpisodes EPISODES', AppColors.primaryColor, theme),
-                ),
-                const SizedBox(width: AppDim.paddingSmall),
-                Expanded(
-                  child: _buildStatCard('$_totalReviews REVIEWS', Colors.pink, theme),
-                ),
-              ],
-            ),
+            _isLoading
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(AppDim.paddingLarge),
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
+                      ),
+                    ),
+                  )
+                : _errorMessage != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppDim.paddingLarge),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: AppColors.dangerColor,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton(
+                                onPressed: _loadStatistics,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryColor,
+                                  foregroundColor: AppColors.textLight,
+                                ),
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_totalSeries ?? 0} ${languageProvider.translate('series')}',
+                              Colors.blue,
+                              theme,
+                            ),
+                          ),
+                          const SizedBox(width: AppDim.paddingSmall),
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_totalEpisodes ?? 0} ${languageProvider.translate('episodes')}',
+                              AppColors.primaryColor,
+                              theme,
+                            ),
+                          ),
+                          const SizedBox(width: AppDim.paddingSmall),
+                          Expanded(
+                            child: _buildStatCard(
+                              '${_totalReviews ?? 0} ${languageProvider.translate('reviews')}',
+                              Colors.pink,
+                              theme,
+                            ),
+                          ),
+                        ],
+                      ),
             
             const SizedBox(height: AppDim.paddingLarge),
             
@@ -211,14 +380,14 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
               child: Column(
                 children: [
                   Text(
-                    'Total Hours',
+                    languageProvider.translate('totalHours'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '$_totalHours hours',
+                    '${_totalHours ?? 0} ${languageProvider.translate('hours')}',
                     style: theme.textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: AppColors.textPrimary,
@@ -226,7 +395,7 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'watched in ${DateTime.now().year}',
+                    '${languageProvider.translate('watchedIn')} ${DateTime.now().year}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -240,7 +409,7 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
             // Genre Distribution Chart
             if (_genreDistribution.isNotEmpty) ...[
               Text(
-                'Most Watched Genre',
+                languageProvider.translate('mostWatchedGenre'),
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,

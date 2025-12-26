@@ -31,6 +31,73 @@
 
   <title>serilovers_frontend</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Hide Flutter debug banner - multiple selectors to catch all variations */
+    .flutter-debug-banner,
+    [class*="debug-banner"],
+    [class*="DebugBanner"],
+    div[style*="position: fixed"][style*="top"][style*="right"][style*="z-index"],
+    div[style*="position:fixed"][style*="top"][style*="right"][style*="z-index"],
+    /* Target the specific Flutter debug banner pattern */
+    body > div:last-child[style*="position: fixed"],
+    body > div:last-child[style*="position:fixed"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+    /* Additional rule for Flutter web debug banner */
+    flt-glass-pane[style*="position: fixed"][style*="top"][style*="right"] {
+      display: none !important;
+    }
+  </style>
+  <script>
+    // Aggressively hide Flutter debug banner - runs after page loads
+    function hideDebugBanner() {
+      // Hide by class name
+      document.querySelectorAll('[class*="debug"], [class*="Debug"]').forEach(el => {
+        el.style.display = 'none';
+        el.style.visibility = 'hidden';
+        el.style.opacity = '0';
+      });
+      
+      // Hide by position (top-right fixed elements)
+      document.querySelectorAll('div[style*="position"]').forEach(el => {
+        const style = el.getAttribute('style') || '';
+        if (style.includes('position') && style.includes('top') && style.includes('right')) {
+          const rect = el.getBoundingClientRect();
+          // Check if it's in the top-right corner (likely debug banner)
+          if (rect.top < 100 && rect.right > window.innerWidth - 200) {
+            el.style.display = 'none';
+            el.style.visibility = 'hidden';
+            el.style.opacity = '0';
+            el.style.pointerEvents = 'none';
+          }
+        }
+      });
+      
+      // Hide flt-glass-pane elements in top-right
+      document.querySelectorAll('flt-glass-pane').forEach(el => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top < 100 && rect.right > window.innerWidth - 200) {
+          el.style.display = 'none';
+        }
+      });
+    }
+    
+    // Run immediately and repeatedly until Flutter loads
+    hideDebugBanner();
+    setInterval(hideDebugBanner, 100);
+    
+    // Also run when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', hideDebugBanner);
+    }
+    
+    // Run after a delay to catch dynamically added elements
+    setTimeout(hideDebugBanner, 1000);
+    setTimeout(hideDebugBanner, 3000);
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

@@ -52,6 +52,9 @@ class _ChallengeFormDialogState extends State<ChallengeFormDialog> {
       _selectedDifficulty = _difficulties.contains(challengeDifficulty) 
           ? challengeDifficulty 
           : _difficulties.first;
+    } else {
+      // Set default target count for new challenges
+      _targetCountController.text = '10';
     }
   }
 
@@ -69,12 +72,32 @@ class _ChallengeFormDialogState extends State<ChallengeFormDialog> {
       final adminChallengeProvider = Provider.of<AdminChallengeProvider>(context, listen: false);
 
       // Prepare challenge data
+      // Backend enum: Easy=1, Medium=2, Hard=3, Expert=4
+      // Send as integer enum value
+      int difficultyValue;
+      switch (_selectedDifficulty) {
+        case 'Easy':
+          difficultyValue = 1;
+          break;
+        case 'Medium':
+          difficultyValue = 2;
+          break;
+        case 'Hard':
+          difficultyValue = 3;
+          break;
+        case 'Expert':
+          difficultyValue = 4;
+          break;
+        default:
+          difficultyValue = 1; // Default to Easy
+      }
+
       final challengeData = {
         'name': _nameController.text.trim(),
         'description': _descriptionController.text.trim().isEmpty 
             ? null 
             : _descriptionController.text.trim(),
-        'difficulty': _selectedDifficulty,
+        'difficulty': difficultyValue, // Send as integer (1-4)
         'targetCount': int.parse(_targetCountController.text),
       };
 
@@ -314,11 +337,12 @@ class _ChallengeFormDialogState extends State<ChallengeFormDialog> {
                       ),
                       const SizedBox(height: AppDim.paddingMedium),
 
-                      // Target Count field
+                      // Target Count field with default value
                       TextFormField(
                         controller: _targetCountController,
                         decoration: InputDecoration(
                           labelText: 'Target Count *',
+                          hintText: '10', // Default suggestion
                           labelStyle: TextStyle(color: AppColors.textSecondary),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(AppDim.radiusSmall),

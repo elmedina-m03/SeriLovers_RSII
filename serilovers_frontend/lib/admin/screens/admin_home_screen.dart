@@ -4,19 +4,34 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../models/user.dart';
 import '../../models/series.dart';
+import '../../models/rating.dart';
+import '../../services/rating_service.dart';
+import '../../services/api_service.dart';
+import '../../providers/auth_provider.dart';
 import '../providers/admin_statistics_provider.dart';
 import '../../providers/admin_user_provider.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 import '../providers/admin_series_provider.dart';
 
 /// Admin home screen with modern dashboard layout using real database data
 class AdminHomeScreen extends StatefulWidget {
-  const AdminHomeScreen({super.key});
+  final Function(int)? onNavigateToScreen;
+  
+  const AdminHomeScreen({
+    super.key,
+    this.onNavigateToScreen,
+  });
 
   @override
   State<AdminHomeScreen> createState() => _AdminHomeScreenState();
 }
 
 class _AdminHomeScreenState extends State<AdminHomeScreen> {
+  List<Rating> _recentReviews = [];
+  bool _isLoadingReviews = false;
+  DateTime? _lastRefreshTime;
+  static const _refreshInterval = Duration(seconds: 5); // Refresh if data is older than 5 seconds
+
   @override
   void initState() {
     super.initState();
@@ -26,14 +41,34 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when navigating back to this screen (but not too frequently)
+    // This ensures the dashboard shows latest data after CRUD operations
+    final now = DateTime.now();
+    if (_lastRefreshTime == null || now.difference(_lastRefreshTime!) > _refreshInterval) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadData();
+        }
+      });
+    }
+  }
+
+  /// Navigate to a specific admin screen using the callback
+  void _navigateToScreen(int screenIndex) {
+    if (widget.onNavigateToScreen != null) {
+      widget.onNavigateToScreen!(screenIndex);
+    }
+  }
+
   /// Load all necessary data
   Future<void> _loadData() async {
     try {
-      // Fetch statistics
+      // Always refresh statistics to show latest totals
       final statsProvider = Provider.of<AdminStatisticsProvider>(context, listen: false);
-      if (statsProvider.stats == null) {
-        await statsProvider.fetchStats();
-      }
+      await statsProvider.fetchStats();
 
       // Fetch recent users (last 5, sorted by dateCreated desc)
       final userProvider = Provider.of<AdminUserProvider>(context, listen: false);
@@ -52,8 +87,51 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         page: 1,
         pageSize: 5,
       );
+
+      // Fetch recent reviews (last 5)
+      await _loadRecentReviews();
+      
+      // Update last refresh time
+      _lastRefreshTime = DateTime.now();
     } catch (e) {
       print('Error loading admin home data: $e');
+    }
+  }
+
+  /// Load recent reviews for dashboard preview
+  Future<void> _loadRecentReviews() async {
+    setState(() {
+      _isLoadingReviews = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      
+      if (token != null && token.isNotEmpty) {
+        final ratingService = RatingService();
+        final allRatings = await ratingService.getAllRatings(token: token);
+        
+        // Filter to only show ratings with comments (actual reviews)
+        final reviews = allRatings.where((r) => r.comment != null && r.comment!.isNotEmpty).toList();
+        
+        // Sort by createdAt desc and take last 5
+        reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        
+        setState(() {
+          _recentReviews = reviews.take(5).toList();
+          _isLoadingReviews = false;
+        });
+      } else {
+        setState(() {
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading recent reviews: $e');
+      setState(() {
+        _isLoadingReviews = false;
+      });
     }
   }
 
@@ -142,6 +220,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
             const SizedBox(height: AppDim.paddingLarge),
+            
+            // Recent Reviews Section
+            _buildRecentReviewsSection(context, theme),
           ],
         ),
       ),
@@ -212,6 +293,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     required String value,
     required IconData icon,
     required Color color,
+    int? navigationIndex,
   }) {
     final theme = Theme.of(context);
 
@@ -269,6 +351,18 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
               ],
             ),
           ),
+          // View All button if navigation index is provided
+          if (navigationIndex != null)
+            TextButton(
+              onPressed: () => _navigateToScreen(navigationIndex),
+              child: Text(
+                'View All',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -307,7 +401,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
                 TextButton(
                   onPressed: () {
-                    // Navigate to users screen (can be implemented later)
+                    // Navigate to users screen
+                    _navigateToScreen(2); // Users screen index
                   },
                   child: Text(
                     'View All',
@@ -365,16 +460,14 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       child: Row(
         children: [
           // Avatar
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppColors.primaryColor.withOpacity(0.1),
-            child: Text(
-              user.displayName.substring(0, 1).toUpperCase(),
-              style: TextStyle(
-                color: AppColors.primaryColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          ImageWithPlaceholder(
+            imageUrl: user.avatarUrl,
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+            borderRadius: 6,
+            placeholderIcon: Icons.person,
+            placeholderIconSize: 20,
           ),
           const SizedBox(width: AppDim.paddingMedium),
           // User Info
@@ -444,7 +537,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 ),
                 TextButton(
                   onPressed: () {
-                    // Navigate to series screen (can be implemented later)
+                    // Navigate to series screen
+                    _navigateToScreen(1); // Series screen index
                   },
                   child: Text(
                     'View All',
@@ -501,19 +595,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       child: Row(
         children: [
-          // Series Icon
-          Container(
+          // Series Image
+          ImageWithPlaceholder(
+            imageUrl: series.imageUrl,
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-            ),
-            child: Icon(
-              Icons.movie,
-              color: AppColors.primaryColor,
-              size: 20,
-            ),
+            fit: BoxFit.cover,
+            borderRadius: AppDim.radiusSmall,
+            placeholderIcon: Icons.movie,
+            placeholderIconSize: 20,
           ),
           const SizedBox(width: AppDim.paddingMedium),
           // Series Info
@@ -566,4 +656,172 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
     );
   }
+
+  /// Builds the Recent Reviews section
+  Widget _buildRecentReviewsSection(BuildContext context, ThemeData theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardBackground,
+        borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+            spreadRadius: 0,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(AppDim.padding),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Reviews',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    // Navigate to reviews screen
+                    _navigateToScreen(6); // Reviews screen index
+                  },
+                  child: Text(
+                    'View All',
+                    style: TextStyle(color: AppColors.primaryColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // Reviews List
+          if (_isLoadingReviews)
+            const Padding(
+              padding: EdgeInsets.all(AppDim.paddingLarge),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_recentReviews.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(AppDim.paddingLarge),
+              child: Center(
+                child: Text(
+                  'No reviews found',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            )
+          else
+            Column(
+              children: _recentReviews.map((review) => _buildReviewRow(context, theme, review)).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Builds a single review row
+  Widget _buildReviewRow(BuildContext context, ThemeData theme, Rating review) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppDim.padding,
+        vertical: AppDim.paddingSmall,
+      ),
+      child: Row(
+        children: [
+          // User Avatar
+          if (review.userAvatarUrl != null)
+            CircleAvatar(
+              radius: 16,
+              backgroundImage: NetworkImage(
+                ApiService.convertToHttpUrl(review.userAvatarUrl!) ?? review.userAvatarUrl!,
+              ),
+            )
+          else
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: AppColors.primaryColor.withOpacity(0.1),
+              child: Text(
+                (review.userName ?? 'U').substring(0, 1).toUpperCase(),
+                style: TextStyle(
+                  color: AppColors.primaryColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          const SizedBox(width: AppDim.paddingMedium),
+          // Review Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      review.userName ?? 'Unknown',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: AppDim.paddingSmall),
+                    Icon(
+                      Icons.star,
+                      size: 14,
+                      color: AppColors.primaryColor,
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      review.score.toString(),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  review.seriesTitle ?? 'N/A',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (review.comment != null && review.comment!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    review.comment!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          // Date
+          Text(
+            _formatDate(review.createdAt),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
 }

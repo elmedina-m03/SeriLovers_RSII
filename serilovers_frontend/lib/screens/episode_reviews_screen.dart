@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/episode_review.dart';
 import '../providers/episode_review_provider.dart';
 import '../core/theme/app_colors.dart';
+import '../services/api_service.dart';
 import 'add_episode_review_screen.dart';
 
 class EpisodeReviewsScreen extends StatefulWidget {
@@ -197,7 +198,9 @@ class _ReviewCard extends StatelessWidget {
                   backgroundColor: AppColors.primaryColor.withOpacity(0.2),
                   backgroundImage: review.userAvatarUrl != null &&
                           review.userAvatarUrl!.isNotEmpty
-                      ? NetworkImage(review.userAvatarUrl!)
+                      ? NetworkImage(
+                          ApiService.convertToHttpUrl(review.userAvatarUrl!) ?? review.userAvatarUrl!,
+                        )
                       : null,
                   child: review.userAvatarUrl == null ||
                           review.userAvatarUrl!.isEmpty

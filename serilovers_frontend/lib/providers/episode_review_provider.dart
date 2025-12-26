@@ -77,6 +77,7 @@ class EpisodeReviewProvider extends ChangeNotifier {
     required int episodeId,
     required int rating,
     String? reviewText,
+    bool isAnonymous = false,
   }) async {
     loading = true;
     notifyListeners();
@@ -91,6 +92,7 @@ class EpisodeReviewProvider extends ChangeNotifier {
         episodeId: episodeId,
         rating: rating,
         reviewText: reviewText,
+        isAnonymous: isAnonymous,
         token: token,
       );
 

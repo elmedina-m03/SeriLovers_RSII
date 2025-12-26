@@ -79,7 +79,6 @@ class MobileChallengesProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ MobileChallengesProvider: Error fetching challenges: $e');
       rethrow;
     }
   }
@@ -107,7 +106,6 @@ class MobileChallengesProvider extends ChangeNotifier {
 
       notifyListeners();
     } catch (e) {
-      print('❌ MobileChallengesProvider: Error fetching progress: $e');
       rethrow;
     }
   }
@@ -132,7 +130,6 @@ class MobileChallengesProvider extends ChangeNotifier {
       
       notifyListeners();
     } catch (e) {
-      print('❌ MobileChallengesProvider: Error starting challenge: $e');
       // Don't rethrow - let the UI handle the error gracefully
       // The error will be shown in the UI via SnackBar
       throw Exception('Failed to start challenge. Please try again later.');

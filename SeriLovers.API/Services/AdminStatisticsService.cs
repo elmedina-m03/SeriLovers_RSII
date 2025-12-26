@@ -62,7 +62,8 @@ namespace SeriLovers.API.Services
                             Id = s.Id,
                             Title = s.Title ?? "Unknown",
                             AvgRating = s.Ratings.Any() ? s.Ratings.Average(r => r.Score) : 0.0,
-                            Views = s.Ratings.Count() + s.Watchlists.Count()
+                            Views = s.Ratings.Count() + s.Watchlists.Count(),
+                            ImageUrl = s.ImageUrl
                         })
                         .OrderByDescending(s => s.AvgRating)
                         .ThenByDescending(s => s.Views)

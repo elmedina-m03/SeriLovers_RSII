@@ -49,7 +49,7 @@ class ImageWithPlaceholder extends StatelessWidget {
     this.radius,
   });
 
-  /// Builds the full image URL from relative path
+  /// Builds the full image URL from relative path with cache busting
   String? _getFullImageUrl() {
     // Trim and check for null/empty
     final trimmedUrl = imageUrl?.trim();
@@ -57,14 +57,18 @@ class ImageWithPlaceholder extends StatelessWidget {
       return null;
     }
     
-    // If already a full URL, return as is
-    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-      return trimmedUrl;
-    }
+    String finalUrl;
     
-    // If it's a relative path (starts with /), prepend base URL
-    // Note: Static files are served from root, not from /api, so we need to remove /api from base URL
-    if (trimmedUrl.startsWith('/')) {
+    // Handle file:// URLs - convert to HTTP URL
+    if (trimmedUrl.startsWith('file://')) {
+      // Extract the path from file:// URL (e.g., file:///uploads/avatars/... -> /uploads/avatars/...)
+      var path = trimmedUrl.replaceFirst('file://', '');
+      // Remove leading slashes if present (file:///uploads -> /uploads, but we want /uploads)
+      if (path.startsWith('//')) {
+        path = path.substring(1);
+      }
+      
+      // Convert to HTTP URL using base URL
       var baseUrl = ApiService().baseUrl;
       if (baseUrl.isNotEmpty) {
         // Remove /api from the end of base URL if present (static files are at root, not /api)
@@ -73,16 +77,43 @@ class ImageWithPlaceholder extends StatelessWidget {
         } else if (baseUrl.endsWith('/api/')) {
           baseUrl = baseUrl.substring(0, baseUrl.length - 5);
         }
-        final fullUrl = '$baseUrl$trimmedUrl';
-        return fullUrl;
+        // Ensure path starts with /
+        if (!path.startsWith('/')) {
+          path = '/$path';
+        }
+        finalUrl = '$baseUrl$path';
       } else {
-        // Fallback: if no base URL configured, return as is
-        return trimmedUrl;
+        // Fallback: if no base URL configured, treat as relative path
+        finalUrl = path.startsWith('/') ? path : '/$path';
       }
     }
+    // If already a full URL, use as is
+    else if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+      finalUrl = trimmedUrl;
+    } else if (trimmedUrl.startsWith('/')) {
+      // If it's a relative path (starts with /), prepend base URL
+      // Note: Static files are served from root, not from /api, so we need to remove /api from base URL
+      var baseUrl = ApiService().baseUrl;
+      if (baseUrl.isNotEmpty) {
+        // Remove /api from the end of base URL if present (static files are at root, not /api)
+        if (baseUrl.endsWith('/api')) {
+          baseUrl = baseUrl.substring(0, baseUrl.length - 4);
+        } else if (baseUrl.endsWith('/api/')) {
+          baseUrl = baseUrl.substring(0, baseUrl.length - 5);
+        }
+        finalUrl = '$baseUrl$trimmedUrl';
+      } else {
+        // Fallback: if no base URL configured, return as is
+        finalUrl = trimmedUrl;
+      }
+    } else {
+      // Otherwise return as is (might be a full URL without protocol)
+      finalUrl = trimmedUrl;
+    }
     
-    // Otherwise return as is (might be a full URL without protocol)
-    return trimmedUrl;
+    // Add cache-busting query parameter based on URL hash (only changes when URL changes)
+    final separator = finalUrl.contains('?') ? '&' : '?';
+    return '$finalUrl${separator}v=${finalUrl.hashCode}';
   }
 
   /// Builds placeholder widget
@@ -199,6 +230,7 @@ class AvatarImage extends StatelessWidget {
     // If we have initials and no avatar, show initials
     if ((avatarUrl == null || avatarUrl!.isEmpty) && initials != null) {
       return CircleAvatar(
+        key: ValueKey('avatar_initials_$initials'),
         radius: radius,
         backgroundColor: AppColors.primaryColor,
         child: Text(
@@ -212,8 +244,9 @@ class AvatarImage extends StatelessWidget {
       );
     }
     
-    // Otherwise use ImageWithPlaceholder
+    // Otherwise use ImageWithPlaceholder with key based on avatarUrl to force rebuild
     return ImageWithPlaceholder(
+      key: ValueKey('avatar_${avatarUrl ?? 'none'}'),
       imageUrl: avatarUrl,
       isCircular: true,
       radius: radius,

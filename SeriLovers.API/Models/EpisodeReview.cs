@@ -41,6 +41,11 @@ namespace SeriLovers.API.Models
         /// When the review was last updated
         /// </summary>
         public DateTime? UpdatedAt { get; set; }
+
+        /// <summary>
+        /// Whether the review should be displayed anonymously
+        /// </summary>
+        public bool IsAnonymous { get; set; } = false;
     }
 }
 

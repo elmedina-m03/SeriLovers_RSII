@@ -364,9 +364,10 @@ namespace SeriLovers.API.Controllers
                                          w.SeriesId == seriesId && 
                                          w.CollectionId == collectionId);
 
+            // If series is not in this collection, it's already removed - return success (idempotent)
             if (watchlist == null)
             {
-                return NotFound(new { message = "Series not found in this collection." });
+                return Ok(new { message = "Series already removed from collection." });
             }
 
             // Move to default watchlist (set CollectionId to null)

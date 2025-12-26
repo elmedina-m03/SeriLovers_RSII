@@ -6,6 +6,8 @@ import '../../models/series.dart';
 import '../../providers/series_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/recommendation_provider.dart';
+import '../../models/series_recommendation.dart';
 import '../../screens/series_detail_screen.dart';
 import '../models/series_filter.dart';
 import '../widgets/fade_slide_transition.dart';
@@ -27,23 +29,99 @@ class MobileHomeScreen extends StatefulWidget {
 class _MobileHomeScreenState extends State<MobileHomeScreen> {
   bool _initialized = false;
   SeriesFilter? _activeFilter;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  DateTime? _lastLoadTime;
+  static const _cacheTimeout = Duration(seconds: 10); // Cache for 10 seconds
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      // Update UI state but don't trigger search
+      setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSeries();
+      _loadRecommendations();
     });
   }
 
-  Future<void> _loadSeries() async {
-    if (_initialized) return;
-    _initialized = true;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _initialized) {
+        final now = DateTime.now();
+        if (_lastLoadTime == null || 
+            now.difference(_lastLoadTime!) > _cacheTimeout) {
+          _loadSeries(forceRefresh: true);
+          _loadRecommendations();
+        }
+      }
+    });
+  }
+
+  Future<void> _loadRecommendations() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final recommendationProvider = Provider.of<RecommendationProvider>(context, listen: false);
+    
+    if (authProvider.isAuthenticated) {
+      try {
+        await recommendationProvider.fetchRecommendations(maxResults: 10);
+      } catch (e) {
+        // Silently fail - recommendations are optional
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) {
+      _loadSeries();
+      return;
+    }
+
+    final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+    try {
+      await seriesProvider.searchSeries(query);
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error searching series: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadSeries({bool forceRefresh = false}) async {
+    if (!forceRefresh && _initialized) return;
+    if (!_initialized) {
+      _initialized = true;
+    }
 
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
     try {
       // Load initial batch for pagination
       await seriesProvider.fetchSeries(page: 1, pageSize: 20);
+      if (mounted) {
+        setState(() {
+          _lastLoadTime = DateTime.now();
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -54,6 +132,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       );
     }
   }
+
 
   List<Series> _applyFilter(List<Series> items) {
     if (_activeFilter == null || _activeFilter!.isEmpty) {
@@ -113,26 +192,88 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
         backgroundColor: AppColors.primaryColor,
         foregroundColor: AppColors.textLight,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const MobileSearchScreen(),
+        automaticallyImplyLeading: false, // No back button on home screen
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppDim.paddingMedium, 0, AppDim.paddingMedium, AppDim.paddingSmall),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search series by name...',
+                hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.7)),
+                prefixIcon: Icon(Icons.search, color: AppColors.primaryColor),
+                filled: true,
+                fillColor: AppColors.cardBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)),
                 ),
-              );
-            },
-            tooltip: 'Search',
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                ),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_searchController.text.isNotEmpty)
+                      IconButton(
+                        icon: Icon(Icons.search, color: AppColors.primaryColor),
+                        onPressed: () {
+                          final query = _searchController.text.trim();
+                          setState(() {
+                            _searchQuery = query;
+                          });
+                          if (query.isEmpty) {
+                            _loadSeries();
+                          } else {
+                            _performSearch(query);
+                          }
+                        },
+                        tooltip: 'Search',
+                      ),
+                    if (_searchController.text.isNotEmpty)
+                      IconButton(
+                        icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() {
+                            _searchQuery = '';
+                          });
+                          _loadSeries();
+                        },
+                      ),
+                  ],
+                ),
+              ),
+              style: TextStyle(color: AppColors.textPrimary),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (value) {
+                setState(() {
+                  _searchQuery = value.trim();
+                });
+                if (value.trim().isEmpty) {
+                  _loadSeries();
+                } else {
+                  _performSearch(value.trim());
+                }
+              },
+            ),
           ),
-        ],
+        ),
       ),
       body: SafeArea(
         child: Consumer<SeriesProvider>(
           builder: (context, seriesProvider, child) {
             final isLoading = seriesProvider.isLoading && seriesProvider.items.isEmpty;
-            final filteredItems = _applyFilter(seriesProvider.items);
+            // If searching, use search results directly; otherwise apply filters
+            final filteredItems = _searchQuery.isNotEmpty 
+                ? seriesProvider.items 
+                : _applyFilter(seriesProvider.items);
 
             final perfectForYou = _getPerfectForYou(filteredItems);
             final summerSeries = _getSummerSeries(filteredItems);
@@ -142,19 +283,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Banner - show shimmer or real top-rated series
+                  // Filter buttons
                   Padding(
-                    padding: const EdgeInsets.all(AppDim.paddingMedium),
-                    child: isLoading
-                        ? _buildBannerShimmer()
-                        : _buildBanner(
-                            topRated ?? (filteredItems.isNotEmpty ? filteredItems.first : null),
-                            theme,
-                          ),
-                  ),
-
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                    padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium, vertical: AppDim.paddingSmall),
                     child: Row(
                       children: [
                         ElevatedButton.icon(
@@ -189,9 +320,9 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: AppDim.paddingMedium),
+                  const SizedBox(height: AppDim.paddingSmall),
 
-                  // "Perfect for you" Section
+                  // "Choose a Series" Section - Two horizontal scrollable rows
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       AppDim.paddingMedium,
@@ -200,7 +331,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       AppDim.paddingSmall,
                     ),
                     child: Text(
-                      'Perfect for you',
+                      'Choose a Series',
                       style: theme.textTheme.titleLarge?.copyWith(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.bold,
@@ -209,39 +340,15 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     ),
                   ),
 
-                  isLoading && perfectForYou.isEmpty
-                      ? SizedBox(height: 200, child: _buildSeriesShimmerList())
-                      : perfectForYou.isEmpty
-                          ? SizedBox(height: 200, child: _buildEmptySectionMessage('No recommendations yet'))
-                          : HorizontalPaginatedList<Series>(
-                              height: 200,
-                              items: perfectForYou,
-                              itemBuilder: (context, series, index) {
-                                return FadeSlideTransition(
-                                  delay: index * 50,
-                                  direction: SlideDirection.right,
-                                  child: _buildSeriesCard(series, context, theme),
-                                );
-                              },
-                              onLoadMore: () async {
-                                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                                if (seriesProvider.hasMore) {
-                                  await seriesProvider.loadMoreSeries();
-                                  // Re-filter after loading more
-                                  if (mounted) {
-                                    setState(() {});
-                                  }
-                                }
-                              },
-                              hasMore: seriesProvider.hasMore && perfectForYou.length < seriesProvider.items.length,
-                              isLoadingMore: seriesProvider.isLoading,
-                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                              spacing: AppDim.paddingMedium,
-                            ),
+                  isLoading && filteredItems.isEmpty
+                      ? SizedBox(height: 400, child: _buildSeriesShimmerList())
+                      : filteredItems.isEmpty
+                          ? SizedBox(height: 400, child: _buildEmptySectionMessage('No series available'))
+                          : _buildTwoRowSeriesList(filteredItems, theme),
 
                   const SizedBox(height: AppDim.paddingLarge),
 
-                  // "For this summer" Section
+                  // "Favorites for You (Recommended)" Section
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
                       AppDim.paddingMedium,
@@ -249,94 +356,136 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                       AppDim.paddingMedium,
                       AppDim.paddingSmall,
                     ),
-                    child: Text(
-                      'For this summer',
-                      style: theme.textTheme.titleLarge?.copyWith(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                  ),
-
-                  isLoading && summerSeries.isEmpty
-                      ? SizedBox(height: 200, child: _buildSeriesShimmerList())
-                      : summerSeries.isEmpty
-                          ? SizedBox(height: 200, child: _buildEmptySectionMessage('No summer picks yet'))
-                          : HorizontalPaginatedList<Series>(
-                              height: 200,
-                              items: summerSeries,
-                              itemBuilder: (context, series, index) {
-                                return FadeSlideTransition(
-                                  delay: index * 50,
-                                  direction: SlideDirection.right,
-                                  child: _buildSeriesCard(series, context, theme),
-                                );
-                              },
-                              onLoadMore: () async {
-                                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                                if (seriesProvider.hasMore) {
-                                  await seriesProvider.loadMoreSeries();
-                                  if (mounted) {
-                                    setState(() {});
-                                  }
-                                }
-                              },
-                              hasMore: seriesProvider.hasMore && summerSeries.length < seriesProvider.items.length,
-                              isLoadingMore: seriesProvider.isLoading,
-                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                              spacing: AppDim.paddingMedium,
-                            ),
-
-                  const SizedBox(height: AppDim.paddingLarge),
-
-                  // "All Series" Section - Show more series
-                  if (filteredItems.length > (perfectForYou.length + summerSeries.length)) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppDim.paddingMedium,
-                        AppDim.paddingSmall,
-                        AppDim.paddingMedium,
-                        AppDim.paddingSmall,
-                      ),
-                      child: Text(
-                        'All Series',
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 20,
+                    child: Row(
+                      children: [
+                        Text(
+                          'Favorites for You',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: AppDim.paddingSmall),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppDim.paddingSmall,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                          ),
+                          child: Text(
+                            'Recommended',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: AppColors.primaryColor,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    HorizontalPaginatedList<Series>(
-                      height: 200,
-                      items: filteredItems
-                          .where((series) => !perfectForYou.contains(series) && !summerSeries.contains(series))
-                          .take(50)
-                          .toList(),
-                      itemBuilder: (context, series, index) {
-                        return FadeSlideTransition(
-                          delay: index * 30,
-                          direction: SlideDirection.right,
-                          child: _buildSeriesCard(series, context, theme),
-                        );
-                      },
-                      onLoadMore: () async {
-                        final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                        if (seriesProvider.hasMore) {
-                          await seriesProvider.loadMoreSeries();
-                          if (mounted) {
-                            setState(() {});
+                  ),
+
+                  Consumer<RecommendationProvider>(
+                    builder: (context, recommendationProvider, child) {
+                      return Consumer<AuthProvider>(
+                        builder: (context, authProvider, child) {
+                          if (!authProvider.isAuthenticated) {
+                            return SizedBox(
+                              height: 200,
+                              child: Center(
+                                child: Text(
+                                  'Sign in to see personalized recommendations',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            );
                           }
-                        }
-                      },
-                      hasMore: seriesProvider.hasMore,
-                      isLoadingMore: seriesProvider.isLoading,
-                      padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                      spacing: AppDim.paddingMedium,
-                    ),
-                    const SizedBox(height: AppDim.paddingLarge),
-                  ],
+
+                          if (recommendationProvider.isLoading) {
+                            return SizedBox(height: 200, child: _buildSeriesShimmerList());
+                          }
+
+                          // If error or empty, show fallback with popular series
+                          final recommendations = recommendationProvider.recommendations.take(10).toList();
+                          final hasRecommendations = recommendations.isNotEmpty && recommendationProvider.error == null;
+
+                          if (!hasRecommendations) {
+                            // Fallback: show popular series (top rated)
+                            final popularSeries = filteredItems
+                                .where((s) => s.rating >= 7.0)
+                                .take(3)
+                                .toList();
+                            
+                            if (popularSeries.isEmpty) {
+                              // If no popular series, just show first 3
+                              final fallbackSeries = filteredItems.take(3).toList();
+                              return SizedBox(
+                                height: 200,
+                                child: ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const BouncingScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                                  itemCount: fallbackSeries.length,
+                                  itemBuilder: (context, index) {
+                                    return Padding(
+                                      padding: EdgeInsets.only(
+                                        right: index < fallbackSeries.length - 1 ? AppDim.paddingMedium : 0,
+                                      ),
+                                      child: _buildSeriesCard(fallbackSeries[index], context, theme),
+                                    );
+                                  },
+                                ),
+                              );
+                            }
+                            
+                            return SizedBox(
+                              height: 200,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                physics: const BouncingScrollPhysics(),
+                                padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                                itemCount: popularSeries.length,
+                                itemBuilder: (context, index) {
+                                  return Padding(
+                                    padding: EdgeInsets.only(
+                                      right: index < popularSeries.length - 1 ? AppDim.paddingMedium : 0,
+                                    ),
+                                    child: _buildSeriesCard(popularSeries[index], context, theme),
+                                  );
+                                },
+                              ),
+                            );
+                          }
+
+                          return SizedBox(
+                            height: 200,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+                              itemCount: recommendations.length,
+                              itemBuilder: (context, index) {
+                                final recommendation = recommendations[index];
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    right: index < recommendations.length - 1 ? AppDim.paddingMedium : 0,
+                                  ),
+                                  child: _buildRecommendationCard(recommendation, context, theme),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: AppDim.paddingLarge),
                 ],
               ),
             );
@@ -669,4 +818,178 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
       ),
     );
   }
+
+  /// Build two-row horizontal scrollable list (NOT GridView)
+  Widget _buildTwoRowSeriesList(List<Series> series, ThemeData theme) {
+    // Split series evenly between two rows
+    final midPoint = (series.length / 2).ceil();
+    final firstRow = series.sublist(0, midPoint);
+    final secondRow = series.sublist(midPoint);
+
+    return Column(
+      children: [
+        // First row - horizontal scrolling
+        SizedBox(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+            itemCount: firstRow.length,
+            itemBuilder: (context, index) {
+              final seriesItem = firstRow[index];
+              return Padding(
+                padding: EdgeInsets.only(
+                  right: index < firstRow.length - 1 ? AppDim.paddingMedium : 0,
+                ),
+                child: FadeSlideTransition(
+                  delay: index * 50,
+                  direction: SlideDirection.right,
+                  child: _buildSeriesCard(seriesItem, context, theme),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: AppDim.paddingMedium),
+        // Second row - horizontal scrolling
+        SizedBox(
+          height: 200,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
+            itemCount: secondRow.length,
+            itemBuilder: (context, index) {
+              final seriesItem = secondRow[index];
+              return Padding(
+                padding: EdgeInsets.only(
+                  right: index < secondRow.length - 1 ? AppDim.paddingMedium : 0,
+                ),
+                child: FadeSlideTransition(
+                  delay: index * 50,
+                  direction: SlideDirection.right,
+                  child: _buildSeriesCard(seriesItem, context, theme),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Build recommendation card
+  Widget _buildRecommendationCard(SeriesRecommendation recommendation, BuildContext context, ThemeData theme) {
+    return SizedBox(
+      width: 140,
+      height: 200,
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 4,
+        margin: const EdgeInsets.only(right: AppDim.paddingMedium),
+        child: InkWell(
+          onTap: () async {
+            // Fetch full series details by ID
+            final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+            try {
+              // Try to get from cache first
+              var series = seriesProvider.getById(recommendation.id);
+              
+              // If not in cache, fetch it
+              if (series == null) {
+                series = await seriesProvider.fetchSeriesDetail(recommendation.id);
+              }
+              
+              if (series != null && mounted) {
+                Navigator.push(
+                  context,
+                  MobilePageRoute(
+                    builder: (context) => MobileSeriesDetailScreen(series: series!),
+                  ),
+                );
+              } else if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Series not found'),
+                    backgroundColor: AppColors.dangerColor,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error loading series: $e'),
+                    backgroundColor: AppColors.dangerColor,
+                  ),
+                );
+              }
+            }
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Series Image
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                child: ImageWithPlaceholder(
+                  imageUrl: recommendation.imageUrl,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholderIcon: Icons.movie,
+                  placeholderIconSize: 40,
+                ),
+              ),
+              // Series Info
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      recommendation.title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.star,
+                          size: 14,
+                          color: AppColors.primaryColor,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          recommendation.averageRating.toStringAsFixed(1),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
 }

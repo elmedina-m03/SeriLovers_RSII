@@ -79,9 +79,14 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
   /// Pick and upload image file
   Future<void> _pickAndUploadImage() async {
     try {
+      print('📸 Starting image pick...');
       final result = await FilePickerHelper.pickImage();
-      if (result == null) return; // User cancelled
+      if (result == null) {
+        print('❌ User cancelled file picker');
+        return; // User cancelled
+      }
 
+      print('✅ File picked successfully');
       setState(() {
         _isUploadingImage = true;
       });
@@ -91,17 +96,19 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
       final token = authProvider.token;
 
       if (token == null || token.isEmpty) {
-        throw Exception('Authentication required');
+        throw Exception('Authentication required. Please log in again.');
       }
 
+      print('🔐 Token available, starting upload...');
       dynamic uploadResponse;
 
       if (FilePickerHelper.isWeb) {
         // Web: use bytes
         final bytes = FilePickerHelper.getBytes(result);
         final fileName = FilePickerHelper.getFileName(result);
+        print('🌐 Web platform - bytes: ${bytes?.length ?? 0}, fileName: $fileName');
         if (bytes == null || fileName == null) {
-          throw Exception('Failed to read file');
+          throw Exception('Failed to read file. Please try again.');
         }
         uploadResponse = await apiService.uploadFileFromBytes(
           '/ImageUpload/upload',
@@ -113,9 +120,19 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
       } else {
         // Desktop/Mobile: use File
         final file = FilePickerHelper.getFile(result);
+        print('💻 Desktop/Mobile platform - file: ${file?.path ?? "null"}');
         if (file == null) {
-          throw Exception('Failed to read file');
+          throw Exception('Failed to read file. Please try selecting the file again.');
         }
+        
+        // Check if file exists and is readable
+        if (!await file.exists()) {
+          throw Exception('Selected file does not exist. Please try again.');
+        }
+        
+        final fileSize = await file.length();
+        print('📁 File size: $fileSize bytes');
+        
         uploadResponse = await apiService.uploadFile(
           '/ImageUpload/upload',
           file,
@@ -124,9 +141,13 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
         );
       }
 
+      print('📥 Upload response: $uploadResponse');
+      
       if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
+        final imageUrl = uploadResponse['imageUrl'] as String;
+        print('✅ Image uploaded successfully: $imageUrl');
         setState(() {
-          _uploadedImageUrl = uploadResponse['imageUrl'] as String;
+          _uploadedImageUrl = imageUrl;
           _isUploadingImage = false;
         });
 
@@ -139,18 +160,24 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
           );
         }
       } else {
-        throw Exception('Invalid response from server');
+        print('❌ Invalid response: $uploadResponse');
+        throw Exception('Invalid response from server. Response: ${uploadResponse?.toString() ?? "null"}');
       }
     } catch (e) {
-      print('Error uploading image: $e');
+      print('❌ Error uploading image: $e');
+      print('   Error type: ${e.runtimeType}');
+      if (e is Exception) {
+        print('   Exception message: ${e.toString()}');
+      }
       if (mounted) {
         setState(() {
           _isUploadingImage = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error uploading image: $e'),
+            content: Text('Error uploading image: ${e.toString()}'),
             backgroundColor: AppColors.dangerColor,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -450,55 +477,192 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Actor Image',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: AppDim.paddingSmall),
                           Row(
                             children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: _isUploadingImage ? null : _pickAndUploadImage,
-                                  icon: _isUploadingImage
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.textLight),
-                                          ),
-                                        )
-                                      : const Icon(Icons.image, size: 20),
-                                  label: Text(_isUploadingImage ? 'Uploading...' : 'Choose Image'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.primaryColor,
-                                    foregroundColor: AppColors.textLight,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: AppDim.paddingMedium,
-                                      vertical: AppDim.paddingMedium,
-                                    ),
-                                  ),
+                              Icon(
+                                Icons.photo_camera,
+                                color: AppColors.primaryColor,
+                                size: 20,
+                              ),
+                              const SizedBox(width: AppDim.paddingSmall),
+                              Text(
+                                'Actor Photo',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              if (_uploadedImageUrl != null) ...[
-                                const SizedBox(width: AppDim.paddingSmall),
-                                IconButton(
-                                  onPressed: () {
-                                    setState(() {
-                                      _uploadedImageUrl = null;
-                                    });
-                                  },
-                                  icon: const Icon(Icons.delete_outline),
-                                  color: AppColors.dangerColor,
-                                  tooltip: 'Remove image',
-                                ),
-                              ],
                             ],
+                          ),
+                          const SizedBox(height: AppDim.paddingMedium),
+                          // Image preview or placeholder
+                          if (_uploadedImageUrl != null || widget.actor?.imageUrl != null) ...[
+                            Container(
+                              height: 150,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                border: Border.all(
+                                  color: AppColors.primaryColor.withOpacity(0.3),
+                                  width: 2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primaryColor.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                child: Stack(
+                                  children: [
+                                    ImageWithPlaceholder(
+                                      imageUrl: _uploadedImageUrl ?? widget.actor?.imageUrl,
+                                      height: 150,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                      borderRadius: AppDim.radiusSmall,
+                                      placeholderIcon: Icons.person,
+                                    ),
+                                    // Remove button overlay
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Material(
+                                        color: Colors.black.withOpacity(0.5),
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: IconButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _uploadedImageUrl = null;
+                                            });
+                                          },
+                                          icon: const Icon(
+                                            Icons.close,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                          tooltip: 'Remove image',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(
+                                            minWidth: 32,
+                                            minHeight: 32,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: AppDim.paddingSmall),
+                            if (widget.actor?.imageUrl != null && _uploadedImageUrl == null) ...[
+                              Text(
+                                'Current photo (click "Upload New Photo" to change)',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ] else if (_uploadedImageUrl != null) ...[
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.check_circle,
+                                    color: AppColors.successColor,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'New photo uploaded (click "Update" to save)',
+                                    style: TextStyle(
+                                      color: AppColors.successColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            const SizedBox(height: AppDim.paddingMedium),
+                          ] else ...[
+                            // No image - show upload prompt
+                            Container(
+                              height: 150,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                border: Border.all(
+                                  color: AppColors.textSecondary.withOpacity(0.3),
+                                  width: 2,
+                                  style: BorderStyle.solid,
+                                ),
+                                color: AppColors.cardBackground,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.add_photo_alternate,
+                                    size: 48,
+                                    color: AppColors.textSecondary.withOpacity(0.5),
+                                  ),
+                                  const SizedBox(height: AppDim.paddingSmall),
+                                  Text(
+                                    'No photo uploaded',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: AppDim.paddingMedium),
+                          ],
+                          // Upload button
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _isUploadingImage ? null : _pickAndUploadImage,
+                              icon: _isUploadingImage
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  : const Icon(Icons.cloud_upload, size: 22),
+                              label: Text(
+                                _isUploadingImage 
+                                    ? 'Uploading Photo...' 
+                                    : (_uploadedImageUrl != null || widget.actor?.imageUrl != null)
+                                        ? 'Upload New Photo'
+                                        : 'Upload Photo',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryColor,
+                                foregroundColor: AppColors.textLight,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: AppDim.paddingLarge,
+                                  vertical: AppDim.paddingMedium,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                ),
+                                elevation: 2,
+                              ),
+                            ),
                           ),
                           if (_uploadedImageUrl != null || widget.actor?.imageUrl != null) ...[
                             const SizedBox(height: AppDim.paddingSmall),
@@ -509,13 +673,16 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
                                 borderRadius: BorderRadius.circular(AppDim.radiusSmall),
                                 border: Border.all(color: AppColors.textSecondary.withOpacity(0.3)),
                               ),
-                              child: ImageWithPlaceholder(
-                                imageUrl: _uploadedImageUrl ?? widget.actor?.imageUrl,
-                                height: 100,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                borderRadius: AppDim.radiusSmall,
-                                placeholderIcon: Icons.person,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                                child: ImageWithPlaceholder(
+                                  imageUrl: _uploadedImageUrl ?? widget.actor?.imageUrl,
+                                  height: 100,
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  borderRadius: AppDim.radiusSmall,
+                                  placeholderIcon: Icons.person,
+                                ),
                               ),
                             ),
                             if (widget.actor?.imageUrl != null && _uploadedImageUrl == null) ...[
@@ -526,6 +693,16 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
                                   color: AppColors.textSecondary,
                                   fontSize: 12,
                                   fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ] else if (_uploadedImageUrl != null) ...[
+                              const SizedBox(height: AppDim.paddingSmall),
+                              Text(
+                                'New image uploaded (click "Update" to save)',
+                                style: TextStyle(
+                                  color: AppColors.successColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
                             ],

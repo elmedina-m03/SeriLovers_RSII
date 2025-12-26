@@ -41,9 +41,15 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet]
-        [SwaggerOperation(Summary = "List watchlist entries", Description = "Retrieves all watchlist entries with associated users and series.")]
+        [SwaggerOperation(Summary = "List watchlist entries", Description = "Retrieves watchlist entries for the current authenticated user.")]
         public async Task<IActionResult> GetAll()
         {
+            var currentUserId = await GetCurrentUserIdAsync();
+            if (!currentUserId.HasValue)
+            {
+                return Unauthorized(new { message = "Unable to identify current user." });
+            }
+
             var watchlistEntries = await _context.Watchlists
                 .AsSplitQuery()
                 .Include(w => w.Series)
@@ -53,6 +59,7 @@ namespace SeriLovers.API.Controllers
                     .ThenInclude(s => s.SeriesActors)
                         .ThenInclude(sa => sa.Actor)
                 .Include(w => w.User)
+                .Where(w => w.UserId == currentUserId.Value) // Filter by current user
                 .OrderByDescending(w => w.AddedAt)
                 .ToListAsync();
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../core/widgets/admin_data_table_config.dart';
 import '../../models/challenge.dart';
 import '../providers/admin_challenge_provider.dart';
 import 'challenges/challenge_form_dialog.dart';
@@ -15,20 +16,40 @@ class AdminChallengesScreen extends StatefulWidget {
 }
 
 class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
+  final _horizontalScrollController = ScrollController();
+  final _verticalScrollController = ScrollController();
+  final _progressHorizontalScrollController = ScrollController();
+  final _progressVerticalScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadChallenges();
       _loadSummary();
+      _loadUserProgress();
     });
   }
 
-  /// Load challenges from provider
+  @override
+  void dispose() {
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
+    _progressHorizontalScrollController.dispose();
+    _progressVerticalScrollController.dispose();
+    super.dispose();
+  }
+
+  /// Load challenges from provider and create default if empty
   Future<void> _loadChallenges() async {
     try {
       final provider = Provider.of<AdminChallengeProvider>(context, listen: false);
       await provider.fetchAll();
+      
+      // If no challenges exist, create a default one
+      if (provider.items.isEmpty && mounted) {
+        await _createDefaultChallenge(provider);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -38,6 +59,33 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
           ),
         );
       }
+    }
+  }
+
+  /// Create a default challenge if none exist
+  Future<void> _createDefaultChallenge(AdminChallengeProvider provider) async {
+    try {
+      final defaultChallengeData = {
+        'name': 'Watch 10 Series',
+        'description': 'Complete watching 10 different series to complete this challenge!',
+        'difficulty': 1, // Easy
+        'targetCount': 10,
+      };
+      
+      await provider.createChallenge(defaultChallengeData);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Default challenge created successfully'),
+            backgroundColor: AppColors.successColor,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      // Silently fail - user can create manually
+      print('Could not create default challenge: $e');
     }
   }
 
@@ -51,6 +99,23 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error loading summary: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Load user challenge progress
+  Future<void> _loadUserProgress() async {
+    try {
+      final provider = Provider.of<AdminChallengeProvider>(context, listen: false);
+      await provider.fetchUserProgress();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading user progress: $e'),
             backgroundColor: AppColors.dangerColor,
           ),
         );
@@ -163,10 +228,9 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    return Container(
-      color: AppColors.backgroundColor,
-      child: Padding(
-        padding: const EdgeInsets.all(AppDim.paddingLarge),
+    return SafeArea(
+      child: Container(
+        color: AppColors.backgroundColor,
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
@@ -174,270 +238,573 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
                 constraints: BoxConstraints(
                   minHeight: constraints.maxHeight,
                 ),
-                child: IntrinsicHeight(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppDim.paddingMedium),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-            // Add button at top-right
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _handleAddChallenge,
-                  icon: const Icon(Icons.add, size: 20),
-                  label: const Text('Add Challenge'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
-                    foregroundColor: AppColors.textLight,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppDim.paddingMedium,
-                      vertical: AppDim.paddingSmall,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppDim.paddingMedium),
-            // DataTable
-            SizedBox(
-              height: 400, // Fixed height for table with vertical scroll
-              child: Consumer<AdminChallengeProvider>(
-                builder: (context, provider, child) {
-                  if (provider.isLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                      // Add button at top-right
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _handleAddChallenge,
+                            icon: const Icon(Icons.add, size: 20),
+                            label: const Text('Add Challenge'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryColor,
+                              foregroundColor: AppColors.textLight,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppDim.paddingMedium,
+                                vertical: AppDim.paddingSmall,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppDim.paddingSmall),
+                      // DataTable with proper scrolling and mobile responsiveness
+                      SizedBox(
+                        height: constraints.maxWidth < 800 ? 300 : 350,
+                        child: LayoutBuilder(
+                          builder: (context, tableConstraints) {
+                            final isMobile = tableConstraints.maxWidth < 800;
+                            
+                            return Consumer<AdminChallengeProvider>(
+                              builder: (context, provider, child) {
+                                if (provider.isLoading) {
+                                  return const SizedBox(
+                                    height: 200,
+                                    child: Center(child: CircularProgressIndicator()),
+                                  );
+                                }
 
-                  if (provider.items.isEmpty) {
-                    return Center(
-                      child: Text(
-                        'No challenges found',
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                    );
-                  }
-
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                      headingRowColor: MaterialStateProperty.all(AppColors.cardBackground),
-                      dataRowColor: MaterialStateProperty.resolveWith((states) {
-                        if (states.contains(MaterialState.selected)) {
-                          return AppColors.primaryColor.withOpacity(0.1);
-                        }
-                        return AppColors.cardBackground;
-                      }),
-                      columns: const [
-                        DataColumn(
-                          label: Text('Name'),
-                        ),
-                        DataColumn(
-                          label: Text('Difficulty'),
-                        ),
-                        DataColumn(
-                          label: Text('Target'),
-                          numeric: true,
-                        ),
-                        DataColumn(
-                          label: Text('Participants'),
-                          numeric: true,
-                        ),
-                        DataColumn(
-                          label: Text('Actions'),
-                        ),
-                      ],
-                      rows: provider.items.map((challenge) {
-                        return DataRow(
-                          cells: [
-                            DataCell(
-                              Text(
-                                challenge.name,
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ),
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _getDifficultyColor(challenge.difficulty).withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(AppDim.borderRadius),
-                                ),
-                                child: Text(
-                                  challenge.difficulty,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: _getDifficultyColor(challenge.difficulty),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                challenge.targetCount.toString(),
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ),
-                            DataCell(
-                              Text(
-                                challenge.participantsCount.toString(),
-                                style: theme.textTheme.bodyMedium,
-                              ),
-                            ),
-                            DataCell(
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit),
-                                    color: AppColors.primaryColor,
-                                    onPressed: () => _handleEditChallenge(challenge),
-                                    tooltip: 'Edit',
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete),
-                                    color: AppColors.dangerColor,
-                                    onPressed: () => _handleDeleteChallenge(challenge),
-                                    tooltip: 'Delete',
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: AppDim.paddingLarge),
-            
-            // Top 3 Watchers Cards
-            Text(
-              'Top 3 Watchers',
-              style: theme.textTheme.titleLarge?.copyWith(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: AppDim.paddingMedium),
-            Consumer<AdminChallengeProvider>(
-              builder: (context, provider, child) {
-                if (provider.isLoadingSummary) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                
-                if (provider.topWatchers.isEmpty) {
-                  return Card(
-                    color: AppColors.cardBackground,
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppDim.paddingMedium),
-                      child: Center(
-                        child: Text(
-                          'No watcher data available',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                
-                return Row(
-                  children: provider.topWatchers.take(3).toList().asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final watcher = entry.value;
-                    return Expanded(
-                      child: Card(
-                        color: AppColors.cardBackground,
-                        margin: EdgeInsets.only(
-                          right: index < provider.topWatchers.length - 1 
-                              ? AppDim.paddingMedium 
-                              : 0,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(AppDim.paddingMedium),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: AppColors.primaryColor.withOpacity(0.2),
-                                    ),
+                                if (provider.items.isEmpty) {
+                                  return const SizedBox(
+                                    height: 200,
                                     child: Center(
-                                      child: Text(
-                                        '${index + 1}',
-                                        style: TextStyle(
-                                          color: AppColors.primaryColor,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18,
+                                      child: Text('No challenges found'),
+                                    ),
+                                  );
+                                }
+
+                                return Scrollbar(
+                                  controller: _verticalScrollController,
+                                  thumbVisibility: true,
+                                  child: SingleChildScrollView(
+                                    controller: _verticalScrollController,
+                                    scrollDirection: Axis.vertical,
+                                    child: Scrollbar(
+                                      controller: _horizontalScrollController,
+                                      thumbVisibility: true,
+                                      child: SingleChildScrollView(
+                                        controller: _horizontalScrollController,
+                                        scrollDirection: Axis.horizontal,
+                                          child: ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              minWidth: tableConstraints.maxWidth,
+                                            ),
+                                          child: DataTable(
+                                            headingRowColor: AdminDataTableConfig.getTableProperties()['headingRowColor'] as MaterialStateProperty<Color>,
+                                            dataRowColor: AdminDataTableConfig.getTableProperties()['dataRowColor'] as MaterialStateProperty<Color>,
+                                            headingRowHeight: AdminDataTableConfig.headingRowHeight,
+                                            dataRowMinHeight: AdminDataTableConfig.dataRowMinHeight,
+                                            dataRowMaxHeight: AdminDataTableConfig.dataRowMaxHeight,
+                                            columns: [
+                                              DataColumn(
+                                                label: AdminDataTableConfig.getColumnLabel('ID'),
+                                                numeric: true,
+                                              ),
+                                              DataColumn(
+                                                label: AdminDataTableConfig.getColumnLabel('Name'),
+                                              ),
+                                              DataColumn(
+                                                label: AdminDataTableConfig.getColumnLabel('Participants'),
+                                                numeric: true,
+                                              ),
+                                              DataColumn(
+                                                label: AdminDataTableConfig.getColumnLabel('Goal'),
+                                                numeric: true,
+                                              ),
+                                              DataColumn(
+                                                label: AdminDataTableConfig.getColumnLabel('Actions'),
+                                              ),
+                                            ],
+                                            rows: provider.items.map((challenge) {
+                                              return DataRow(
+                                                cells: [
+                                                  DataCell(
+                                                    Text(
+                                                      challenge.id.toString(),
+                                                      style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          challenge.name,
+                                                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme).copyWith(
+                                                            fontWeight: FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                        if (challenge.description != null && challenge.description!.isNotEmpty)
+                                                          Text(
+                                                            challenge.description!,
+                                                            style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme).copyWith(
+                                                              color: AppColors.textSecondary,
+                                                            ),
+                                                            maxLines: 1,
+                                                            overflow: TextOverflow.ellipsis,
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Text(
+                                                      challenge.participantsCount.toString(),
+                                                      style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Text(
+                                                      challenge.targetCount.toString(),
+                                                      style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                    ),
+                                                  ),
+                                                  DataCell(
+                                                    Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        SizedBox(
+                                                          width: AdminDataTableConfig.actionButtonSize,
+                                                          child: IconButton(
+                                                            icon: const Icon(Icons.edit, size: AdminDataTableConfig.actionIconSize),
+                                                            color: AppColors.primaryColor,
+                                                            onPressed: () => _handleEditChallenge(challenge),
+                                                            tooltip: 'Edit',
+                                                            padding: EdgeInsets.zero,
+                                                            constraints: const BoxConstraints(
+                                                              minWidth: AdminDataTableConfig.actionButtonSize,
+                                                              minHeight: AdminDataTableConfig.actionButtonSize,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 2),
+                                                        SizedBox(
+                                                          width: AdminDataTableConfig.actionButtonSize,
+                                                          child: IconButton(
+                                                            icon: const Icon(Icons.delete, size: AdminDataTableConfig.actionIconSize),
+                                                            color: AppColors.dangerColor,
+                                                            onPressed: () => _handleDeleteChallenge(challenge),
+                                                            tooltip: 'Delete',
+                                                            padding: EdgeInsets.zero,
+                                                            constraints: const BoxConstraints(
+                                                              minWidth: AdminDataTableConfig.actionButtonSize,
+                                                              minHeight: AdminDataTableConfig.actionButtonSize,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              );
+                                            }).toList(),
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: AppDim.paddingSmall),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          watcher['email'] as String? ?? 'Unknown',
-                                          style: theme.textTheme.titleMedium?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        Text(
-                                          watcher['userName'] as String? ?? 'User ID: ${watcher['id']}',
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: AppColors.textSecondary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: AppDim.paddingSmall),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                children: [
-                                  _buildStatItem(
-                                    Icons.star,
-                                    'Ratings',
-                                    (watcher['ratingsCount'] as int? ?? 0).toString(),
-                                  ),
-                                  _buildStatItem(
-                                    Icons.bookmark,
-                                    'Watchlist',
-                                    (watcher['watchlistCount'] as int? ?? 0).toString(),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                                );
+                              },
+                            );
+                          },
                         ),
                       ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
+                      const SizedBox(height: 12),
+                      
+                      // User Challenge Progress Table
+                      Text(
+                        'User Challenge Progress',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: constraints.maxWidth < 800 ? 250 : 300,
+                        child: LayoutBuilder(
+                          builder: (context, tableConstraints) {
+                            return Consumer<AdminChallengeProvider>(
+                              builder: (context, provider, child) {
+                                if (provider.isLoadingProgress) {
+                                  return const SizedBox(
+                                    height: 200,
+                                    child: Center(child: CircularProgressIndicator()),
+                                  );
+                                }
+
+                                if (provider.userProgress.isEmpty) {
+                                  return const SizedBox(
+                                    height: 200,
+                                    child: Center(
+                                      child: Text('No user progress data available'),
+                                    ),
+                                  );
+                                }
+
+                                return Scrollbar(
+                                  controller: _progressVerticalScrollController,
+                                  thumbVisibility: true,
+                                  child: SingleChildScrollView(
+                                    controller: _progressVerticalScrollController,
+                                    scrollDirection: Axis.vertical,
+                                    child: Scrollbar(
+                                      controller: _progressHorizontalScrollController,
+                                      thumbVisibility: true,
+                                      child: SingleChildScrollView(
+                                        controller: _progressHorizontalScrollController,
+                                        scrollDirection: Axis.horizontal,
+                                        child: ConstrainedBox(
+                                          constraints: BoxConstraints(
+                                            minWidth: tableConstraints.maxWidth,
+                                          ),
+                                          child: DataTable(
+                                          headingRowColor: AdminDataTableConfig.getTableProperties()['headingRowColor'] as MaterialStateProperty<Color>,
+                                          dataRowColor: AdminDataTableConfig.getTableProperties()['dataRowColor'] as MaterialStateProperty<Color>,
+                                          headingRowHeight: AdminDataTableConfig.headingRowHeight,
+                                          dataRowMinHeight: AdminDataTableConfig.dataRowMinHeight,
+                                          dataRowMaxHeight: AdminDataTableConfig.dataRowMaxHeight,
+                                          columns: [
+                                            DataColumn(
+                                              label: AdminDataTableConfig.getColumnLabel('ID'),
+                                              numeric: true,
+                                            ),
+                                            DataColumn(
+                                              label: AdminDataTableConfig.getColumnLabel('User'),
+                                            ),
+                                            DataColumn(
+                                              label: AdminDataTableConfig.getColumnLabel('Watched Series'),
+                                              numeric: true,
+                                            ),
+                                            DataColumn(
+                                              label: AdminDataTableConfig.getColumnLabel('Goal'),
+                                              numeric: true,
+                                            ),
+                                            DataColumn(
+                                              label: AdminDataTableConfig.getColumnLabel('Progress'),
+                                            ),
+                                            DataColumn(
+                                              label: AdminDataTableConfig.getColumnLabel('Status'),
+                                            ),
+                                          ],
+                                          rows: provider.userProgress.map((progress) {
+                                            final progressPercent = progress['progress'] as int? ?? 0;
+                                            final isCompleted = progress['status'] == 'Completed';
+                                            
+                                            return DataRow(
+                                              cells: [
+                                                DataCell(
+                                                  Text(
+                                                    progress['id'].toString(),
+                                                    style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Text(
+                                                    progress['userName'] as String? ?? 'Unknown',
+                                                    style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Text(
+                                                    (progress['watchedSeries'] as int? ?? 0).toString(),
+                                                    style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Text(
+                                                    (progress['goal'] as int? ?? 0).toString(),
+                                                    style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  SizedBox(
+                                                    width: 100,
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        LinearProgressIndicator(
+                                                          value: progressPercent / 100,
+                                                          backgroundColor: AppColors.textSecondary.withOpacity(0.1),
+                                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                                            isCompleted ? AppColors.successColor : AppColors.primaryColor,
+                                                          ),
+                                                          minHeight: 6,
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          '$progressPercent%',
+                                                          style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme).copyWith(
+                                                            color: AppColors.textSecondary,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                                DataCell(
+                                                  Container(
+                                                    padding: AdminDataTableConfig.cellPadding,
+                                                    decoration: BoxDecoration(
+                                                      color: isCompleted 
+                                                          ? AppColors.successColor.withOpacity(0.1)
+                                                          : AppColors.primaryColor.withOpacity(0.1),
+                                                      borderRadius: BorderRadius.circular(AppDim.borderRadius),
+                                                    ),
+                                                    child: Text(
+                                                      isCompleted ? 'Completed' : 'Processing',
+                                                      style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme).copyWith(
+                                                        color: isCompleted 
+                                                            ? AppColors.successColor
+                                                            : AppColors.primaryColor,
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            );
+                                          }).toList(),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Top 3 Watchers Cards
+                      Text(
+                        'Top 3 Watchers',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Consumer<AdminChallengeProvider>(
+                        builder: (context, provider, child) {
+                          if (provider.isLoadingSummary) {
+                            return const SizedBox(
+                              height: 100,
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          
+                          if (provider.topWatchers.isEmpty) {
+                            return Card(
+                              color: AppColors.cardBackground,
+                              child: Padding(
+                                padding: const EdgeInsets.all(AppDim.paddingMedium),
+                                child: Center(
+                                  child: Text(
+                                    'No watcher data available',
+                                    style: TextStyle(color: AppColors.textSecondary),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          
+                          // Use responsive layout based on screen width
+                          final screenWidth = MediaQuery.of(context).size.width;
+                          final isMobile = screenWidth < 600;
+                          
+                          if (isMobile) {
+                            // Mobile: Stack cards vertically
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: provider.topWatchers.take(3).toList().asMap().entries.map((entry) {
+                                final index = entry.key;
+                                final watcher = entry.value;
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    bottom: index < provider.topWatchers.length - 1 
+                                        ? AppDim.paddingMedium 
+                                        : 0,
+                                  ),
+                                  child: _buildWatcherCard(context, theme, watcher, index),
+                                );
+                              }).toList(),
+                            );
+                          } else {
+                            // Desktop: Row layout
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: provider.topWatchers.take(3).toList().asMap().entries.map((entry) {
+                                final index = entry.key;
+                                final watcher = entry.value;
+                                return Expanded(
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      right: index < provider.topWatchers.length - 1 
+                                          ? AppDim.paddingMedium 
+                                          : 0,
+                                    ),
+                                    child: _buildWatcherCard(context, theme, watcher, index),
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          }
+                        },
+                      ),
                     ],
                   ),
                 ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWatcherCard(BuildContext context, ThemeData theme, Map<String, dynamic> watcher, int index) {
+    final totalWatched = (watcher['ratingsCount'] as int? ?? 0) + (watcher['watchlistCount'] as int? ?? 0);
+    
+    return Card(
+      color: AppColors.cardBackground,
+      child: Padding(
+        padding: const EdgeInsets.all(AppDim.paddingMedium),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Profile picture/avatar placeholder
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: AppColors.primaryColor.withOpacity(0.2),
+                  child: Text(
+                    (watcher['userName'] as String? ?? watcher['email'] as String? ?? 'U')
+                        .substring(0, 1)
+                        .toUpperCase(),
+                    style: TextStyle(
+                      color: AppColors.primaryColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppDim.paddingSmall),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        watcher['userName'] as String? ?? 'User',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        watcher['email'] as String? ?? 'Unknown',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // Rank badge
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primaryColor.withOpacity(0.2),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${index + 1}',
+                      style: TextStyle(
+                        color: AppColors.primaryColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDim.paddingMedium),
+            // Watched series count (main metric)
+            Container(
+              padding: const EdgeInsets.all(AppDim.paddingSmall),
+              decoration: BoxDecoration(
+                color: AppColors.primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.play_circle_outline,
+                    color: AppColors.primaryColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$totalWatched',
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primaryColor,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Watched',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: AppDim.paddingSmall),
+            // Stats row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem(
+                  Icons.star,
+                  'Ratings',
+                  (watcher['ratingsCount'] as int? ?? 0).toString(),
+                ),
+                _buildStatItem(
+                  Icons.bookmark,
+                  'Watchlist',
+                  (watcher['watchlistCount'] as int? ?? 0).toString(),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

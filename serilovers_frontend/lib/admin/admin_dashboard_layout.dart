@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
+import '../core/widgets/serilovers_logo.dart';
 import 'screens/admin_home_screen.dart';
 import 'screens/series_management_screen.dart';
 import 'screens/users_management_screen.dart';
@@ -69,14 +70,25 @@ class _AdminDashboardLayoutState extends State<AdminDashboardLayout> {
                     height: 64,
                     color: AppColors.primaryColor,
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      appBarTitle,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Row(
+                      children: [
+                        // Full Logo (icon + text) - white version for purple background
+                        const SeriLoversLogo(
+                          showFullLogo: true,
+                          height: 36,
+                          useWhiteVersion: true,
+                        ),
+                        const SizedBox(width: 24),
+                        // App Bar Title
+                        Text(
+                          appBarTitle,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 // Main Content
@@ -112,13 +124,10 @@ class _AdminDashboardLayoutState extends State<AdminDashboardLayout> {
               ),
             ),
             child: const Center(
-              child: Text(
-                'Admin Panel',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: SeriLoversLogo(
+                showFullLogo: false,
+                height: 40,
+                useWhiteVersion: true,
               ),
             ),
           ),

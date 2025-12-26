@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
@@ -149,33 +150,40 @@ builder.Services.AddScoped<IGenreService, GenreService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAdminStatisticsService, AdminStatisticsService>();
 builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
-// RabbitMQ connection - DISABLED
-// builder.Services.AddSingleton<IBus>(sp =>
-// {
-//     var connectionString = builder.Configuration["RabbitMq:Connection"];
-//     var logger = sp.GetRequiredService<ILogger<Program>>();
-//     
-//     if (string.IsNullOrWhiteSpace(connectionString))
-//     {
-//         logger.LogWarning("RabbitMQ connection string is not configured. Message bus will not be available.");
-//         return null!; // Return null, will be handled gracefully
-//     }
-//     
-//     try
-//     {
-//         logger.LogInformation("Attempting to connect to RabbitMQ...");
-//         var bus = RabbitHutch.CreateBus(connectionString);
-//         logger.LogInformation("Successfully connected to RabbitMQ.");
-//         return bus;
-//     }
-//     catch (Exception ex)
-//     {
-//         logger.LogWarning(ex, "Failed to connect to RabbitMQ. The application will continue without message bus functionality.");
-//         return null!; // Return null, will be handled gracefully
-//     }
-// });
-// builder.Services.AddSingleton<IMessageBusService, MessageBusService>();
-// builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
+builder.Services.AddScoped<RecommendationService>();
+builder.Services.AddScoped<ChallengeService>();
+
+// RabbitMQ connection - Configured via environment variables
+builder.Services.AddSingleton<IBus>(sp =>
+{
+    // Get connection string from environment variable or configuration
+    var connectionString = Environment.GetEnvironmentVariable("RABBITMQ_CONNECTION") 
+        ?? builder.Configuration["RabbitMq:Connection"]
+        ?? builder.Configuration.GetConnectionString("RabbitMQ");
+    
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+    
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        logger.LogWarning("RabbitMQ connection string is not configured. Message bus will not be available.");
+        return null!; // Return null, will be handled gracefully
+    }
+    
+    try
+    {
+        logger.LogInformation("Attempting to connect to RabbitMQ...");
+        var bus = RabbitHutch.CreateBus(connectionString);
+        logger.LogInformation("Successfully connected to RabbitMQ.");
+        return bus;
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "Failed to connect to RabbitMQ. The application will continue without message bus functionality.");
+        return null!; // Return null, will be handled gracefully
+    }
+});
+builder.Services.AddSingleton<IMessageBusService, MessageBusService>();
+builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
 
 // ============================================
 // Controllers Configuration
@@ -327,7 +335,17 @@ app.UseSwaggerUI(c =>
 app.UseHttpsRedirection();
 
 // Enable static file serving for uploaded images
-app.UseStaticFiles();
+// Configure static files to serve from wwwroot directory
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Allow CORS for static files
+        ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+        ctx.Context.Response.Headers.Append("Access-Control-Allow-Methods", "GET");
+        ctx.Context.Response.Headers.Append("Cache-Control", "public,max-age=3600");
+    }
+});
 
 app.UseAuthentication();
 app.UseAuthorization();

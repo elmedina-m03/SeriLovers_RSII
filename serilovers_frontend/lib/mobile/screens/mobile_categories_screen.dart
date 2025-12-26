@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
@@ -7,6 +8,7 @@ import '../../models/series.dart';
 import '../../providers/series_provider.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../providers/mobile_navigation_provider.dart';
 import '../widgets/mobile_page_route.dart';
 import 'mobile_series_detail_screen.dart';
 import 'mobile_search_screen.dart';
@@ -29,15 +31,84 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
   final int _pageSize = 20;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+  Timer? _debounceTimer;
+
+  DateTime? _lastLoadTime;
+  static const _cacheTimeout = Duration(seconds: 10); // Cache for 10 seconds
 
   @override
   void initState() {
     super.initState();
+    // Search only triggers on button click or Enter key, not on input changes
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadGenres();
       _loadAllSeries();
     });
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _initialized) {
+        final now = DateTime.now();
+        if (_lastLoadTime == null || 
+            now.difference(_lastLoadTime!) > _cacheTimeout) {
+          _loadAllSeries(forceRefresh: true);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) {
+      setState(() {
+        _searchQuery = '';
+      });
+      _loadAllSeries();
+      return;
+    }
+
+    setState(() {
+      _isLoadingSeries = true;
+      _searchQuery = query;
+    });
+
+    final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+    try {
+      // Perform search with the query
+      await seriesProvider.searchSeries(query);
+      
+      // Filter results - search results are already filtered by the provider
+      setState(() {
+        _displayedSeries = seriesProvider.items;
+        _isLoadingSeries = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error searching series: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+        setState(() {
+          _isLoadingSeries = false;
+        });
+      }
+    }
+  }
+
 
   Future<void> _loadGenres() async {
     if (_initialized) return;
@@ -61,7 +132,12 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
     }
   }
 
-  Future<void> _loadAllSeries({bool append = false}) async {
+  Future<void> _loadAllSeries({bool append = false, bool forceRefresh = false}) async {
+    if (!forceRefresh && _initialized && !append) return;
+    if (!_initialized && !append) {
+      _initialized = true;
+    }
+    
     if (append) {
       _isLoadingMore = true;
     } else {
@@ -89,6 +165,12 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
       }
       
       _filterSeries();
+      
+      if (mounted && !append) {
+        setState(() {
+          _lastLoadTime = DateTime.now();
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -169,6 +251,16 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
 
   void _filterSeries() {
     final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+    
+    // If searching, use search results directly
+    if (_searchQuery.isNotEmpty) {
+      setState(() {
+        _displayedSeries = seriesProvider.items;
+      });
+      return;
+    }
+    
+    // Otherwise, filter by genre
     if (_selectedGenreId == null) {
       // Show all series
       setState(() {
@@ -219,96 +311,152 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
         backgroundColor: AppColors.primaryColor,
         foregroundColor: AppColors.textLight,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const MobileSearchScreen(),
+        automaticallyImplyLeading: false, // No back button on categories screen
+        // User icon removed - not needed on Categories page
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(AppDim.paddingMedium, 0, AppDim.paddingMedium, AppDim.paddingSmall),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search series by name...',
+                hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.7)),
+                prefixIcon: Icon(Icons.search, color: AppColors.primaryColor),
+                filled: true,
+                fillColor: AppColors.cardBackground,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)),
                 ),
-              );
-            },
-            tooltip: 'Search',
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.search, color: AppColors.primaryColor),
+                            onPressed: () {
+                              _performSearch(_searchController.text.trim());
+                            },
+                            tooltip: 'Search',
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _searchQuery = '';
+                              });
+                              _loadAllSeries();
+                            },
+                          ),
+                        ],
+                      )
+                    : IconButton(
+                        icon: Icon(Icons.search, color: AppColors.primaryColor),
+                        onPressed: () {
+                          if (_searchController.text.trim().isNotEmpty) {
+                            _performSearch(_searchController.text.trim());
+                          }
+                        },
+                        tooltip: 'Search',
+                      ),
+              ),
+              style: TextStyle(color: AppColors.textPrimary),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (value) {
+                if (value.trim().isNotEmpty) {
+                  _performSearch(value.trim());
+                } else {
+                  _loadAllSeries();
+                }
+              },
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () {
-              // Navigate to profile - handled by bottom nav
-            },
-            tooltip: 'Profile',
-          ),
-        ],
+        ),
       ),
       body: SafeArea(
-        child: Consumer<SeriesProvider>(
-          builder: (context, seriesProvider, child) {
-            final genres = seriesProvider.genres;
-            
-            return Column(
-              children: [
-                // Horizontal scrollable filter tags - Show ALL genres
-                SizedBox(
-                  height: 50,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                    padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium, vertical: 8),
-                    child: Row(
-                      children: [
-                        // "ALL" option
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            label: const Text('ALL'),
-                            selected: _selectedGenreId == null,
-                            onSelected: (selected) {
-                              _onGenreSelected(null);
-                            },
-                            selectedColor: AppColors.primaryColor,
-                            checkmarkColor: AppColors.textLight,
-                            labelStyle: TextStyle(
-                              color: _selectedGenreId == null ? AppColors.textLight : AppColors.textPrimary,
-                              fontWeight: _selectedGenreId == null ? FontWeight.bold : FontWeight.normal,
-                              fontSize: 12,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          ),
-                        ),
-                        // Genre chips
-                        ...genres.map((genre) {
-                          final isSelected = _selectedGenreId == genre.id;
-                          return Padding(
+        child: SingleChildScrollView(
+          child: Consumer<SeriesProvider>(
+            builder: (context, seriesProvider, child) {
+              final genres = seriesProvider.genres;
+              
+              return Column(
+                children: [
+                // Horizontal scrollable filter tags - Show ALL genres (hide when searching)
+                if (_searchQuery.isEmpty)
+                  SizedBox(
+                    height: 50,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                      padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium, vertical: 8),
+                      child: Row(
+                        children: [
+                          // "ALL" option
+                          Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: FilterChip(
-                              label: Text(genre.name.toUpperCase()),
-                              selected: isSelected,
+                              label: const Text('ALL'),
+                              selected: _selectedGenreId == null,
                               onSelected: (selected) {
-                                _onGenreSelected(selected ? genre.id : null);
+                                _onGenreSelected(null);
                               },
                               selectedColor: AppColors.primaryColor,
                               checkmarkColor: AppColors.textLight,
                               labelStyle: TextStyle(
-                                color: isSelected ? AppColors.textLight : AppColors.textPrimary,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                color: _selectedGenreId == null ? AppColors.textLight : AppColors.textPrimary,
+                                fontWeight: _selectedGenreId == null ? FontWeight.bold : FontWeight.normal,
                                 fontSize: 12,
                               ),
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             ),
-                          );
-                        }).toList(),
-                      ],
+                          ),
+                          // Genre chips
+                          ...genres.map((genre) {
+                            final isSelected = _selectedGenreId == genre.id;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: FilterChip(
+                                label: Text(genre.name.toUpperCase()),
+                                selected: isSelected,
+                                onSelected: (selected) {
+                                  _onGenreSelected(selected ? genre.id : null);
+                                },
+                                selectedColor: AppColors.primaryColor,
+                                checkmarkColor: AppColors.textLight,
+                                labelStyle: TextStyle(
+                                  color: isSelected ? AppColors.textLight : AppColors.textPrimary,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  fontSize: 12,
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                            );
+                          }).toList(),
+                        ],
+                      ),
                     ),
                   ),
-                ),
                 
                 // Series list
-                Expanded(
-                  child: _isLoadingSeries
-                      ? const Center(child: CircularProgressIndicator())
-                      : _displayedSeries.isEmpty
-                          ? Center(
+                _isLoadingSeries
+                    ? const SizedBox(
+                        height: 400,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    : _displayedSeries.isEmpty
+                        ? SizedBox(
+                            height: 400,
+                            child: Center(
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
@@ -326,47 +474,50 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
                                   ),
                                 ],
                               ),
-                            )
-                          : NotificationListener<ScrollNotification>(
-                              onNotification: (ScrollNotification scrollInfo) {
-                                // Load more when scrolled to bottom
-                                if (scrollInfo.metrics.pixels >= 
-                                    scrollInfo.metrics.maxScrollExtent - 200) {
-                                  if (_hasMore && !_isLoadingMore) {
-                                    if (_selectedGenreId == null) {
-                                      _loadMoreSeries();
-                                    } else {
-                                      _loadMoreSeriesByGenre(_selectedGenreId!);
-                                    }
+                            ),
+                          )
+                        : NotificationListener<ScrollNotification>(
+                            onNotification: (ScrollNotification scrollInfo) {
+                              // Load more when scrolled to bottom
+                              if (scrollInfo.metrics.pixels >= 
+                                  scrollInfo.metrics.maxScrollExtent - 200) {
+                                if (_hasMore && !_isLoadingMore) {
+                                  if (_selectedGenreId == null) {
+                                    _loadMoreSeries();
+                                  } else {
+                                    _loadMoreSeriesByGenre(_selectedGenreId!);
                                   }
                                 }
-                                return false;
-                              },
-                              child: ListView.builder(
-                                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: AppDim.paddingMedium,
-                                  horizontal: AppDim.paddingMedium,
-                                ),
-                                itemCount: _displayedSeries.length + (_hasMore && _isLoadingMore ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  if (index == _displayedSeries.length) {
-                                    return const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(16.0),
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    );
-                                  }
-                                  final series = _displayedSeries[index];
-                                  return _buildSeriesCard(series, context, theme);
-                                },
+                              }
+                              return false;
+                            },
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(
+                                vertical: AppDim.paddingMedium,
+                                horizontal: AppDim.paddingMedium,
                               ),
+                              itemCount: _displayedSeries.length + (_hasMore && _isLoadingMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                if (index == _displayedSeries.length) {
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+                                }
+                                final series = _displayedSeries[index];
+                                return _buildSeriesCard(series, context, theme);
+                              },
                             ),
-                ),
+                          ),
+                const SizedBox(height: AppDim.paddingLarge),
               ],
             );
           },
+        ),
         ),
       ),
     );
@@ -513,6 +664,7 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
       builder: (context) => _WatchlistSelector(seriesId: series.id),
     );
   }
+
 }
 
 class _WatchlistSelector extends StatefulWidget {

@@ -3,9 +3,10 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../../core/widgets/admin_data_table_config.dart';
 import '../../providers/admin_user_provider.dart';
 import '../../models/user.dart';
-import 'users/user_form_dialog.dart';
+import '../../providers/auth_provider.dart';
 
 /// Admin users management screen with DataTable
 class AdminUsersScreen extends StatefulWidget {
@@ -17,10 +18,12 @@ class AdminUsersScreen extends StatefulWidget {
 
 class _AdminUsersScreenState extends State<AdminUsersScreen> {
   final _searchController = TextEditingController();
+  final _horizontalScrollController = ScrollController();
+  final _verticalScrollController = ScrollController();
   String _searchQuery = '';
   String? _selectedStatus;
-  String _sortBy = 'dateCreated';
-  bool _sortAscending = false; // Newest first by default
+  String _sortBy = 'name';
+  bool _sortAscending = true; // Alphabetical by default
   int _pageSize = 10;
 
   final List<String> _availableStatuses = [
@@ -40,6 +43,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
@@ -83,18 +88,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     }
   }
 
-  /// Handle editing a user
-  Future<void> _handleEditUser(ApplicationUser user) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => UserFormDialog(user: user),
-    );
-
-    // Reload data if user was updated successfully
-    if (result == true) {
-      await _loadUsers();
-    }
-  }
 
   /// Handle deleting a user with confirmation
   Future<void> _handleDeleteUser(ApplicationUser user) async {
@@ -180,13 +173,15 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
               try {
                 final userProvider = Provider.of<AdminUserProvider>(context, listen: false);
                 await userProvider.toggleUserStatus(user);
+                // Refresh the users list to reflect the status change
+                await _loadUsers();
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
                         user.isActive
-                            ? 'User disabled successfully'
-                            : 'User enabled successfully',
+                            ? 'User disabled successfully. The user will not be able to log in.'
+                            : 'User enabled successfully. The user can now log in.',
                       ),
                       backgroundColor: AppColors.successColor,
                     ),
@@ -230,72 +225,97 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
             }
 
             if (userProvider.users.isEmpty) {
+              final hasActiveFilters = _searchQuery.isNotEmpty || _selectedStatus != null;
+              
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    Icon(
+                      Icons.search_off,
+                      size: 64,
+                      color: AppColors.textSecondary.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: AppDim.paddingMedium),
                     Text(
-                      'No users found',
-                      style: theme.textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: AppDim.padding),
-                    ElevatedButton(
-                      onPressed: _loadUsers,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: AppColors.textLight,
+                      hasActiveFilters
+                          ? 'No users match your search or filters'
+                          : 'No users found',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppColors.textPrimary,
                       ),
-                      child: const Text('Refresh'),
                     ),
+                    if (hasActiveFilters) ...[
+                      const SizedBox(height: AppDim.paddingSmall),
+                      Text(
+                        'Try clearing your search or filters to see all users',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppDim.paddingLarge),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = '';
+                                _selectedStatus = null;
+                                _searchController.clear();
+                              });
+                              _loadUsers(page: 1);
+                            },
+                            icon: const Icon(Icons.clear_all),
+                            label: const Text('Clear All Filters'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryColor,
+                              foregroundColor: AppColors.textLight,
+                            ),
+                          ),
+                          const SizedBox(width: AppDim.paddingMedium),
+                          OutlinedButton.icon(
+                            onPressed: _loadUsers,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Refresh'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primaryColor,
+                              side: BorderSide(color: AppColors.primaryColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: AppDim.paddingLarge),
+                      ElevatedButton.icon(
+                        onPressed: _loadUsers,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refresh'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          foregroundColor: AppColors.textLight,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
             }
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                // Add button at top-right
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: () async {
-                        final result = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => const UserFormDialog(),
-                        );
-                        if (result == true) {
-                          await _loadUsers();
-                        }
-                      },
-                      icon: const Icon(Icons.add, size: 20),
-                      label: const Text('Add new user'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryColor,
-                        foregroundColor: AppColors.textLight,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppDim.paddingMedium,
-                          vertical: AppDim.paddingSmall,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppDim.paddingMedium),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Users Content
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 // Search and Filter Controls
                 Card(
                   color: AppColors.cardBackground,
                   child: Padding(
-                    padding: const EdgeInsets.all(AppDim.paddingMedium),
+                    padding: const EdgeInsets.all(AppDim.paddingSmall),
                     child: Column(
                       children: [
                         Row(
@@ -335,9 +355,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                                     _searchQuery = value;
                                   });
                                 },
-                                onSubmitted: (value) {
-                                  _loadUsers(page: 1); // Reset to first page on search
-                                },
                               ),
                             ),
                             const SizedBox(width: AppDim.paddingMedium),
@@ -376,7 +393,6 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                                   setState(() {
                                     _selectedStatus = value;
                                   });
-                                  _loadUsers(page: 1); // Reset to first page on filter change
                                 },
                               ),
                             ),
@@ -398,32 +414,43 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppDim.paddingMedium),
+                const SizedBox(height: AppDim.paddingSmall),
                 
-                // Data Table
-                SizedBox(
-                  height: 400, // Fixed height for table with vertical scroll
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                headingRowColor: MaterialStateProperty.all(AppColors.cardBackground),
-                dataRowColor: MaterialStateProperty.resolveWith((states) {
-                  if (states.contains(MaterialState.selected)) {
-                    return AppColors.primaryColor.withOpacity(0.1);
-                  }
-                  return AppColors.cardBackground;
-                }),
+                // Data Table with proper height constraints and scrolling
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Scrollbar(
+                        controller: _horizontalScrollController,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _horizontalScrollController,
+                          scrollDirection: Axis.horizontal,
+                          child: Scrollbar(
+                            controller: _verticalScrollController,
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              controller: _verticalScrollController,
+                              scrollDirection: Axis.vertical,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minWidth: constraints.maxWidth,
+                                ),
+                                child: DataTable(
+                headingRowColor: AdminDataTableConfig.getTableProperties()['headingRowColor'] as MaterialStateProperty<Color>,
+                dataRowColor: AdminDataTableConfig.getTableProperties()['dataRowColor'] as MaterialStateProperty<Color>,
+                headingRowHeight: AdminDataTableConfig.headingRowHeight,
+                dataRowMinHeight: AdminDataTableConfig.dataRowMinHeight,
+                dataRowMaxHeight: AdminDataTableConfig.dataRowMaxHeight,
                 columns: [
-                  const DataColumn(
-                    label: Text('Avatar'),
-                  ),
-                  const DataColumn(
-                    label: Text('ID'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Avatar'),
                   ),
                   DataColumn(
-                    label: const Text('Name'),
+                    label: AdminDataTableConfig.getColumnLabel('ID'),
+                  ),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Name'),
                     onSort: (columnIndex, ascending) {
                       setState(() {
                         _sortBy = 'name';
@@ -432,66 +459,54 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       _loadUsers(page: 1); // Reset to first page on sort
                     },
                   ),
-                  const DataColumn(
-                    label: Text('Phone'),
-                  ),
-                  const DataColumn(
-                    label: Text('Email'),
-                  ),
-                  const DataColumn(
-                    label: Text('Country'),
-                  ),
-                  const DataColumn(
-                    label: Text('Status'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Phone'),
                   ),
                   DataColumn(
-                    label: const Text('Date Added'),
-                    onSort: (columnIndex, ascending) {
-                      setState(() {
-                        _sortBy = 'dateCreated';
-                        _sortAscending = ascending;
-                      });
-                      _loadUsers(page: 1); // Reset to first page on sort
-                    },
+                    label: AdminDataTableConfig.getColumnLabel('Email'),
                   ),
-                  const DataColumn(
-                    label: Text('Actions'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Country'),
+                  ),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Status'),
+                  ),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Actions'),
                   ),
                 ],
-                sortColumnIndex: _sortBy == 'name' ? 2 : _sortBy == 'dateCreated' ? 7 : null,
+                sortColumnIndex: _sortBy == 'name' ? 2 : null,
                 sortAscending: _sortAscending,
                 rows: userProvider.users.map((user) {
-                  // Get initials for avatar
-                  final initials = user.displayName.isNotEmpty 
-                      ? user.displayName.substring(0, user.displayName.length > 2 ? 2 : 1).toUpperCase()
-                      : 'U';
-                  
                   return DataRow(
                     cells: [
                       DataCell(
-                        AvatarImage(
-                          avatarUrl: user.avatarUrl,
-                          radius: 20,
-                          initials: initials,
+                        ImageWithPlaceholder(
+                          imageUrl: user.avatarUrl,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          borderRadius: 6,
                           placeholderIcon: Icons.person,
+                          placeholderIconSize: 20,
                         ),
                       ),
                       DataCell(
                         Text(
                           user.id.toString(),
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           user.displayName,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           user.phoneNumber ?? 'N/A',
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme).copyWith(
                             color: user.phoneNumber == null ? AppColors.textSecondary : AppColors.textPrimary,
                           ),
                         ),
@@ -499,23 +514,20 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                       DataCell(
                         Text(
                           user.email,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           user.country ?? 'N/A',
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme).copyWith(
                             color: user.country == null ? AppColors.textSecondary : AppColors.textPrimary,
                           ),
                         ),
                       ),
                       DataCell(
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                          padding: AdminDataTableConfig.cellPadding,
                           decoration: BoxDecoration(
                             color: user.isActive
                                 ? AppColors.successColor.withOpacity(0.1)
@@ -524,7 +536,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                           ),
                           child: Text(
                             user.status,
-                            style: theme.textTheme.bodySmall?.copyWith(
+                            style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme).copyWith(
                               color: user.isActive
                                   ? AppColors.successColor
                                   : AppColors.dangerColor,
@@ -534,40 +546,42 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                         ),
                       ),
                       DataCell(
-                        Text(
-                          user.dateCreated != null 
-                              ? '${user.dateCreated!.day}/${user.dateCreated!.month}/${user.dateCreated!.year}'
-                              : 'N/A',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: user.dateCreated == null ? AppColors.textSecondary : AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                      DataCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              color: AppColors.primaryColor,
-                              onPressed: () => _handleEditUser(user),
-                              tooltip: 'Edit',
-                            ),
-                            IconButton(
-                              icon: Icon(
-                                user.isActive ? Icons.block : Icons.check_circle,
+                            SizedBox(
+                              width: AdminDataTableConfig.actionButtonSize,
+                              child: IconButton(
+                                icon: Icon(
+                                  user.isActive ? Icons.block : Icons.check_circle,
+                                  size: AdminDataTableConfig.actionIconSize,
+                                ),
+                                color: user.isActive
+                                    ? AppColors.dangerColor
+                                    : AppColors.successColor,
+                                onPressed: () => _handleToggleUserStatus(user),
+                                tooltip: user.isActive ? 'Disable' : 'Enable',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: AdminDataTableConfig.actionButtonSize,
+                                  minHeight: AdminDataTableConfig.actionButtonSize,
+                                ),
                               ),
-                              color: user.isActive
-                                  ? AppColors.dangerColor
-                                  : AppColors.successColor,
-                              onPressed: () => _handleToggleUserStatus(user),
-                              tooltip: user.isActive ? 'Disable' : 'Enable',
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              color: AppColors.dangerColor,
-                              onPressed: () => _handleDeleteUser(user),
-                              tooltip: 'Delete User',
+                            const SizedBox(width: 2),
+                            SizedBox(
+                              width: AdminDataTableConfig.actionButtonSize,
+                              child: IconButton(
+                                icon: const Icon(Icons.delete, size: AdminDataTableConfig.actionIconSize),
+                                color: AppColors.dangerColor,
+                                onPressed: () => _handleDeleteUser(user),
+                                tooltip: 'Delete User',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: AdminDataTableConfig.actionButtonSize,
+                                  minHeight: AdminDataTableConfig.actionButtonSize,
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -575,11 +589,16 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     ],
                   );
                 }).toList(),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-                const SizedBox(height: AppDim.paddingMedium),
+              ),
+                const SizedBox(height: AppDim.paddingSmall),
                 
                 // Pagination Controls
                 Consumer<AdminUserProvider>(
@@ -587,7 +606,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     return Card(
                       color: AppColors.cardBackground,
                       child: Padding(
-                        padding: const EdgeInsets.all(AppDim.paddingMedium),
+                        padding: const EdgeInsets.all(AppDim.paddingSmall),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -659,12 +678,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
                     );
                   },
                 ),
-                        ],
-                      ),
-                    ),
+                    ],
                   ),
-                );
-              },
+                ),
+              ],
             );
           },
         ),

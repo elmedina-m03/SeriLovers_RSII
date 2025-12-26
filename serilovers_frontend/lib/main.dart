@@ -11,6 +11,7 @@ import 'providers/admin_user_provider.dart';
 import 'providers/actor_provider.dart';
 import 'providers/admin_stats_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/language_provider.dart';
 import 'admin/providers/admin_series_provider.dart';
 import 'admin/providers/admin_actor_provider.dart';
 import 'admin/providers/admin_statistics_provider.dart';
@@ -21,6 +22,8 @@ import 'services/watchlist_service.dart';
 import 'services/episode_progress_service.dart';
 import 'services/episode_review_service.dart';
 import 'services/rating_service.dart';
+import 'services/recommendation_service.dart';
+import 'providers/recommendation_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/series_list_screen.dart';
 import 'screens/series_detail_screen.dart';
@@ -41,11 +44,16 @@ import 'mobile/providers/mobile_challenges_provider.dart';
 import 'models/series.dart';
 import 'core/theme/app_theme.dart';
 
+import 'services/notification_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Load environment variables
   await dotenv.load(fileName: ".env");
+  
+  // Initialize notification service
+  await NotificationService().initialize();
   
   runApp(const MyApp());
   
@@ -169,6 +177,25 @@ class MyApp extends StatelessWidget {
             }
             return RatingProvider(
               service: RatingService(apiService: apiService),
+              authProvider: authProvider,
+            );
+          },
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, RecommendationProvider>(
+          create: (_) {
+            final tempAuth = AuthProvider(authService: authService);
+            return RecommendationProvider(
+              service: RecommendationService(apiService: apiService),
+              authProvider: tempAuth,
+            );
+          },
+          update: (context, authProvider, previous) {
+            if (previous != null) {
+              previous.updateAuthProvider(authProvider);
+              return previous;
+            }
+            return RecommendationProvider(
+              service: RecommendationService(apiService: apiService),
               authProvider: authProvider,
             );
           },
@@ -312,6 +339,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(
           create: (_) => ThemeProvider(),
         ),
+        ChangeNotifierProvider(
+          create: (_) => LanguageProvider(),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, MobileChallengesProvider>(
           create: (_) {
             final tempAuth = AuthProvider(authService: authService);
@@ -335,8 +365,9 @@ class MyApp extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           // Determine initial route based on screen width
+          // Always show login screen on desktop - no auto-login
           final screenWidth = constraints.maxWidth;
-          final initialRoute = screenWidth > 900 ? '/admin' : '/mobile_login';
+          final initialRoute = screenWidth > 900 ? '/login' : '/mobile_login';
 
           return Consumer<ThemeProvider>(
             builder: (context, themeProvider, child) {

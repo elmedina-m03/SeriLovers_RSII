@@ -47,14 +47,8 @@ namespace SeriLovers.API.Services
                 claims.Add(new Claim("avatarUrl", user.AvatarUrl));
             }
 
-            // Add name claim (extract from UserName or email if no custom name)
-            var displayName = user.UserName ?? user.Email ?? "User";
-            // If UserName looks like an email, extract the name part
-            if (displayName.Contains('@'))
-            {
-                var emailPart = displayName.Split('@')[0];
-                displayName = emailPart[0].ToString().ToUpper() + emailPart.Substring(1);
-            }
+            // Add name claim (use Name property if available, otherwise fallback)
+            var displayName = user.Name ?? user.UserName ?? user.Email ?? "User";
             claims.Add(new Claim("name", displayName));
 
             // Add roles using both standard JWT claim name and ASP.NET Core claim type

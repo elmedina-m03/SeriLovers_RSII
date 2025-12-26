@@ -93,7 +93,6 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
       }
     } catch (e) {
       // Handle error silently - reviews can still be viewed even if there's an error
-      print('Error loading reviews: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -152,6 +151,9 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
                                 // Also refresh the rating provider to show new review
                                 final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
                                 await ratingProvider.loadSeriesRatings(widget.series.id);
+                                // Refresh series to update rating count
+                                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                                await seriesProvider.fetchSeriesDetail(widget.series.id);
                               }
                             },
                             icon: const Icon(Icons.add_comment),

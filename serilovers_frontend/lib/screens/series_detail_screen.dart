@@ -12,6 +12,8 @@ import '../services/episode_progress_service.dart';
 import '../core/theme/app_colors.dart';
 import '../mobile/widgets/season_selector.dart';
 import 'episode_reviews_screen.dart';
+import 'series_full_description_screen.dart';
+import '../services/reminder_service.dart';
 
 /// Screen that displays detailed information about a series
 class SeriesDetailScreen extends StatefulWidget {
@@ -32,6 +34,8 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   int? _selectedSeasonNumber;
   bool _isLoadingDetail = false;
   Set<int> _watchedEpisodeIds = {}; // Track watched episode IDs for UI updates
+  bool _isReminderEnabled = false;
+  final ReminderService _reminderService = ReminderService();
 
   @override
   void initState() {
@@ -79,7 +83,20 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
       
       // Load full series detail with seasons and episodes
       _loadSeriesDetail();
+      
+      // Load reminder state
+      _loadReminderState();
     });
+  }
+
+  /// Load reminder state for this series
+  Future<void> _loadReminderState() async {
+    final isEnabled = await _reminderService.isReminderEnabled(widget.series.id);
+    if (mounted) {
+      setState(() {
+        _isReminderEnabled = isEnabled;
+      });
+    }
   }
 
   /// Load full series detail with seasons and episodes
@@ -514,7 +531,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     const SizedBox(height: 24),
                   ],
 
-                  // Series description
+                  // Series description with "Read more" button
                   if (_series.description != null && _series.description!.isNotEmpty) ...[
                     Text(
                       'Description',
@@ -524,8 +541,24 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _series.description!,
+                      _getShortDescription(_series.description!),
                       style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SeriesFullDescriptionScreen(series: _series),
+                          ),
+                        );
+                      },
+                      child: const Text('Read more'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primaryColor,
+                        padding: EdgeInsets.zero,
+                      ),
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -620,6 +653,23 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     ),
                   ],
                   const SizedBox(height: 32),
+                  // Remind me for a new episode Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _toggleReminder(),
+                      icon: Icon(_isReminderEnabled ? Icons.notifications : Icons.notifications_outlined),
+                      label: Text(_isReminderEnabled ? 'Reminder Enabled' : 'Remind me for a new episode'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: _isReminderEnabled 
+                            ? AppColors.successColor 
+                            : AppColors.primaryColor,
+                        foregroundColor: AppColors.textLight,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   // Add to Watchlist Button
                   SizedBox(
                     width: double.infinity,
@@ -811,6 +861,58 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
     } catch (e) {
       // Silently fail - watched indicators just won't show
       print('Error loading watched episodes: $e');
+    }
+  }
+
+  /// Get short description (first 150 characters)
+  String _getShortDescription(String fullDescription) {
+    if (fullDescription.length <= 150) {
+      return fullDescription;
+    }
+    return '${fullDescription.substring(0, 150)}...';
+  }
+
+  /// Toggle reminder for new episodes
+  Future<void> _toggleReminder() async {
+    try {
+      if (_isReminderEnabled) {
+        // Disable reminder
+        await _reminderService.disableReminder(_series.id);
+        if (mounted) {
+          setState(() {
+            _isReminderEnabled = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reminder disabled'),
+              backgroundColor: AppColors.textSecondary,
+            ),
+          );
+        }
+      } else {
+        // Enable reminder
+        await _reminderService.enableReminder(_series.id, _series.title);
+        if (mounted) {
+          setState(() {
+            _isReminderEnabled = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('You will be notified when a new episode of ${_series.title} is available'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error updating reminder: $e'),
+            backgroundColor: AppColors.dangerColor,
+          ),
+        );
+      }
     }
   }
 

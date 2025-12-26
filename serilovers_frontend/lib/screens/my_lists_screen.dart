@@ -6,6 +6,7 @@ import '../models/watchlist.dart';
 import '../providers/auth_provider.dart';
 import '../providers/watchlist_provider.dart';
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_dim.dart';
 
 class MyListsScreen extends StatefulWidget {
   const MyListsScreen({super.key});
@@ -139,37 +140,41 @@ class _MyListsScreenState extends State<MyListsScreen> {
               onRefresh: _onRefresh,
               child: CustomScrollView(
                 slivers: [
-                  // Search bar
+                  // Search bar - Modern design matching other screens
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Search lists...',
-                            hintStyle: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                            border: InputBorder.none,
-                            icon: Icon(Icons.search, color: Colors.grey[600], size: 20),
-                            suffixIcon: _searchQuery.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, size: 20),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                    },
-                                  )
-                                : null,
+                      padding: const EdgeInsets.fromLTRB(AppDim.paddingMedium, AppDim.paddingSmall, AppDim.paddingMedium, AppDim.paddingSmall),
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Search lists...',
+                          hintStyle: TextStyle(color: AppColors.textSecondary.withOpacity(0.7)),
+                          prefixIcon: Icon(Icons.search, color: AppColors.primaryColor),
+                          filled: true,
+                          fillColor: AppColors.cardBackground,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)),
                           ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: AppColors.textSecondary.withOpacity(0.2)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                          ),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                  },
+                                )
+                              : null,
                         ),
+                        style: TextStyle(color: AppColors.textPrimary),
+                        textInputAction: TextInputAction.search,
                       ),
                     ),
                   ),

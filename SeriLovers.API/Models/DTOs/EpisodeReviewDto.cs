@@ -20,6 +20,7 @@ namespace SeriLovers.API.Models.DTOs
         public string? ReviewText { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
+        public bool IsAnonymous { get; set; }
     }
 
     public class EpisodeReviewCreateDto
@@ -33,6 +34,8 @@ namespace SeriLovers.API.Models.DTOs
 
         [StringLength(2000, ErrorMessage = "Review text cannot exceed 2000 characters.")]
         public string? ReviewText { get; set; }
+
+        public bool IsAnonymous { get; set; } = false;
     }
 
     public class EpisodeReviewUpdateDto
@@ -43,6 +46,8 @@ namespace SeriLovers.API.Models.DTOs
 
         [StringLength(2000, ErrorMessage = "Review text cannot exceed 2000 characters.")]
         public string? ReviewText { get; set; }
+
+        public bool IsAnonymous { get; set; } = false;
     }
 }
 

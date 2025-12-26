@@ -124,7 +124,7 @@ class MonthlyWatching {
     };
   }
 
-  /// Get display label (e.g., "Jan 2024")
+  /// Get display label (e.g., "12/25" for December 2025)
   String get monthYearLabel {
     try {
       final parts = month.split('-');
@@ -132,21 +132,9 @@ class MonthlyWatching {
         final year = parts[0];
         final monthNum = int.tryParse(parts[1]);
         if (monthNum != null && monthNum >= 1 && monthNum <= 12) {
-          final monthNames = [
-            'Jan',
-            'Feb',
-            'Mar',
-            'Apr',
-            'May',
-            'Jun',
-            'Jul',
-            'Aug',
-            'Sep',
-            'Oct',
-            'Nov',
-            'Dec'
-          ];
-          return '${monthNames[monthNum - 1]} $year';
+          // Format as MM/YY (e.g., "12/25" for December 2025)
+          final yearShort = year.length >= 2 ? year.substring(year.length - 2) : year;
+          return '${monthNum.toString().padLeft(2, '0')}/$yearShort';
         }
       }
     } catch (e) {
@@ -162,12 +150,14 @@ class TopSeries {
   final String title;
   final double avgRating;
   final int views;
+  final String? imageUrl;
 
   TopSeries({
     required this.id,
     required this.title,
     required this.avgRating,
     required this.views,
+    this.imageUrl,
   });
 
   factory TopSeries.fromJson(Map<String, dynamic> json) {
@@ -176,6 +166,7 @@ class TopSeries {
       title: json['title'] as String? ?? 'Unknown',
       avgRating: (json['avgRating'] as num?)?.toDouble() ?? 0.0,
       views: (json['views'] as num?)?.toInt() ?? 0,
+      imageUrl: json['imageUrl'] as String?,
     );
   }
 
@@ -185,6 +176,7 @@ class TopSeries {
       'title': title,
       'avgRating': avgRating,
       'views': views,
+      'imageUrl': imageUrl,
     };
   }
 }

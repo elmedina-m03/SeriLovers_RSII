@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../../core/widgets/admin_data_table_config.dart';
 import '../../models/series.dart';
 import '../providers/admin_actor_provider.dart';
 import 'actors/actor_form_dialog.dart';
@@ -17,6 +18,8 @@ class AdminActorsScreen extends StatefulWidget {
 
 class _AdminActorsScreenState extends State<AdminActorsScreen> {
   final _nameSearchController = TextEditingController();
+  final _horizontalScrollController = ScrollController();
+  final _verticalScrollController = ScrollController();
   String _nameSearchQuery = '';
   int? _selectedAge;
   String _sortBy = 'lastName';
@@ -41,6 +44,8 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
   @override
   void dispose() {
     _nameSearchController.dispose();
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
     super.dispose();
   }
 
@@ -205,25 +210,87 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
             }
 
             if (adminActorProvider.items.isEmpty) {
+              final hasActiveFilters = _nameSearchQuery.isNotEmpty || _selectedAge != null;
+              
               return Center(
-                child: Text(
-                  'No actors found',
-                  style: theme.textTheme.bodyLarge,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.search_off,
+                      size: 64,
+                      color: AppColors.textSecondary.withOpacity(0.5),
+                    ),
+                    const SizedBox(height: AppDim.paddingMedium),
+                    Text(
+                      hasActiveFilters
+                          ? 'No actors match your search or filters'
+                          : 'No actors found',
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (hasActiveFilters) ...[
+                      const SizedBox(height: AppDim.paddingSmall),
+                      Text(
+                        'Try clearing your search or filters to see all actors',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppDim.paddingLarge),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _nameSearchQuery = '';
+                                _selectedAge = null;
+                                _nameSearchController.clear();
+                              });
+                              _loadActors(page: 1);
+                            },
+                            icon: const Icon(Icons.clear_all),
+                            label: const Text('Clear All Filters'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryColor,
+                              foregroundColor: AppColors.textLight,
+                            ),
+                          ),
+                          const SizedBox(width: AppDim.paddingMedium),
+                          OutlinedButton.icon(
+                            onPressed: _loadActors,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Refresh'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primaryColor,
+                              side: BorderSide(color: AppColors.primaryColor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: AppDim.paddingLarge),
+                      ElevatedButton.icon(
+                        onPressed: _loadActors,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Refresh'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          foregroundColor: AppColors.textLight,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               );
             }
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 // Add button at top-right
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -248,7 +315,7 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                 Card(
                   color: AppColors.cardBackground,
                   child: Padding(
-                    padding: const EdgeInsets.all(AppDim.paddingMedium),
+                    padding: const EdgeInsets.all(AppDim.paddingSmall),
                     child: Row(
                       children: [
                         // Name Search TextField
@@ -285,9 +352,10 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                               setState(() {
                                 _nameSearchQuery = value;
                               });
+                              // Don't trigger search automatically - wait for Search button
                             },
                             onSubmitted: (value) {
-                              _loadActors(page: 1); // Reset to first page on search
+                              // Don't trigger search on Enter - wait for Search button
                             },
                           ),
                         ),
@@ -333,7 +401,7 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                                     setState(() {
                                       _selectedAge = value;
                                     });
-                                    _loadActors(page: 1); // Reset to first page on filter change
+                                    // Don't trigger search automatically - wait for Search button
                                   }
                                 },
                               );
@@ -356,32 +424,43 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: AppDim.paddingMedium),
+                const SizedBox(height: AppDim.paddingSmall),
                 
-                // Data Table
-                SizedBox(
-                  height: 400, // Fixed height for table with vertical scroll
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                headingRowColor: MaterialStateProperty.all(AppColors.cardBackground),
-                dataRowColor: MaterialStateProperty.resolveWith((states) {
-                  if (states.contains(MaterialState.selected)) {
-                    return AppColors.primaryColor.withOpacity(0.1);
-                  }
-                  return AppColors.cardBackground;
-                }),
+                // Data Table with proper height constraints and scrolling
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return Scrollbar(
+                        controller: _horizontalScrollController,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          controller: _horizontalScrollController,
+                          scrollDirection: Axis.horizontal,
+                          child: Scrollbar(
+                            controller: _verticalScrollController,
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              controller: _verticalScrollController,
+                              scrollDirection: Axis.vertical,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minWidth: constraints.maxWidth,
+                                ),
+                                child: DataTable(
+                headingRowColor: AdminDataTableConfig.getTableProperties()['headingRowColor'] as MaterialStateProperty<Color>,
+                dataRowColor: AdminDataTableConfig.getTableProperties()['dataRowColor'] as MaterialStateProperty<Color>,
+                headingRowHeight: AdminDataTableConfig.headingRowHeight,
+                dataRowMinHeight: AdminDataTableConfig.dataRowMinHeight,
+                dataRowMaxHeight: AdminDataTableConfig.dataRowMaxHeight,
                 columns: [
-                  const DataColumn(
-                    label: Text('Photo'),
-                  ),
-                  const DataColumn(
-                    label: Text('First Name'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Photo'),
                   ),
                   DataColumn(
-                    label: const Text('Last Name'),
+                    label: AdminDataTableConfig.getColumnLabel('First Name'),
+                  ),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Last Name'),
                     onSort: (columnIndex, ascending) {
                       setState(() {
                         _sortBy = 'lastName';
@@ -390,11 +469,11 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                       _loadActors(page: 1); // Reset to first page on sort
                     },
                   ),
-                  const DataColumn(
-                    label: Text('Date of Birth'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Date of Birth'),
                   ),
                   DataColumn(
-                    label: const Text('Age'),
+                    label: AdminDataTableConfig.getColumnLabel('Age'),
                     numeric: true,
                     onSort: (columnIndex, ascending) {
                       setState(() {
@@ -404,12 +483,12 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                       _loadActors(page: 1); // Reset to first page on sort
                     },
                   ),
-                  const DataColumn(
-                    label: Text('Total Series'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Total Series'),
                     numeric: true,
                   ),
-                  const DataColumn(
-                    label: Text('Actions'),
+                  DataColumn(
+                    label: AdminDataTableConfig.getColumnLabel('Actions'),
                   ),
                 ],
                 sortColumnIndex: _sortBy == 'lastName' ? 2 : (_sortBy == 'age' ? 4 : null),
@@ -420,18 +499,14 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                       DataCell(
                         Builder(
                           builder: (context) {
-                            // Debug: log image URL for troubleshooting
-                            if (actor.imageUrl != null && actor.imageUrl!.isNotEmpty) {
-                              print('📸 Actor "${actor.fullName}" has imageUrl: ${actor.imageUrl}');
-                            }
                             return ImageWithPlaceholder(
                               imageUrl: actor.imageUrl,
-                              width: 50,
-                              height: 50,
+                              width: 40,
+                              height: 40,
                               fit: BoxFit.cover,
-                              borderRadius: 8,
+                              borderRadius: 6,
                               placeholderIcon: Icons.person,
-                              placeholderIconSize: 24,
+                              placeholderIconSize: 20,
                             );
                           },
                         ),
@@ -439,60 +514,82 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                       DataCell(
                         Text(
                           actor.firstName,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           actor.lastName,
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           _formatDate(actor.dateOfBirth),
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           (actor.age ?? actor.calculatedAge)?.toString() ?? 'N/A',
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Text(
                           actor.seriesCount.toString(),
-                          style: theme.textTheme.bodyMedium,
+                          style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                         ),
                       ),
                       DataCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.edit),
-                              color: AppColors.primaryColor,
-                              onPressed: () => _handleEditActor(actor),
-                              tooltip: 'Edit',
+                            SizedBox(
+                              width: AdminDataTableConfig.actionButtonSize,
+                              child: IconButton(
+                                icon: const Icon(Icons.edit, size: AdminDataTableConfig.actionIconSize),
+                                color: AppColors.primaryColor,
+                                onPressed: () => _handleEditActor(actor),
+                                tooltip: 'Edit',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: AdminDataTableConfig.actionButtonSize,
+                                  minHeight: AdminDataTableConfig.actionButtonSize,
+                                ),
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete),
-                              color: AppColors.dangerColor,
-                              onPressed: () => _handleDeleteActor(actor),
-                              tooltip: 'Delete',
+                            const SizedBox(width: 2),
+                            SizedBox(
+                              width: AdminDataTableConfig.actionButtonSize,
+                              child: IconButton(
+                                icon: const Icon(Icons.delete, size: AdminDataTableConfig.actionIconSize),
+                                color: AppColors.dangerColor,
+                                onPressed: () => _handleDeleteActor(actor),
+                                tooltip: 'Delete',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: AdminDataTableConfig.actionButtonSize,
+                                  minHeight: AdminDataTableConfig.actionButtonSize,
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ],
                   );
-                }).toList(),
+                      }).toList(),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
-                const SizedBox(height: AppDim.paddingMedium),
+              ),
+                const SizedBox(height: AppDim.paddingSmall),
                 
                 // Pagination Controls
                 Consumer<AdminActorProvider>(
@@ -500,7 +597,7 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                     return Card(
                       color: AppColors.cardBackground,
                       child: Padding(
-                        padding: const EdgeInsets.all(AppDim.paddingMedium),
+                        padding: const EdgeInsets.all(AppDim.paddingSmall),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -572,12 +669,7 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                     );
                   },
                 ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
+              ],
             );
           },
         ),

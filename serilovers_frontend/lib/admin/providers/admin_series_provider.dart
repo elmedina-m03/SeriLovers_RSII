@@ -312,9 +312,17 @@ class AdminSeriesProvider extends ChangeNotifier {
       // Parse the updated series
       final updatedSeries = Series.fromJson(response as Map<String, dynamic>);
       
-      // Refresh the entire list to ensure consistency
-      await fetchAll();
+      // Update in local list if it exists, otherwise add it
+      final index = items.indexWhere((s) => s.id == id);
+      if (index != -1) {
+        items[index] = updatedSeries;
+      } else {
+        items.add(updatedSeries);
+      }
       notifyListeners();
+      
+      // Note: The screen will call _loadSeries() after edit to refresh with latest data
+      // This ensures episodes count is accurate after editing
       
       print('AdminSeriesProvider: Series updated successfully with ID: ${updatedSeries.id}');
       return updatedSeries;

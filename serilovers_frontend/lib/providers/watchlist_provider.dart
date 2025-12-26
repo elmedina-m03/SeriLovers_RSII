@@ -28,6 +28,10 @@ class WatchlistProvider extends ChangeNotifier {
   /// Last error message, if any.
   String? error;
 
+  /// Tracks series that are currently being deleted to prevent duplicate requests.
+  /// Key format: "listId:seriesId"
+  final Set<String> _deletingSeries = <String>{};
+
   WatchlistProvider({
     this.service,
     ApiService? apiService,
@@ -437,21 +441,48 @@ class WatchlistProvider extends ChangeNotifier {
     }
   }
 
+  /// Check if a series is currently being deleted
+  bool isDeletingSeries(int listId, int seriesId) {
+    return _deletingSeries.contains('$listId:$seriesId');
+  }
+
   Future<void> removeSeriesFromList(int listId, int seriesId) async {
     if (service == null) return;
     
+    // Guard: Prevent duplicate delete requests
+    final deleteKey = '$listId:$seriesId';
+    if (_deletingSeries.contains(deleteKey)) {
+      return; // Already deleting, ignore duplicate request
+    }
+    
+    final token = _authProvider?.token;
+    if (token == null || token.isEmpty) {
+      throw Exception('Authentication required');
+    }
+    
+    // Optimistically update UI: Remove from local state immediately
+    final listIndex = lists.indexWhere((list) => list.id == listId);
+    if (listIndex != -1) {
+      lists[listIndex] = Watchlist(
+        id: lists[listIndex].id,
+        name: lists[listIndex].name,
+        coverUrl: lists[listIndex].coverUrl,
+        totalSeries: (lists[listIndex].totalSeries - 1).clamp(0, double.infinity).toInt(),
+        createdAt: lists[listIndex].createdAt,
+      );
+    }
+    
+    // Mark as deleting and notify listeners
+    _deletingSeries.add(deleteKey);
     loading = true;
     notifyListeners();
     
     try {
-      final token = _authProvider?.token;
-      if (token == null || token.isEmpty) {
-        throw Exception('Authentication required');
-      }
+      // Make API call
       await service!.removeSeriesFromList(listId, seriesId, token: token);
       error = null;
       
-      // Always refresh all lists to get accurate counts from backend
+      // Refresh all lists to get accurate counts from backend
       final authProvider = _authProvider;
       if (authProvider?.token != null) {
         try {
@@ -468,24 +499,24 @@ class WatchlistProvider extends ChangeNotifier {
             await loadUserWatchlists(userId);
           }
         } catch (_) {
-          // If refresh fails, try to update the specific list manually
-          final index = lists.indexWhere((list) => list.id == listId);
-          if (index != -1) {
-            lists[index] = Watchlist(
-              id: lists[index].id,
-              name: lists[index].name,
-              coverUrl: lists[index].coverUrl,
-              totalSeries: (lists[index].totalSeries - 1).clamp(0, double.infinity).toInt(),
-              createdAt: lists[index].createdAt,
-            );
-            notifyListeners();
-          }
+          // If refresh fails, the optimistic update already handled the UI
         }
       }
     } catch (e) {
       error = e.toString();
+      // Rollback optimistic update on error
+      if (listIndex != -1) {
+        lists[listIndex] = Watchlist(
+          id: lists[listIndex].id,
+          name: lists[listIndex].name,
+          coverUrl: lists[listIndex].coverUrl,
+          totalSeries: (lists[listIndex].totalSeries + 1).clamp(0, double.infinity).toInt(),
+          createdAt: lists[listIndex].createdAt,
+        );
+      }
       rethrow;
     } finally {
+      _deletingSeries.remove(deleteKey);
       loading = false;
       notifyListeners();
     }
@@ -574,12 +605,18 @@ class WatchlistProvider extends ChangeNotifier {
       
       if (response is List) {
         items = <Series>[];
+        final seenSeriesIds = <int>{};
         for (var entry in response) {
           if (entry is Map<String, dynamic>) {
             if (entry.containsKey('series') && entry['series'] != null) {
               try {
                 final seriesData = entry['series'] as Map<String, dynamic>;
-                items.add(Series.fromJson(seriesData));
+                final seriesId = seriesData['id'] as int?;
+                // Only add if we haven't seen this series ID before (prevent duplicates)
+                if (seriesId != null && !seenSeriesIds.contains(seriesId)) {
+                  seenSeriesIds.add(seriesId);
+                  items.add(Series.fromJson(seriesData));
+                }
               } catch (e) {
                 // Skip invalid entries
               }

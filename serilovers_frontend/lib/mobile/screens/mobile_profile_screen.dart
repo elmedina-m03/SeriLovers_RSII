@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/theme_provider.dart';
 import '../../providers/episode_progress_provider.dart';
 import '../../providers/series_provider.dart';
 import '../../services/episode_progress_service.dart';
@@ -15,6 +14,7 @@ import '../../models/episode_progress.dart';
 import '../widgets/mobile_page_route.dart';
 import 'mobile_status_screen.dart';
 import 'mobile_statistics_screen.dart';
+import 'mobile_settings_screen.dart';
 import 'mobile_series_detail_screen.dart';
 
 /// Mobile profile screen showing user info and logout button
@@ -29,11 +29,29 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
   List<Series> _recentlyWatchedSeries = [];
   bool _isLoadingWatchedHistory = false;
 
+  DateTime? _lastLoadTime;
+  static const _cacheTimeout = Duration(seconds: 5); // Cache for 5 seconds
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadWatchedHistory();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isLoadingWatchedHistory) {
+        final now = DateTime.now();
+        if (_lastLoadTime == null || 
+            now.difference(_lastLoadTime!) > _cacheTimeout) {
+          _loadWatchedHistory();
+        }
+      }
     });
   }
 
@@ -91,15 +109,21 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
           ..sort((a, b) => b.value.compareTo(a.value));
       final seriesIds = sortedSeriesIds.map((e) => e.key).take(10).toList();
 
-      // Load all series to get details
-      await seriesProvider.fetchSeries(page: 1, pageSize: 200);
-
-      // Get series details for recently watched
+      // Fetch only the needed series by ID (much faster than loading 200)
       final recentlyWatched = <Series>[];
       for (final seriesId in seriesIds) {
-        final series = seriesProvider.getById(seriesId);
-        if (series != null) {
-          recentlyWatched.add(series);
+        try {
+          // Try to get from cache first
+          var series = seriesProvider.getById(seriesId);
+          if (series == null) {
+            // If not in cache, fetch just this one series
+            series = await seriesProvider.fetchSeriesDetail(seriesId);
+          }
+          if (series != null) {
+            recentlyWatched.add(series);
+          }
+        } catch (e) {
+          // Skip series that fail to load
         }
       }
 
@@ -107,6 +131,7 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
         setState(() {
           _recentlyWatchedSeries = recentlyWatched;
           _isLoadingWatchedHistory = false;
+          _lastLoadTime = DateTime.now();
         });
       }
     } catch (e) {
@@ -150,6 +175,40 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
     } catch (e) {
       return {'email': 'Unknown', 'name': 'Unknown User', 'avatarUrl': null};
     }
+  }
+
+  /// Prefer user info from AuthProvider.currentUser (fresh from backend),
+  /// falling back to decoding the JWT if no cached user object is available.
+  Map<String, String?> _getUserInfoFromAuth(AuthProvider authProvider) {
+    final current = authProvider.currentUser;
+    if (current != null) {
+      final email = (current['email'] as String?) ??
+          (current['userName'] as String?) ??
+          'Unknown';
+
+      String name = (current['name'] as String?) ?? '';
+      if (name.isEmpty) {
+        if (email != 'Unknown') {
+          final parts = email.split('@');
+          if (parts.isNotEmpty) {
+            final namePart = parts[0];
+            name = namePart[0].toUpperCase() + namePart.substring(1);
+          }
+        } else {
+          name = 'User';
+        }
+      }
+
+      final avatarUrl = current['avatarUrl'] as String?;
+      return {
+        'email': email,
+        'name': name,
+        'avatarUrl': avatarUrl,
+      };
+    }
+
+    // Fallback: derive from token as before
+    return _getUserInfo(authProvider.token);
   }
 
   /// Try to read joined date from JWT token if available
@@ -244,29 +303,35 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
         backgroundColor: AppColors.primaryColor,
         foregroundColor: AppColors.textLight,
         elevation: 0,
+        automaticallyImplyLeading: false, // No back button on profile screen
       ),
       body: SafeArea(
         child: Consumer<AuthProvider>(
           builder: (context, authProvider, child) {
-            final userInfo = _getUserInfo(authProvider.token);
+            // Use freshly cached backend user data when available
+            final userInfo = _getUserInfoFromAuth(authProvider);
             final initials = _getInitials(userInfo['email']!);
             final joinedDate = _getJoinedDate(authProvider.token);
 
             return SingleChildScrollView(
-              padding: const EdgeInsets.all(AppDim.paddingLarge),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDim.paddingLarge,
+                vertical: AppDim.paddingMedium,
+              ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const SizedBox(height: AppDim.paddingLarge),
+                  const SizedBox(height: AppDim.paddingSmall),
 
                   // User Avatar Circle
                   AvatarImage(
                     avatarUrl: userInfo['avatarUrl'],
-                    radius: 60,
+                    radius: 45,
                     initials: initials,
                     placeholderIcon: Icons.person,
                   ),
 
-                  const SizedBox(height: AppDim.paddingLarge),
+                  const SizedBox(height: AppDim.paddingMedium),
 
                   // User Name
                   Text(
@@ -287,7 +352,7 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: AppDim.paddingLarge),
+                  const SizedBox(height: AppDim.paddingMedium),
 
                   // Recently Watched Section
                   if (_recentlyWatchedSeries.isNotEmpty) ...[
@@ -348,9 +413,11 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                         '/mobile_edit_profile',
                       );
                       if (result == true && mounted) {
+                        // After a successful edit, AuthProvider.updateUser has already
+                        // updated token and currentUser and notified listeners.
+                        // Force a rebuild to show updated profile data
                         setState(() {});
-                        // Reload watched history in case user watched something
-                        _loadWatchedHistory();
+                        await _loadWatchedHistory();
                       }
                     },
                   ),
@@ -391,40 +458,10 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                     icon: Icons.settings,
                     title: 'Settings',
                     onTap: () {
-                      // Show settings dialog
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Settings'),
-                          content: Consumer<ThemeProvider>(
-                            builder: (context, themeProvider, child) {
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ListTile(
-                                    leading: Icon(
-                                      themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-                                      color: AppColors.primaryColor,
-                                    ),
-                                    title: const Text('Dark Mode'),
-                                    trailing: Switch(
-                                      value: themeProvider.isDarkMode,
-                                      onChanged: (value) {
-                                        themeProvider.toggleDarkMode();
-                                      },
-                                      activeColor: AppColors.primaryColor,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Close'),
-                            ),
-                          ],
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const MobileSettingsScreen(),
                         ),
                       );
                     },
@@ -438,6 +475,9 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                     onTap: () => _handleLogout(context),
                     isDestructive: true,
                   ),
+                  
+                  // Add bottom padding to prevent overflow
+                  const SizedBox(height: AppDim.paddingMedium),
                 ],
               ),
             );
@@ -502,8 +542,9 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
           },
           borderRadius: BorderRadius.circular(12),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min, // Avoid forcing extra height that can cause overflow
+          children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                 child: ImageWithPlaceholder(

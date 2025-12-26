@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_dim.dart';
 import '../../../models/series.dart';
+import '../../../models/season.dart';
 import '../../../providers/actor_provider.dart';
 import '../../../services/api_service.dart';
 import '../../../providers/auth_provider.dart';
@@ -46,6 +47,9 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
   List<Genre> _availableGenres = []; // Changed to Genre objects
   bool _isLoading = false;
   bool _isLoadingGenres = false;
+  
+  // Seasons and Episodes management
+  List<_SeasonData> _seasons = []; // List of seasons with their episodes
 
   @override
   void initState() {
@@ -53,6 +57,10 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
     _loadActors();
     _loadGenres();
     _initializeForm();
+    // If editing, fetch fresh seasons data from API
+    if (widget.series != null) {
+      _loadSeasonsFromAPI();
+    }
   }
 
   /// Initialize form with existing data if in edit mode
@@ -77,6 +85,43 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       
       // Set selected actors
       _selectedActors = List.from(series.actors);
+      
+      // Load seasons and episodes
+      if (series.seasons.isNotEmpty) {
+        _seasons = series.seasons.map((season) {
+          final seasonData = _SeasonData(
+            id: season.id,
+            seasonNumber: season.seasonNumber,
+            titleController: TextEditingController(text: season.title),
+            descriptionController: TextEditingController(text: season.description ?? ''),
+            releaseDate: season.releaseDate,
+            releaseDateController: TextEditingController(
+              text: season.releaseDate != null ? _formatDate(season.releaseDate!) : '',
+            ),
+            episodes: season.episodes.map((episode) {
+              return _EpisodeData(
+                id: episode.id,
+                episodeNumber: episode.episodeNumber,
+                titleController: TextEditingController(text: episode.title),
+                descriptionController: TextEditingController(text: episode.description ?? ''),
+                airDate: episode.airDate,
+                airDateController: TextEditingController(
+                  text: episode.airDate != null ? _formatDate(episode.airDate!) : '',
+                ),
+                durationMinutes: episode.durationMinutes,
+                durationController: TextEditingController(
+                  text: episode.durationMinutes?.toString() ?? '',
+                ),
+                rating: episode.rating,
+                ratingController: TextEditingController(
+                  text: episode.rating?.toString() ?? '',
+                ),
+              );
+            }).toList(),
+          );
+          return seasonData;
+        }).toList();
+      }
     }
   }
 
@@ -127,6 +172,122 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
           _isLoadingGenres = false;
         });
       }
+    }
+  }
+
+  /// Load seasons from API for the series being edited
+  Future<void> _loadSeasonsFromAPI() async {
+    if (widget.series == null) return;
+    
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final apiService = ApiService();
+      final token = authProvider.token;
+
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      final response = await apiService.get('/Season/series/${widget.series!.id}', token: token);
+      
+      if (response is List) {
+        final seasons = response
+            .map((item) => Season.fromJson(item as Map<String, dynamic>))
+            .toList();
+        
+        // Update _seasons with fresh data from API
+        setState(() {
+          _seasons = seasons.map((season) {
+            // Check if this season already exists in _seasons (by ID)
+            final existingSeasonIndex = _seasons.indexWhere((s) => s.id == season.id);
+            if (existingSeasonIndex >= 0) {
+              // Update existing season data but keep controllers
+              final existing = _seasons[existingSeasonIndex];
+              return _SeasonData(
+                id: season.id,
+                seasonNumber: season.seasonNumber,
+                titleController: existing.titleController,
+                descriptionController: existing.descriptionController,
+                releaseDate: season.releaseDate,
+                releaseDateController: existing.releaseDateController,
+                episodes: season.episodes.map((episode) {
+                  final existingEpisodeIndex = existing.episodes.indexWhere((e) => e.id == episode.id);
+                  if (existingEpisodeIndex >= 0) {
+                    final existingEpisode = existing.episodes[existingEpisodeIndex];
+                    return _EpisodeData(
+                      id: episode.id,
+                      episodeNumber: episode.episodeNumber,
+                      titleController: existingEpisode.titleController,
+                      descriptionController: existingEpisode.descriptionController,
+                      airDate: episode.airDate,
+                      airDateController: existingEpisode.airDateController,
+                      durationMinutes: episode.durationMinutes,
+                      durationController: existingEpisode.durationController,
+                      rating: episode.rating,
+                      ratingController: existingEpisode.ratingController,
+                    );
+                  } else {
+                    // New episode from API
+                    return _EpisodeData(
+                      id: episode.id,
+                      episodeNumber: episode.episodeNumber,
+                      titleController: TextEditingController(text: episode.title),
+                      descriptionController: TextEditingController(text: episode.description ?? ''),
+                      airDate: episode.airDate,
+                      airDateController: TextEditingController(
+                        text: episode.airDate != null ? _formatDate(episode.airDate!) : '',
+                      ),
+                      durationMinutes: episode.durationMinutes,
+                      durationController: TextEditingController(
+                        text: episode.durationMinutes?.toString() ?? '',
+                      ),
+                      rating: episode.rating,
+                      ratingController: TextEditingController(
+                        text: episode.rating?.toString() ?? '',
+                      ),
+                    );
+                  }
+                }).toList(),
+              );
+            } else {
+              // New season from API
+              return _SeasonData(
+                id: season.id,
+                seasonNumber: season.seasonNumber,
+                titleController: TextEditingController(text: season.title),
+                descriptionController: TextEditingController(text: season.description ?? ''),
+                releaseDate: season.releaseDate,
+                releaseDateController: TextEditingController(
+                  text: season.releaseDate != null ? _formatDate(season.releaseDate!) : '',
+                ),
+                episodes: season.episodes.map((episode) {
+                  return _EpisodeData(
+                    id: episode.id,
+                    episodeNumber: episode.episodeNumber,
+                    titleController: TextEditingController(text: episode.title),
+                    descriptionController: TextEditingController(text: episode.description ?? ''),
+                    airDate: episode.airDate,
+                    airDateController: TextEditingController(
+                      text: episode.airDate != null ? _formatDate(episode.airDate!) : '',
+                    ),
+                    durationMinutes: episode.durationMinutes,
+                    durationController: TextEditingController(
+                      text: episode.durationMinutes?.toString() ?? '',
+                    ),
+                    rating: episode.rating,
+                    ratingController: TextEditingController(
+                      text: episode.rating?.toString() ?? '',
+                    ),
+                  );
+                }).toList(),
+              );
+            }
+          }).toList();
+        });
+      }
+    } catch (e) {
+      print('Error loading seasons from API: $e');
+      // Don't show error to user - fall back to seasons from series object
     }
   }
 
@@ -189,7 +350,7 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       context: context,
       builder: (context) => _ActorMultiSelectDialog(
         availableActors: _availableActors,
-        selectedActors: _selectedActors,
+        selectedActors: List.from(_selectedActors),
       ),
     );
 
@@ -203,9 +364,14 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
   /// Pick and upload image file
   Future<void> _pickAndUploadImage() async {
     try {
+      print('📸 Starting image pick...');
       final result = await FilePickerHelper.pickImage();
-      if (result == null) return; // User cancelled
+      if (result == null) {
+        print('❌ User cancelled file picker');
+        return; // User cancelled
+      }
 
+      print('✅ File picked successfully');
       setState(() {
         _isUploadingImage = true;
       });
@@ -215,17 +381,19 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       final token = authProvider.token;
 
       if (token == null || token.isEmpty) {
-        throw Exception('Authentication required');
+        throw Exception('Authentication required. Please log in again.');
       }
 
+      print('🔐 Token available, starting upload...');
       dynamic uploadResponse;
 
       if (FilePickerHelper.isWeb) {
         // Web: use bytes
         final bytes = FilePickerHelper.getBytes(result);
         final fileName = FilePickerHelper.getFileName(result);
+        print('🌐 Web platform - bytes: ${bytes?.length ?? 0}, fileName: $fileName');
         if (bytes == null || fileName == null) {
-          throw Exception('Failed to read file');
+          throw Exception('Failed to read file. Please try again.');
         }
         uploadResponse = await apiService.uploadFileFromBytes(
           '/ImageUpload/upload',
@@ -237,9 +405,19 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       } else {
         // Desktop/Mobile: use File
         final file = FilePickerHelper.getFile(result);
+        print('💻 Desktop/Mobile platform - file: ${file?.path ?? "null"}');
         if (file == null) {
-          throw Exception('Failed to read file');
+          throw Exception('Failed to read file. Please try selecting the file again.');
         }
+        
+        // Check if file exists and is readable
+        if (!await file.exists()) {
+          throw Exception('Selected file does not exist. Please try again.');
+        }
+        
+        final fileSize = await file.length();
+        print('📁 File size: $fileSize bytes');
+        
         uploadResponse = await apiService.uploadFile(
           '/ImageUpload/upload',
           file,
@@ -248,26 +426,43 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
         );
       }
 
+      print('📥 Upload response: $uploadResponse');
+      
       if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
+        final imageUrl = uploadResponse['imageUrl'] as String;
+        print('✅ Image uploaded successfully: $imageUrl');
         setState(() {
-          _uploadedImageUrl = uploadResponse['imageUrl'] as String;
+          _uploadedImageUrl = imageUrl;
           _isUploadingImage = false;
         });
-        // Image is uploaded and ready, but not saved to series yet
-        // Success message will show only after clicking "Update"
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Image uploaded successfully'),
+              backgroundColor: AppColors.successColor,
+            ),
+          );
+        }
       } else {
-        throw Exception('Invalid response from server');
+        print('❌ Invalid response: $uploadResponse');
+        throw Exception('Invalid response from server. Response: ${uploadResponse?.toString() ?? "null"}');
       }
     } catch (e) {
-      print('Error uploading image: $e');
+      print('❌ Error uploading image: $e');
+      print('   Error type: ${e.runtimeType}');
+      if (e is Exception) {
+        print('   Exception message: ${e.toString()}');
+      }
       if (mounted) {
         setState(() {
           _isUploadingImage = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error uploading image: $e'),
+            content: Text('Error uploading image: ${e.toString()}'),
             backgroundColor: AppColors.dangerColor,
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -336,9 +531,11 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       print('💾 Saving series with imageUrl: ${seriesData['imageUrl']}');
       print('💾 Full series data: $seriesData');
 
+      int? seriesId;
       if (widget.series == null) {
         // Create new series
-        await adminSeriesProvider.createSeries(seriesData);
+        final createdSeries = await adminSeriesProvider.createSeries(seriesData);
+        seriesId = createdSeries.id;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -349,7 +546,7 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
         }
       } else {
         // Update existing series - ensure correct ID is passed
-        final seriesId = widget.series!.id;
+        seriesId = widget.series!.id;
         await adminSeriesProvider.updateSeries(seriesId, seriesData);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -359,6 +556,11 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
             ),
           );
         }
+      }
+
+      // Save seasons and episodes if series was created/updated successfully
+      if (seriesId != null && _seasons.isNotEmpty) {
+        await _saveSeasonsAndEpisodes(seriesId);
       }
 
       if (mounted) {
@@ -383,12 +585,601 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
     }
   }
 
+  /// Save seasons and episodes for a series
+  Future<void> _saveSeasonsAndEpisodes(int seriesId) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final apiService = ApiService();
+    final token = authProvider.token;
+
+    if (token == null || token.isEmpty) {
+      throw Exception('Authentication required');
+    }
+
+    try {
+      for (var seasonData in _seasons) {
+        int? seasonId = seasonData.id;
+        
+        // Create or update season
+        final seasonPayload = {
+          'seriesId': seriesId,
+          'seasonNumber': seasonData.seasonNumber,
+          'title': seasonData.titleController.text.trim(),
+          'description': seasonData.descriptionController.text.trim().isEmpty 
+              ? null 
+              : seasonData.descriptionController.text.trim(),
+          'releaseDate': seasonData.releaseDate?.toIso8601String(),
+        };
+
+        if (seasonId == null) {
+          // Create new season
+          final response = await apiService.post('/Season', seasonPayload, token: token);
+          if (response is Map<String, dynamic>) {
+            seasonId = response['id'] as int?;
+          }
+        } else {
+          // Update existing season
+          await apiService.put('/Season/$seasonId', seasonPayload, token: token);
+        }
+
+        if (seasonId == null) continue;
+
+        // Save episodes for this season
+        for (var episodeData in seasonData.episodes) {
+          final episodePayload = {
+            'seasonId': seasonId,
+            'episodeNumber': episodeData.episodeNumber,
+            'title': episodeData.titleController.text.trim(),
+            'description': episodeData.descriptionController.text.trim().isEmpty 
+                ? null 
+                : episodeData.descriptionController.text.trim(),
+            'airDate': episodeData.airDate?.toIso8601String(),
+            'durationMinutes': episodeData.durationMinutes,
+            'rating': episodeData.rating,
+          };
+
+          if (episodeData.id == null) {
+            // Create new episode
+            await apiService.post('/Episode', episodePayload, token: token);
+          } else {
+            // Update existing episode
+            await apiService.put('/Episode/${episodeData.id}', episodePayload, token: token);
+          }
+        }
+      }
+    } catch (e) {
+      print('Error saving seasons/episodes: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Series saved, but error saving seasons/episodes: $e'),
+            backgroundColor: AppColors.dangerColor,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Add a new season
+  void _addSeason() {
+    setState(() {
+      // Calculate next season number based on existing seasons
+      // Use the highest season number + 1, or 1 if no seasons exist
+      final nextSeasonNumber = _seasons.isEmpty 
+          ? 1 
+          : (_seasons.map((s) => s.seasonNumber).reduce((a, b) => a > b ? a : b)) + 1;
+      
+      _seasons.add(_SeasonData(
+        seasonNumber: nextSeasonNumber,
+        titleController: TextEditingController(text: 'Season $nextSeasonNumber'),
+        descriptionController: TextEditingController(),
+        releaseDateController: TextEditingController(),
+        episodes: [],
+      ));
+    });
+  }
+
+  /// Remove a season
+  void _removeSeason(int index) {
+    setState(() {
+      final season = _seasons[index];
+      // Dispose controllers
+      season.titleController.dispose();
+      season.descriptionController.dispose();
+      season.releaseDateController.dispose();
+      for (var episode in season.episodes) {
+        episode.titleController.dispose();
+        episode.descriptionController.dispose();
+        episode.airDateController.dispose();
+        episode.durationController.dispose();
+        episode.ratingController.dispose();
+      }
+      _seasons.removeAt(index);
+      // Renumber remaining seasons
+      for (int i = 0; i < _seasons.length; i++) {
+        _seasons[i].seasonNumber = i + 1;
+      }
+    });
+  }
+
+  /// Add an episode to a season
+  void _addEpisode(int seasonIndex) {
+    setState(() {
+      final season = _seasons[seasonIndex];
+      final nextEpisodeNumber = season.episodes.isEmpty 
+          ? 1 
+          : season.episodes.map((e) => e.episodeNumber).reduce((a, b) => a > b ? a : b) + 1;
+      season.episodes.add(_EpisodeData(
+        episodeNumber: nextEpisodeNumber,
+        titleController: TextEditingController(text: 'Episode $nextEpisodeNumber'),
+        descriptionController: TextEditingController(),
+        airDateController: TextEditingController(),
+        durationController: TextEditingController(),
+        ratingController: TextEditingController(),
+      ));
+    });
+  }
+
+  /// Remove an episode from a season
+  void _removeEpisode(int seasonIndex, int episodeIndex) {
+    setState(() {
+      final season = _seasons[seasonIndex];
+      final episode = season.episodes[episodeIndex];
+      // Dispose controllers
+      episode.titleController.dispose();
+      episode.descriptionController.dispose();
+      episode.airDateController.dispose();
+      episode.durationController.dispose();
+      episode.ratingController.dispose();
+      season.episodes.removeAt(episodeIndex);
+      // Renumber remaining episodes
+      for (int i = 0; i < season.episodes.length; i++) {
+        season.episodes[i].episodeNumber = i + 1;
+      }
+    });
+  }
+
+  /// Select release date for a season
+  Future<void> _selectSeasonDate(int seasonIndex) async {
+    final season = _seasons[seasonIndex];
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: season.releaseDate ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 10)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppColors.primaryColor,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        season.releaseDate = picked;
+        season.releaseDateController.text = _formatDate(picked);
+      });
+    }
+  }
+
+  /// Select air date for an episode
+  Future<void> _selectEpisodeDate(int seasonIndex, int episodeIndex) async {
+    final episode = _seasons[seasonIndex].episodes[episodeIndex];
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: episode.airDate ?? DateTime.now(),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 10)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: AppColors.primaryColor,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        episode.airDate = picked;
+        episode.airDateController.text = _formatDate(picked);
+      });
+    }
+  }
+
+  /// Build the seasons and episodes management section
+  Widget _buildSeasonsAndEpisodesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Seasons & Episodes',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: _addSeason,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add Season'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primaryColor,
+                foregroundColor: AppColors.textLight,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppDim.paddingMedium,
+                  vertical: AppDim.paddingSmall,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppDim.paddingMedium),
+        if (_seasons.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(AppDim.paddingLarge),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.textSecondary.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+            ),
+            child: Center(
+              child: Text(
+                'No seasons added. Click "Add Season" to get started.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          )
+        else
+          ...List.generate(_seasons.length, (seasonIndex) {
+            return _buildSeasonCard(seasonIndex);
+          }),
+      ],
+    );
+  }
+
+  /// Build a card for a single season with its episodes
+  Widget _buildSeasonCard(int seasonIndex) {
+    final season = _seasons[seasonIndex];
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppDim.paddingMedium),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        title: Text(
+          'Season ${season.seasonNumber}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          '${season.episodes.length} episode${season.episodes.length != 1 ? 's' : ''}',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        leading: Icon(Icons.tv, color: AppColors.primaryColor),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.delete, color: AppColors.dangerColor),
+              onPressed: () => _removeSeason(seasonIndex),
+              tooltip: 'Remove Season',
+            ),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppDim.paddingMedium),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Season Title
+                TextFormField(
+                  controller: season.titleController,
+                  decoration: InputDecoration(
+                    labelText: 'Season Title *',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
+                  ),
+                  style: TextStyle(color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: AppDim.paddingMedium),
+                // Season Description
+                TextFormField(
+                  controller: season.descriptionController,
+                  decoration: InputDecoration(
+                    labelText: 'Season Description',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
+                  ),
+                  style: TextStyle(color: AppColors.textPrimary),
+                  maxLines: 2,
+                ),
+                const SizedBox(height: AppDim.paddingMedium),
+                // Season Release Date
+                TextFormField(
+                  controller: season.releaseDateController,
+                  decoration: InputDecoration(
+                    labelText: 'Season Release Date',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                      borderSide: BorderSide(color: AppColors.primaryColor),
+                    ),
+                    suffixIcon: Icon(Icons.calendar_today, color: AppColors.primaryColor),
+                  ),
+                  style: TextStyle(color: AppColors.textPrimary),
+                  readOnly: true,
+                  onTap: () => _selectSeasonDate(seasonIndex),
+                ),
+                const SizedBox(height: AppDim.paddingLarge),
+                // Episodes section
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Episodes',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: () => _addEpisode(seasonIndex),
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('Add Episode'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        foregroundColor: AppColors.textLight,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppDim.paddingSmall,
+                          vertical: 8,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppDim.paddingSmall),
+                if (season.episodes.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(AppDim.paddingMedium),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: AppColors.textSecondary.withOpacity(0.2)),
+                      borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'No episodes. Click "Add Episode" to add one.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontStyle: FontStyle.italic,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  ...List.generate(season.episodes.length, (episodeIndex) {
+                    return _buildEpisodeCard(seasonIndex, episodeIndex);
+                  }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build a card for a single episode
+  Widget _buildEpisodeCard(int seasonIndex, int episodeIndex) {
+    final episode = _seasons[seasonIndex].episodes[episodeIndex];
+    return Card(
+      margin: const EdgeInsets.only(bottom: AppDim.paddingSmall),
+      color: AppColors.cardBackground.withOpacity(0.5),
+      child: Padding(
+        padding: const EdgeInsets.all(AppDim.paddingMedium),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Episode ${episode.episodeNumber}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 18, color: AppColors.dangerColor),
+                  onPressed: () => _removeEpisode(seasonIndex, episodeIndex),
+                  tooltip: 'Remove Episode',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppDim.paddingSmall),
+            // Episode Title
+            TextFormField(
+              controller: episode.titleController,
+              decoration: InputDecoration(
+                labelText: 'Episode Title *',
+                labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                  borderSide: BorderSide(color: AppColors.primaryColor),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            ),
+            const SizedBox(height: AppDim.paddingSmall),
+            // Episode Description
+            TextFormField(
+              controller: episode.descriptionController,
+              decoration: InputDecoration(
+                labelText: 'Description',
+                labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                  borderSide: BorderSide(color: AppColors.primaryColor),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+              ),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              maxLines: 2,
+            ),
+            const SizedBox(height: AppDim.paddingSmall),
+            // Episode details row
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: episode.airDateController,
+                    decoration: InputDecoration(
+                      labelText: 'Air Date',
+                      labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      suffixIcon: Icon(Icons.calendar_today, size: 16, color: AppColors.primaryColor),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    readOnly: true,
+                    onTap: () => _selectEpisodeDate(seasonIndex, episodeIndex),
+                  ),
+                ),
+                const SizedBox(width: AppDim.paddingSmall),
+                Expanded(
+                  child: TextFormField(
+                    controller: episode.durationController,
+                    decoration: InputDecoration(
+                      labelText: 'Duration (min)',
+                      labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    onChanged: (value) {
+                      episode.durationMinutes = int.tryParse(value);
+                    },
+                  ),
+                ),
+                const SizedBox(width: AppDim.paddingSmall),
+                Expanded(
+                  child: TextFormField(
+                    controller: episode.ratingController,
+                    decoration: InputDecoration(
+                      labelText: 'Rating (0-10)',
+                      labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
+                        borderSide: BorderSide(color: AppColors.primaryColor),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                    ),
+                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                    ],
+                    onChanged: (value) {
+                      episode.rating = double.tryParse(value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
     _ratingController.dispose();
     _releaseDateController.dispose();
+    for (var season in _seasons) {
+      season.titleController.dispose();
+      season.descriptionController.dispose();
+      season.releaseDateController.dispose();
+      for (var episode in season.episodes) {
+        episode.titleController.dispose();
+        episode.descriptionController.dispose();
+        episode.airDateController.dispose();
+        episode.durationController.dispose();
+        episode.ratingController.dispose();
+      }
+    }
     super.dispose();
   }
 
@@ -559,6 +1350,10 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
                           return null;
                         },
                       ),
+                      const SizedBox(height: AppDim.paddingMedium),
+
+                      // Seasons and Episodes Management
+                      _buildSeasonsAndEpisodesSection(),
                       const SizedBox(height: AppDim.paddingMedium),
 
                       // Image upload field
@@ -866,6 +1661,7 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       ),
     );
   }
+
 }
 
 /// Dialog for selecting multiple actors
@@ -883,21 +1679,23 @@ class _ActorMultiSelectDialog extends StatefulWidget {
 }
 
 class _ActorMultiSelectDialogState extends State<_ActorMultiSelectDialog> {
-  late List<Actor> _selectedActors;
   final _searchController = TextEditingController();
-  List<Actor> _filteredActors = [];
+  late List<Actor> _filteredActors;
+  late List<Actor> _selectedActors;
 
   @override
   void initState() {
     super.initState();
     _selectedActors = List.from(widget.selectedActors);
-    _filteredActors = widget.availableActors;
+    _filteredActors = List.from(widget.availableActors);
+    _searchController.addListener(_filterActors);
   }
 
-  void _filterActors(String query) {
+  void _filterActors() {
+    final query = _searchController.text;
     setState(() {
       if (query.isEmpty) {
-        _filteredActors = widget.availableActors;
+        _filteredActors = List.from(widget.availableActors);
       } else {
         _filteredActors = widget.availableActors
             .where((actor) =>
@@ -965,7 +1763,6 @@ class _ActorMultiSelectDialogState extends State<_ActorMultiSelectDialog> {
                 ),
               ),
               style: TextStyle(color: AppColors.textPrimary),
-              onChanged: _filterActors,
             ),
             const SizedBox(height: AppDim.paddingMedium),
 
@@ -988,7 +1785,7 @@ class _ActorMultiSelectDialogState extends State<_ActorMultiSelectDialog> {
                 itemCount: _filteredActors.length,
                 itemBuilder: (context, index) {
                   final actor = _filteredActors[index];
-                  final isSelected = _selectedActors.contains(actor);
+                  final isSelected = _selectedActors.any((a) => a.id == actor.id);
 
                   return CheckboxListTile(
                     title: Text(
@@ -1006,7 +1803,7 @@ class _ActorMultiSelectDialogState extends State<_ActorMultiSelectDialog> {
                         if (value == true) {
                           _selectedActors.add(actor);
                         } else {
-                          _selectedActors.remove(actor);
+                          _selectedActors.removeWhere((a) => a.id == actor.id);
                         }
                       });
                     },
@@ -1050,4 +1847,52 @@ class _ActorMultiSelectDialogState extends State<_ActorMultiSelectDialog> {
     _searchController.dispose();
     super.dispose();
   }
+}
+
+/// Helper class to hold season data with episodes
+class _SeasonData {
+  int? id; // null for new seasons
+  int seasonNumber;
+  TextEditingController titleController;
+  TextEditingController descriptionController;
+  DateTime? releaseDate;
+  TextEditingController releaseDateController;
+  List<_EpisodeData> episodes;
+
+  _SeasonData({
+    this.id,
+    required this.seasonNumber,
+    required this.titleController,
+    required this.descriptionController,
+    this.releaseDate,
+    required this.releaseDateController,
+    required this.episodes,
+  });
+}
+
+/// Helper class to hold episode data
+class _EpisodeData {
+  int? id; // null for new episodes
+  int episodeNumber;
+  TextEditingController titleController;
+  TextEditingController descriptionController;
+  DateTime? airDate;
+  TextEditingController airDateController;
+  int? durationMinutes;
+  TextEditingController durationController;
+  double? rating;
+  TextEditingController ratingController;
+
+  _EpisodeData({
+    this.id,
+    required this.episodeNumber,
+    required this.titleController,
+    required this.descriptionController,
+    this.airDate,
+    required this.airDateController,
+    this.durationMinutes,
+    required this.durationController,
+    this.rating,
+    required this.ratingController,
+  });
 }

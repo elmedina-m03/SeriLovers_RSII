@@ -23,6 +23,12 @@ class AdminChallengeProvider extends ChangeNotifier {
   /// Whether summary is loading
   bool isLoadingSummary = false;
 
+  /// User challenge progress list
+  List<Map<String, dynamic>> userProgress = [];
+
+  /// Whether user progress is loading
+  bool isLoadingProgress = false;
+
   /// Creates an AdminChallengeProvider instance
   /// 
   /// [apiService] - Service for making API requests
@@ -214,6 +220,40 @@ class AdminChallengeProvider extends ChangeNotifier {
       isLoadingSummary = false;
       notifyListeners();
       print('❌ AdminChallengeProvider: Error fetching summary: $e');
+      rethrow;
+    }
+  }
+
+  /// Fetches all user challenge progress from the API
+  /// 
+  /// Updates [userProgress] and [isLoadingProgress] state.
+  /// Notifies listeners on completion or error.
+  Future<void> fetchUserProgress() async {
+    isLoadingProgress = true;
+    notifyListeners();
+
+    try {
+      final token = _authProvider.token;
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      final response = await _apiService.get('/Admin/Challenges/progress', token: token);
+      
+      if (response is List) {
+        userProgress = response
+            .map((item) => item as Map<String, dynamic>)
+            .toList();
+      } else {
+        throw Exception('Invalid response format from server');
+      }
+
+      isLoadingProgress = false;
+      notifyListeners();
+    } catch (e) {
+      isLoadingProgress = false;
+      notifyListeners();
+      print('❌ AdminChallengeProvider: Error fetching user progress: $e');
       rethrow;
     }
   }

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// - Full horizontal scrolling
 /// - Automatic pagination when reaching the end
 /// - Smooth scrolling physics
-/// - Loading indicator at the end when loading more
+/// - Loading indicator at the end when loading more items
 class HorizontalPaginatedList<T> extends StatefulWidget {
   /// List of items to display
   final List<T> items;

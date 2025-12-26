@@ -40,6 +40,10 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
     setState(() {
       _currentIndex = index;
     });
+    // Trigger refresh when switching tabs (especially for profile, statistics, status)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Refresh logic will be handled by individual screens via didChangeDependencies
+    });
   }
 
   @override

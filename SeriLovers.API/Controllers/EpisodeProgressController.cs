@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Data;
+using SeriLovers.API.Events;
+using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
+using SeriLovers.API.Services;
 using Swashbuckle.AspNetCore.Annotations;
 using System;
 using System.Collections.Generic;
@@ -23,15 +26,21 @@ namespace SeriLovers.API.Controllers
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly UserManager<ApplicationUser> _userManager;
+        private readonly ChallengeService _challengeService;
+        private readonly IMessageBusService _messageBusService;
 
         public EpisodeProgressController(
             ApplicationDbContext context,
             IMapper mapper,
-            UserManager<ApplicationUser> userManager)
+            UserManager<ApplicationUser> userManager,
+            ChallengeService challengeService,
+            IMessageBusService messageBusService)
         {
             _context = context;
             _mapper = mapper;
             _userManager = userManager;
+            _challengeService = challengeService;
+            _messageBusService = messageBusService;
         }
 
         private async Task<int?> GetCurrentUserIdAsync()
@@ -132,6 +141,49 @@ namespace SeriLovers.API.Controllers
 
             await _context.SaveChangesAsync();
 
+            // Update challenge progress based on real watched data
+            if (currentUserId.HasValue)
+            {
+                try
+                {
+                    await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+                }
+                catch (Exception ex)
+                {
+                    // Log error but don't fail the request
+                    // Challenge progress update is not critical for marking episode as watched
+                    Console.WriteLine($"Error updating challenge progress: {ex.Message}");
+                }
+
+                // Publish EpisodeWatchedEvent (decoupled from main request flow)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var user = await _userManager.FindByIdAsync(currentUserId.Value.ToString());
+                        var episodeWatchedEvent = new EpisodeWatchedEvent
+                        {
+                            EpisodeId = episode.Id,
+                            EpisodeNumber = episode.EpisodeNumber,
+                            SeasonId = episode.SeasonId,
+                            SeasonNumber = episode.Season?.SeasonNumber ?? 0,
+                            SeriesId = episode.Season?.SeriesId ?? 0,
+                            SeriesTitle = episode.Season?.Series?.Title ?? "Unknown",
+                            UserId = currentUserId.Value,
+                            UserName = user?.UserName ?? user?.Email ?? "Unknown",
+                            IsCompleted = dto.IsCompleted,
+                            WatchedAt = DateTime.UtcNow
+                        };
+                        await _messageBusService.PublishEventAsync(episodeWatchedEvent);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log but don't fail the request
+                        Console.WriteLine($"Error publishing EpisodeWatchedEvent: {ex.Message}");
+                    }
+                });
+            }
+
             // Return updated progress
             var updatedProgress = await _context.EpisodeProgresses
                 .Include(ep => ep.User)
@@ -167,16 +219,24 @@ namespace SeriLovers.API.Controllers
                 return NotFound(new { message = $"Series with ID {seriesId} not found." });
             }
 
-            // Get all watched episodes for this series
-            var watchedEpisodeIds = await _context.EpisodeProgresses
-                .Where(ep => ep.UserId == currentUserId.Value && ep.IsCompleted)
-                .Select(ep => ep.EpisodeId)
-                .ToListAsync();
-
+            // Calculate total episodes: Sum ALL episodes across ALL seasons
+            // Example: 3 seasons × 5 episodes each = 15 total episodes
             var totalEpisodes = series.Seasons.Sum(s => s.Episodes.Count);
-            var watchedEpisodes = series.Seasons
+            
+            // Get all episode IDs for this series (across all seasons)
+            var seriesEpisodeIds = series.Seasons
                 .SelectMany(s => s.Episodes)
-                .Count(e => watchedEpisodeIds.Contains(e.Id));
+                .Select(e => e.Id)
+                .ToList();
+
+            // Count watched episodes: Get all watched episodes for THIS series only
+            // This correctly sums watched episodes across ALL seasons
+            // Example: If user watched seasons 1-2 (10 episodes), watchedEpisodes = 10
+            var watchedEpisodes = await _context.EpisodeProgresses
+                .Where(ep => ep.UserId == currentUserId.Value && 
+                            ep.IsCompleted &&
+                            seriesEpisodeIds.Contains(ep.EpisodeId))
+                .CountAsync();
 
             // Find current episode (last watched)
             var lastWatched = await _context.EpisodeProgresses

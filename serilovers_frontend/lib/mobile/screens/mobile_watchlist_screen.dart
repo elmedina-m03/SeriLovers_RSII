@@ -6,6 +6,9 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../models/series.dart';
 import '../../core/widgets/image_with_placeholder.dart';
+import '../widgets/mobile_page_route.dart';
+import 'mobile_series_detail_screen.dart';
+import '../../screens/my_lists_screen.dart';
 
 /// Mobile watchlist screen displaying watchlist items with poster thumbnails
 class MobileWatchlistScreen extends StatefulWidget {
@@ -16,12 +19,30 @@ class MobileWatchlistScreen extends StatefulWidget {
 }
 
 class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
+  DateTime? _lastLoadTime;
+  static const _cacheTimeout = Duration(seconds: 5); // Cache for 5 seconds
+
   @override
   void initState() {
     super.initState();
     // Load watchlist when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadWatchlist();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final now = DateTime.now();
+        if (_lastLoadTime == null || 
+            now.difference(_lastLoadTime!) > _cacheTimeout) {
+          _loadWatchlist();
+        }
+      }
     });
   }
 
@@ -33,6 +54,11 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
     if (token != null && token.isNotEmpty) {
       try {
         await watchlistProvider.fetchWatchlist(token);
+        if (mounted) {
+          setState(() {
+            _lastLoadTime = DateTime.now();
+          });
+        }
       } catch (error) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -67,6 +93,8 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
 
     try {
       await watchlistProvider.removeFromWatchlist(series.id, token);
+      // Refresh watchlist to update UI immediately
+      await watchlistProvider.fetchWatchlist(token);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -80,6 +108,10 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
               onPressed: () async {
                 try {
                   await watchlistProvider.addToWatchlist(series.id);
+                  await watchlistProvider.fetchWatchlist(token);
+                  if (mounted) {
+                    setState(() {});
+                  }
                 } catch (e) {
                   // Ignore undo errors
                 }
@@ -87,6 +119,7 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
             ),
           ),
         );
+        setState(() {}); // Refresh UI
       }
     } catch (e) {
       if (mounted) {
@@ -117,7 +150,12 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
             icon: const Icon(Icons.folder),
             tooltip: 'My Lists',
             onPressed: () {
-              Navigator.pushNamed(context, '/my_lists');
+              Navigator.push(
+                context,
+                MobilePageRoute(
+                  builder: (context) => const MyListsScreen(),
+                ),
+              );
             },
           ),
         ],
@@ -242,10 +280,11 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
             tooltip: 'Remove from watchlist',
           ),
           onTap: () {
-            Navigator.pushNamed(
+            Navigator.push(
               context,
-              '/series_detail',
-              arguments: series,
+              MobilePageRoute(
+                builder: (context) => MobileSeriesDetailScreen(series: series),
+              ),
             );
           },
         ),

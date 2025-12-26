@@ -52,6 +52,7 @@ class EpisodeReviewService {
     required int episodeId,
     required int rating,
     String? reviewText,
+    bool isAnonymous = false,
     String? token,
   }) async {
     final response = await _apiService.post(
@@ -60,6 +61,7 @@ class EpisodeReviewService {
         'episodeId': episodeId,
         'rating': rating,
         if (reviewText != null && reviewText.isNotEmpty) 'reviewText': reviewText,
+        'isAnonymous': isAnonymous,
       },
       token: token,
     );
@@ -76,6 +78,7 @@ class EpisodeReviewService {
     required int reviewId,
     required int rating,
     String? reviewText,
+    bool isAnonymous = false,
     String? token,
   }) async {
     final response = await _apiService.put(
@@ -83,6 +86,7 @@ class EpisodeReviewService {
       {
         'rating': rating,
         if (reviewText != null && reviewText.isNotEmpty) 'reviewText': reviewText,
+        'isAnonymous': isAnonymous,
       },
       token: token,
     );
@@ -106,6 +110,22 @@ class EpisodeReviewService {
   Future<List<EpisodeReview>> getMyReviews({String? token}) async {
     final response = await _apiService.get(
       '/EpisodeReview/my-reviews',
+      token: token,
+    );
+
+    if (response is List) {
+      return response
+          .map((item) => EpisodeReview.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } else {
+      throw Exception('Invalid response format');
+    }
+  }
+
+  /// Get all reviews (Admin only)
+  Future<List<EpisodeReview>> getAllReviews({String? token}) async {
+    final response = await _apiService.get(
+      '/EpisodeReview/all',
       token: token,
     );
 

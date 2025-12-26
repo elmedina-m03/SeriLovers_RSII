@@ -18,6 +18,9 @@ class _MobileChallengesScreenState extends State<MobileChallengesScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isLoadingMore = false;
 
+  DateTime? _lastLoadTime;
+  static const _cacheTimeout = Duration(seconds: 10); // Cache for 10 seconds
+
   @override
   void initState() {
     super.initState();
@@ -27,6 +30,21 @@ class _MobileChallengesScreenState extends State<MobileChallengesScreen> {
 
     // Listen for scroll to implement pagination
     _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen (e.g., after completing a series)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isLoadingMore) {
+        final now = DateTime.now();
+        if (_lastLoadTime == null || 
+            now.difference(_lastLoadTime!) > _cacheTimeout) {
+          _loadChallenges();
+        }
+      }
+    });
   }
 
   @override
@@ -53,6 +71,12 @@ class _MobileChallengesScreenState extends State<MobileChallengesScreen> {
       if (authProvider.isAuthenticated) {
         await provider.fetchMyProgress();
       }
+      
+      if (mounted) {
+        setState(() {
+          _lastLoadTime = DateTime.now();
+        });
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -78,7 +102,6 @@ class _MobileChallengesScreenState extends State<MobileChallengesScreen> {
       await provider.fetchAvailableChallenges(page: nextPage);
     } catch (e) {
       // Silently fail for pagination
-      print('Error loading more challenges: $e');
     } finally {
       if (mounted) {
         setState(() {

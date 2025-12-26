@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import '../services/auth_service.dart';
 
 /// Provider for managing authentication state
@@ -13,6 +14,11 @@ class AuthProvider extends ChangeNotifier {
 
   /// Whether the user is currently authenticated
   bool isAuthenticated = false;
+
+  /// Cached user info from the backend (if provided in responses).
+  /// This allows the UI to reflect updated name/email/avatar immediately,
+  /// even if the JWT token does not contain all updated claims.
+  Map<String, dynamic>? currentUser;
 
   /// Creates an AuthProvider instance
   /// 
@@ -39,6 +45,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> initialize() async {
     token = await _authService.getToken();
     isAuthenticated = token != null && token!.isNotEmpty;
+    // Note: we don't attempt to decode the token here to populate [currentUser].
+    // User-specific fields will be populated from backend responses (e.g. profile update).
     notifyListeners();
   }
 
@@ -119,6 +127,7 @@ class AuthProvider extends ChangeNotifier {
     await _authService.deleteToken();
     token = null;
     isAuthenticated = false;
+    currentUser = null;
     notifyListeners();
   }
 
@@ -145,28 +154,65 @@ class AuthProvider extends ChangeNotifier {
       
       // Check if response contains a new token and save it
       if (response is Map<String, dynamic>) {
-        final newToken = response['token'] as String?;
+        print('📥 Profile update response: $response');
+        
+        // Cache updated user info FIRST if backend returns it
+        // This is the single source of truth for name/email/avatar after updates.
+        final userData = response['user'];
+        if (userData is Map<String, dynamic>) {
+          print('✅ User data in response: $userData');
+          print('✅ Name in response: ${userData['name']}');
+          currentUser = Map<String, dynamic>.from(userData);
+          print('✅ Updated currentUser: $currentUser');
+          print('✅ currentUser name: ${currentUser?['name']}');
+        } else {
+          print('⚠️ No user data in response, will try token decode');
+        }
+
+        // Try multiple possible token field names
+        final newToken = response['token'] as String? ?? 
+                        response['Token'] as String? ??
+                        response['accessToken'] as String? ?? 
+                        response['access_token'] as String? ?? 
+                        response['jwt'] as String?;
+        
         if (newToken != null && newToken.isNotEmpty) {
           // Save the new token (which includes updated user info)
           await _authService.saveToken(newToken);
           token = newToken;
           isAuthenticated = true;
+          
+          // If userData was not in response, decode from token as fallback
+          if (userData == null || userData is! Map<String, dynamic>) {
+            try {
+              final decoded = JwtDecoder.decode(token!);
+              currentUser = {
+                'email': decoded['email'] ?? '',
+                'name': decoded['name'] ?? '',
+                'avatarUrl': decoded['avatarUrl'],
+              };
+              print('✅ Decoded user from token: $currentUser');
+            } catch (e) {
+              print('❌ Token decode failed: $e');
+            }
+          }
         } else {
-          // Reload token from storage (in case it was refreshed)
+          // If no token in response, reload from storage
           token = await _authService.getToken();
           isAuthenticated = token != null && token!.isNotEmpty;
         }
+        
+        print('🔄 Notifying listeners with currentUser: $currentUser');
+        // Force notify listeners to update all UI components
+        notifyListeners();
+        return true;
       } else {
-        // Reload token from storage
-        token = await _authService.getToken();
-        isAuthenticated = token != null && token!.isNotEmpty;
+        // Invalid response format
+        throw Exception('Invalid response format from server');
       }
-      
-      notifyListeners();
-      return true;
     } catch (e) {
-      // Update failed, notify listeners anyway
-      notifyListeners();
+      // Update failed - don't notify listeners to avoid showing stale data
+      print('❌ Error updating user: $e');
       rethrow;
     }
   }

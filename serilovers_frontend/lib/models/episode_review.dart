@@ -14,6 +14,7 @@ class EpisodeReview {
   final String? reviewText;
   final DateTime createdAt;
   final DateTime? updatedAt;
+  final bool isAnonymous;
 
   EpisodeReview({
     required this.id,
@@ -31,6 +32,7 @@ class EpisodeReview {
     this.reviewText,
     required this.createdAt,
     this.updatedAt,
+    this.isAnonymous = false,
   });
 
   factory EpisodeReview.fromJson(Map<String, dynamic> json) {
@@ -52,6 +54,7 @@ class EpisodeReview {
       updatedAt: json['updatedAt'] != null 
           ? DateTime.parse(json['updatedAt'] as String) 
           : null,
+      isAnonymous: json['isAnonymous'] as bool? ?? false,
     );
   }
 
@@ -72,6 +75,7 @@ class EpisodeReview {
       'reviewText': reviewText,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
+      'isAnonymous': isAnonymous,
     };
   }
 }

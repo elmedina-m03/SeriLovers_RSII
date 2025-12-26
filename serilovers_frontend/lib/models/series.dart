@@ -13,6 +13,7 @@ class Series {
   final int watchlistsCount;
   final String? imageUrl;
   final List<Season> seasons;
+  final int? _totalEpisodesFromBackend; // Total episodes count from backend (if available)
 
   Series({
     required this.id,
@@ -26,7 +27,8 @@ class Series {
     required this.watchlistsCount,
     this.imageUrl,
     this.seasons = const [],
-  });
+    int? totalEpisodesFromBackend,
+  }) : _totalEpisodesFromBackend = totalEpisodesFromBackend;
 
 
   /// Creates a Series instance from JSON
@@ -45,6 +47,7 @@ class Series {
       ratingsCount: json['ratingsCount'] as int? ?? 0,
       watchlistsCount: json['watchlistsCount'] as int? ?? 0,
       imageUrl: json['imageUrl'] as String?,
+      totalEpisodesFromBackend: json['totalEpisodes'] as int?,
       seasons: (json['seasons'] as List<dynamic>?)
               ?.map((s) => Season.fromJson(s as Map<String, dynamic>))
               .toList() ??
@@ -70,8 +73,16 @@ class Series {
   }
 
   /// Get total number of episodes across all seasons
+  /// Uses backend totalEpisodes if available, otherwise calculates from seasons
+  /// Returns 0 if no seasons or episodes exist
   int get totalEpisodes {
-    return seasons.fold(0, (sum, season) => sum + season.episodes.length);
+    // If backend provided totalEpisodes, use it (more efficient and accurate)
+    if (_totalEpisodesFromBackend != null && _totalEpisodesFromBackend! >= 0) {
+      return _totalEpisodesFromBackend!;
+    }
+    // Otherwise calculate from seasons (fallback for backward compatibility or when seasons are loaded)
+    if (seasons.isEmpty) return 0;
+    return seasons.fold(0, (sum, season) => sum + (season.episodes.length));
   }
 
   /// Get total number of seasons

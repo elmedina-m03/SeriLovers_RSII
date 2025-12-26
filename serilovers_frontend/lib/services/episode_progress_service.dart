@@ -39,10 +39,49 @@ class EpisodeProgressService {
       token: token,
     );
 
+    // Handle null or empty response (API returns 200 OK but no data)
+    if (response == null) {
+      // Return empty progress object with default values
+      return SeriesProgress(
+        seriesId: seriesId,
+        totalEpisodes: 0,
+        watchedEpisodes: 0,
+        currentEpisodeNumber: 0,
+        currentSeasonNumber: 0,
+        progressPercentage: 0.0,
+      );
+    }
+
     if (response is Map<String, dynamic>) {
-      return SeriesProgress.fromJson(response);
+      // Handle empty map (API returns 200 OK with empty object)
+      if (response.isEmpty) {
+        return SeriesProgress(
+          seriesId: seriesId,
+          totalEpisodes: 0,
+          watchedEpisodes: 0,
+          currentEpisodeNumber: 0,
+          currentSeasonNumber: 0,
+          progressPercentage: 0.0,
+        );
+      }
+      
+      // Try to parse the response, but handle missing fields gracefully
+      try {
+        return SeriesProgress.fromJson(response);
+      } catch (e) {
+        // If JSON parsing fails (e.g., missing required fields), return empty progress
+        // This handles cases where API returns 200 OK but with incomplete data
+        return SeriesProgress(
+          seriesId: seriesId,
+          totalEpisodes: response['totalEpisodes'] as int? ?? 0,
+          watchedEpisodes: response['watchedEpisodes'] as int? ?? 0,
+          currentEpisodeNumber: response['currentEpisodeNumber'] as int? ?? 0,
+          currentSeasonNumber: response['currentSeasonNumber'] as int? ?? 0,
+          progressPercentage: (response['progressPercentage'] as num?)?.toDouble() ?? 0.0,
+        );
+      }
     } else {
-      throw Exception('Invalid response format');
+      throw Exception('Invalid response format: expected Map, got ${response.runtimeType}');
     }
   }
 

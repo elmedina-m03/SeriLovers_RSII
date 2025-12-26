@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SeriLovers.API.Data;
+using SeriLovers.API.Events;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
@@ -13,6 +14,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 using Swashbuckle.AspNetCore.Annotations;
 
 namespace SeriLovers.API.Controllers
@@ -31,6 +33,7 @@ namespace SeriLovers.API.Controllers
         private readonly ILogger<AuthController> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ApplicationDbContext _context;
+        private readonly IMessageBusService _messageBusService;
 
         public AuthController(
             UserManager<ApplicationUser> userManager,
@@ -38,7 +41,8 @@ namespace SeriLovers.API.Controllers
             ITokenService tokenService,
             ILogger<AuthController> logger,
             IHttpClientFactory httpClientFactory,
-            ApplicationDbContext context)
+            ApplicationDbContext context,
+            IMessageBusService messageBusService)
         {
             _userManager = userManager;
             _signInManager = signInManager;
@@ -46,6 +50,7 @@ namespace SeriLovers.API.Controllers
             _logger = logger;
             _httpClientFactory = httpClientFactory;
             _context = context;
+            _messageBusService = messageBusService;
         }
 
         /// <summary>
@@ -242,6 +247,27 @@ namespace SeriLovers.API.Controllers
                     });
                 }
 
+                // Publish UserCreatedEvent for Google OAuth users (decoupled from main request flow)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var userCreatedEvent = new UserCreatedEvent
+                        {
+                            UserId = user.Id,
+                            UserName = user.UserName ?? user.Email ?? "Unknown",
+                            Email = user.Email ?? "Unknown",
+                            CreatedAt = user.DateCreated
+                        };
+                        await _messageBusService.PublishEventAsync(userCreatedEvent);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log but don't fail the request
+                        Console.WriteLine($"Error publishing UserCreatedEvent: {ex.Message}");
+                    }
+                });
+
                 // Create default "Favorites" list for the new user
                 await EnsureDefaultFavoritesListAsync(user.Id);
             }
@@ -346,6 +372,27 @@ namespace SeriLovers.API.Controllers
 
                 // Create default "Favorites" list for the new user
                 await EnsureDefaultFavoritesListAsync(user.Id);
+
+                // Publish UserCreatedEvent (decoupled from main request flow)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var userCreatedEvent = new UserCreatedEvent
+                        {
+                            UserId = user.Id,
+                            UserName = user.UserName ?? user.Email ?? "Unknown",
+                            Email = user.Email ?? "Unknown",
+                            CreatedAt = user.DateCreated
+                        };
+                        await _messageBusService.PublishEventAsync(userCreatedEvent);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log but don't fail the request
+                        Console.WriteLine($"Error publishing UserCreatedEvent: {ex.Message}");
+                    }
+                });
 
                 return Ok(new AuthResponseDto
                 {
@@ -483,58 +530,58 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(
             Summary = "Update user profile",
             Description = "Updates the authenticated user's profile information including name, email, password, and avatar.")]
-        public async Task<IActionResult> UpdateProfile([FromBody] Dictionary<string, object> updateData)
+        public async Task<IActionResult> UpdateProfile([FromBody] ProfileUpdateDto updateDto)
         {
+            // Convert DTO to dictionary for compatibility with existing logic
+            var updateData = new Dictionary<string, object>();
+            if (!string.IsNullOrWhiteSpace(updateDto.Name))
+            {
+                updateData["name"] = updateDto.Name;
+            }
+            if (!string.IsNullOrWhiteSpace(updateDto.Email))
+            {
+                updateData["email"] = updateDto.Email;
+            }
+            if (!string.IsNullOrWhiteSpace(updateDto.CurrentPassword) && !string.IsNullOrWhiteSpace(updateDto.NewPassword))
+            {
+                updateData["currentPassword"] = updateDto.CurrentPassword;
+                updateData["newPassword"] = updateDto.NewPassword;
+            }
+            if (!string.IsNullOrWhiteSpace(updateDto.Avatar))
+            {
+                updateData["avatar"] = updateDto.Avatar;
+            }
+            if (!string.IsNullOrWhiteSpace(updateDto.AvatarUrl))
+            {
+                updateData["avatarUrl"] = updateDto.AvatarUrl;
+            }
+
+            _logger.LogInformation("UpdateProfile called. Name: {Name}, Email: {Email}", updateDto.Name, updateDto.Email);
+            
             var user = await _userManager.GetUserAsync(User);
             if (user == null)
             {
                 return Unauthorized(new { message = "User not found." });
             }
 
-            // Update email if provided
-            if (updateData.ContainsKey("email") && updateData["email"] is string email)
-            {
-                user.Email = email;
-                user.UserName = email; // Keep UserName in sync with Email
-            }
+            _logger.LogInformation("Before update - UserId: {UserId}, Current Name: {Name}, Email: {Email}", 
+                user.Id, user.Name, user.Email);
 
-            // Update name - store in UserName if email is not being updated
-            // Otherwise, we'll include it in the token as a custom claim
-            string? updatedName = null;
-            if (updateData.ContainsKey("name") && updateData["name"] is string name && !string.IsNullOrWhiteSpace(name))
+            if (!string.IsNullOrWhiteSpace(updateDto.Name))
             {
-                updatedName = name.Trim();
-                // If email is not being updated, update UserName with the display name
-                if (!updateData.ContainsKey("email"))
-                {
-                    user.UserName = updatedName;
-                }
-            }
-
-            // Update avatar URL if provided
-            if (updateData.ContainsKey("avatar") && updateData["avatar"] is string avatarBase64)
-            {
-                // In a real app, you'd upload the image to storage and get a URL
-                // For now, we'll store the base64 string or a placeholder URL
-                // You might want to process the base64 and upload to cloud storage
-                user.AvatarUrl = $"data:image/jpeg;base64,{avatarBase64}"; // Temporary: store as data URL
-            }
-            else if (updateData.ContainsKey("avatarUrl") && updateData["avatarUrl"] is string avatarUrl)
-            {
-                user.AvatarUrl = avatarUrl;
+                _logger.LogInformation("Request to set Name to: {NewName}", updateDto.Name.Trim());
             }
 
             // Update password if provided
-            if (updateData.ContainsKey("currentPassword") && updateData["currentPassword"] is string currentPassword &&
-                updateData.ContainsKey("newPassword") && updateData["newPassword"] is string newPassword)
+            if (!string.IsNullOrWhiteSpace(updateDto.CurrentPassword) && !string.IsNullOrWhiteSpace(updateDto.NewPassword))
             {
-                var passwordValid = await _userManager.CheckPasswordAsync(user, currentPassword);
+                var passwordValid = await _userManager.CheckPasswordAsync(user, updateDto.CurrentPassword!);
                 if (!passwordValid)
                 {
                     return BadRequest(new { message = "Current password is incorrect." });
                 }
 
-                var changePasswordResult = await _userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+                var changePasswordResult = await _userManager.ChangePasswordAsync(user, updateDto.CurrentPassword!, updateDto.NewPassword!);
                 if (!changePasswordResult.Succeeded)
                 {
                     return BadRequest(new
@@ -545,14 +592,160 @@ namespace SeriLovers.API.Controllers
                 }
             }
 
-            var result = await _userManager.UpdateAsync(user);
-            if (!result.Succeeded)
+            // Get user from THIS context (not UserManager's context) to ensure proper tracking
+            var userId = user.Id;
+            var dbUser = await _context.Users.FindAsync(userId);
+            if (dbUser == null)
             {
-                return BadRequest(new { message = "Failed to update profile", errors = result.Errors.Select(e => e.Description) });
+                return Unauthorized(new { message = "User not found in database." });
             }
+            
+            _logger.LogInformation("Found user in DbContext. Current Name: '{Name}'", dbUser.Name ?? "NULL");
+            
+            // Store the new values BEFORE updating entity (for SQL update)
+            string? newName = null;
+            string? newAvatarUrl = null;
+            bool nameChanged = false;
+            bool emailChanged = false;
+            bool avatarChanged = false;
+            
+            if (!string.IsNullOrWhiteSpace(updateDto.Email))
+            {
+                dbUser.Email = updateDto.Email;
+                dbUser.NormalizedEmail = updateDto.Email.ToUpperInvariant();
+                dbUser.UserName = updateDto.Email;
+                dbUser.NormalizedUserName = updateDto.Email.ToUpperInvariant();
+                emailChanged = true;
+            }
+            
+            if (!string.IsNullOrWhiteSpace(updateDto.Name))
+            {
+                newName = updateDto.Name.Trim();
+                dbUser.Name = newName;
+                nameChanged = true;
+                _logger.LogInformation("Setting Name to: {Name}", newName);
+            }
+            
+            if (!string.IsNullOrWhiteSpace(updateDto.Avatar))
+            {
+                newAvatarUrl = $"data:image/jpeg;base64,{updateDto.Avatar}";
+                dbUser.AvatarUrl = newAvatarUrl;
+                avatarChanged = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(updateDto.AvatarUrl))
+            {
+                newAvatarUrl = updateDto.AvatarUrl;
+                dbUser.AvatarUrl = newAvatarUrl;
+                avatarChanged = true;
+            }
+            
+            // Save Identity properties via UserManager first
+            if (emailChanged)
+            {
+                var identityResult = await _userManager.UpdateAsync(dbUser);
+                if (!identityResult.Succeeded)
+                {
+                    _logger.LogWarning("UserManager.UpdateAsync failed: {Errors}", 
+                        string.Join(", ", identityResult.Errors.Select(e => e.Description)));
+                }
+            }
+            
+            // For custom properties (Name, AvatarUrl), use direct SQL update as EF Core tracking is unreliable
+            if (nameChanged || avatarChanged)
+            {
+                try
+                {
+                    if (nameChanged && avatarChanged)
+                    {
+                        var sqlFormatted = FormattableStringFactory.Create(
+                            $"UPDATE [AspNetUsers] SET [Name] = {{0}}, [AvatarUrl] = {{1}} WHERE [Id] = {{2}}",
+                            newName ?? (object)DBNull.Value,
+                            newAvatarUrl ?? (object)DBNull.Value,
+                            userId);
+                        _logger.LogInformation("Preparing SQL update for Name: '{Name}', AvatarUrl: '{AvatarUrl}'", newName, newAvatarUrl);
+                        int rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(sqlFormatted);
+                        _logger.LogInformation("Direct SQL update completed. Rows affected: {Rows}, Name: '{Name}'", 
+                            rowsAffected, newName ?? "NULL");
+                    }
+                    else if (nameChanged)
+                    {
+                        var sqlFormatted = FormattableStringFactory.Create(
+                            $"UPDATE [AspNetUsers] SET [Name] = {{0}} WHERE [Id] = {{1}}",
+                            newName ?? (object)DBNull.Value,
+                            userId);
+                        _logger.LogInformation("Preparing SQL update for Name: '{Name}', UserId: {UserId}", newName, userId);
+                        int rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(sqlFormatted);
+                        _logger.LogInformation("Direct SQL update completed. Rows affected: {Rows}, Name: '{Name}'", 
+                            rowsAffected, newName ?? "NULL");
+                        
+                        // Verify the update immediately by querying the database
+                        var verifiedName = await _context.Users.AsNoTracking()
+                            .Where(u => u.Id == userId)
+                            .Select(u => u.Name)
+                            .FirstOrDefaultAsync();
+                        _logger.LogInformation("Verified Name in database after SQL update: '{Name}'", verifiedName ?? "NULL");
+                    }
+                    else if (avatarChanged)
+                    {
+                        var sqlFormatted = FormattableStringFactory.Create(
+                            $"UPDATE [AspNetUsers] SET [AvatarUrl] = {{0}} WHERE [Id] = {{1}}",
+                            newAvatarUrl ?? (object)DBNull.Value,
+                            userId);
+                        int rowsAffected = await _context.Database.ExecuteSqlInterpolatedAsync(sqlFormatted);
+                        _logger.LogInformation("Direct SQL update completed. Rows affected: {Rows}, AvatarUrl: '{AvatarUrl}'", 
+                            rowsAffected, newAvatarUrl ?? "NULL");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to update custom properties via SQL. Falling back to EF Core.");
+                    
+                    // Fallback to EF Core
+                    var entry = _context.Entry(dbUser);
+                    if (nameChanged)
+                    {
+                        entry.Property(u => u.Name).IsModified = true;
+                    }
+                    if (avatarChanged)
+                    {
+                        entry.Property(u => u.AvatarUrl).IsModified = true;
+                    }
+                    await _context.SaveChangesAsync();
+                }
+            }
+            
+            // Reload user to get latest values after SQL update
+            _context.Entry(dbUser).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+            var verifyUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+            if (verifyUser != null)
+            {
+                dbUser = verifyUser;
+                _logger.LogInformation("Reloaded user from database. UserId: {UserId}, Name: '{Name}', Email: {Email}", 
+                    dbUser.Id, dbUser.Name ?? "NULL", dbUser.Email);
+            }
+            else
+            {
+                _logger.LogWarning("Could not reload user after update. UserId: {UserId}", userId);
+            }
+            
+            // Use the reloaded entity to ensure we return the latest data
+            user = dbUser;
 
-            // Reload user to get latest data
-            user = await _userManager.GetUserAsync(User);
+            // Publish UserUpdatedEvent (decoupled from main request flow - fire-and-forget)
+            if (user != null)
+            {
+                var userUpdatedEvent = new UserUpdatedEvent
+                {
+                    UserId = user.Id,
+                    UserName = user.Name ?? user.UserName ?? user.Email ?? "Unknown",
+                    Email = user.Email ?? "Unknown",
+                    Country = user.Country,
+                    AvatarUrl = user.AvatarUrl,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                // Fire-and-forget - won't block or throw exceptions
+                _ = _messageBusService.PublishEventAsync(userUpdatedEvent);
+            }
             if (user == null)
             {
                 return Unauthorized(new { message = "User not found." });
@@ -575,7 +768,7 @@ namespace SeriLovers.API.Controllers
                     email = user.Email,
                     userName = user.UserName,
                     avatarUrl = user.AvatarUrl,
-                    name = updatedName ?? user.UserName ?? user.Email?.Split('@')[0] ?? "User"
+                    name = user.Name ?? "User"
                 }
             });
         }

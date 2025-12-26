@@ -30,6 +30,7 @@ class _AddEpisodeReviewScreenState extends State<AddEpisodeReviewScreen> {
   int _selectedRating = 0;
   final TextEditingController _reviewTextController = TextEditingController();
   bool _submitting = false;
+  bool _isAnonymous = false;
 
   @override
   void initState() {
@@ -37,6 +38,7 @@ class _AddEpisodeReviewScreenState extends State<AddEpisodeReviewScreen> {
     if (widget.existingReview != null) {
       _selectedRating = widget.existingReview!.rating;
       _reviewTextController.text = widget.existingReview!.reviewText ?? '';
+      _isAnonymous = widget.existingReview!.isAnonymous;
     }
   }
 
@@ -69,6 +71,7 @@ class _AddEpisodeReviewScreenState extends State<AddEpisodeReviewScreen> {
         reviewText: _reviewTextController.text.trim().isEmpty
             ? null
             : _reviewTextController.text.trim(),
+        isAnonymous: _isAnonymous,
       );
 
       if (!mounted) return;
@@ -259,6 +262,52 @@ class _AddEpisodeReviewScreenState extends State<AddEpisodeReviewScreen> {
                     width: 2,
                   ),
                 ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Anonymous option
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: _isAnonymous,
+                    onChanged: (value) {
+                      setState(() {
+                        _isAnonymous = value ?? false;
+                      });
+                    },
+                    activeColor: AppColors.primaryColor,
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Post as Anonymous',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          'Your name will be hidden from other users',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 32),

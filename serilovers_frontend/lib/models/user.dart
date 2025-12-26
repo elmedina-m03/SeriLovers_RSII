@@ -4,6 +4,7 @@ class User {
   final String email;
   final String? role;
   final bool isActive;
+  final String? name;
   final String? userName;
   final String? phoneNumber;
   final String? country;
@@ -15,6 +16,7 @@ class User {
     required this.email,
     this.role,
     required this.isActive,
+    this.name,
     this.userName,
     this.phoneNumber,
     this.country,
@@ -29,6 +31,7 @@ class User {
       email: json['email'] as String? ?? json['userName'] as String? ?? '',
       role: json['role'] as String?,
       isActive: json['isActive'] as bool? ?? json['lockoutEnabled'] == false,
+      name: json['name'] as String?,
       userName: json['userName'] as String?,
       phoneNumber: json['phoneNumber'] as String?,
       country: json['country'] as String?,
@@ -46,6 +49,7 @@ class User {
       'email': email,
       'role': role,
       'isActive': isActive,
+      'name': name,
       'userName': userName,
       'phoneNumber': phoneNumber,
       'country': country,
@@ -57,7 +61,7 @@ class User {
   /// Gets the status string
   String get status => isActive ? 'Active' : 'Disabled';
   
-  /// Gets display name (username or email prefix)
-  String get displayName => userName ?? email.split('@').first;
+  /// Gets display name (name, userName, or email prefix)
+  String get displayName => name ?? userName ?? email.split('@').first;
 }
 

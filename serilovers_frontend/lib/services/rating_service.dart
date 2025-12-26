@@ -103,5 +103,21 @@ class RatingService {
       throw Exception('Invalid response format');
     }
   }
+
+  /// Get all ratings (Admin only) - for admin reviews management
+  Future<List<Rating>> getAllRatings({String? token}) async {
+    final response = await _apiService.get(
+      '/Rating',
+      token: token,
+    );
+
+    if (response is List) {
+      return response
+          .map((item) => Rating.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } else {
+      throw Exception('Invalid response format');
+    }
+  }
 }
 

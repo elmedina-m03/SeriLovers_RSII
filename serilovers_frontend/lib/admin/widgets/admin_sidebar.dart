@@ -64,28 +64,30 @@ class AdminSidebar extends StatelessWidget {
       color: AppColors.sidebarColor,
       child: Column(
         children: [
-          // Menu Items
+          // Menu Items (logo is now above sidebar in AdminScreen)
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               children: [
                 _buildMenuItem(0, Icons.home, 'Home'),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 _buildMenuItem(1, Icons.movie, 'Series'),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 _buildMenuItem(2, Icons.people, 'Users'),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 _buildMenuItem(3, Icons.person, 'Actors'),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 _buildMenuItem(4, Icons.emoji_events, 'Challenges'),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 _buildMenuItem(5, Icons.bar_chart, 'Statistics'),
+                const SizedBox(height: 12),
+                _buildMenuItem(6, Icons.rate_review, 'Reviews'),
               ],
             ),
           ),
           // User info and logout at bottom
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               border: Border(
                 top: BorderSide(
@@ -102,11 +104,11 @@ class AdminSidebar extends StatelessWidget {
                     // Circular avatar with image or initials
                     AvatarImage(
                       avatarUrl: userInfo['avatarUrl'],
-                      radius: 20,
+                      radius: 18,
                       initials: initials,
                       placeholderIcon: Icons.person,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     // User name and role
                     Expanded(
                       child: Column(
@@ -115,7 +117,7 @@ class AdminSidebar extends StatelessWidget {
                           Text(
                             userInfo['email']!,
                             style: TextStyle(
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: AppColors.textPrimary,
                             ),
@@ -125,7 +127,7 @@ class AdminSidebar extends StatelessWidget {
                           Text(
                             userInfo['role']!,
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: 11,
                               color: AppColors.textSecondary,
                             ),
                           ),
@@ -134,9 +136,9 @@ class AdminSidebar extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                // Logout button
-                _buildMenuItem(6, Icons.logout, 'Logout', isDestructive: true),
+                const SizedBox(height: 12),
+                // Logout button (index 7)
+                _buildMenuItem(7, Icons.logout, 'Logout', isDestructive: true),
               ],
             ),
           ),
@@ -157,7 +159,7 @@ class AdminSidebar extends StatelessWidget {
     return InkWell(
       onTap: () => onItemSelected(index),
       child: Container(
-        padding: const EdgeInsets.only(left: 20, right: 16, top: 12, bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected
               ? AppColors.primaryColor.withOpacity(0.1)
@@ -174,7 +176,7 @@ class AdminSidebar extends StatelessWidget {
           children: [
             Icon(
               icon,
-              size: 24,
+              size: 22,
               color: isSelected
                   ? AppColors.primaryColor
                   : (isDestructive ? AppColors.dangerColor : AppColors.iconColor),
@@ -184,7 +186,7 @@ class AdminSidebar extends StatelessWidget {
               child: Text(
                 label,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 15,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                   color: isSelected
                       ? AppColors.primaryColor

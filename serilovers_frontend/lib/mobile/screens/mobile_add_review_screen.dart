@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 import '../../models/series.dart';
 import '../../models/rating.dart';
 import '../../providers/rating_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/episode_progress_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 
@@ -94,6 +96,88 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
               backgroundColor: AppColors.dangerColor,
             ),
           );
+        }
+        return;
+      }
+
+      // Prevent admins from rating
+      try {
+        final decodedToken = JwtDecoder.decode(authProvider.token!);
+        final userRole = decodedToken['role'] as String?;
+        if (userRole == 'Admin') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Admins cannot rate series. Only regular users can submit ratings.'),
+                backgroundColor: AppColors.dangerColor,
+                duration: Duration(seconds: 4),
+              ),
+            );
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          return;
+        }
+      } catch (e) {
+        print('Error decoding token: $e');
+      }
+
+      // Check if series has seasons
+      final totalSeasons = widget.series.totalSeasons;
+      if (totalSeasons == 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This series has no seasons yet. You cannot rate it.'),
+              backgroundColor: AppColors.dangerColor,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() {
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // Check if series has episodes
+      final totalEpisodes = widget.series.totalEpisodes;
+      if (totalEpisodes == 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This series has no episodes yet. You cannot rate it.'),
+              backgroundColor: AppColors.dangerColor,
+              duration: Duration(seconds: 4),
+            ),
+          );
+          setState(() {
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
+      // Check if user has completed all episodes
+      final progressService = EpisodeProgressService();
+      final userProgress = await progressService.getUserProgress(token: authProvider.token!);
+      final completedEpisodes = userProgress
+          .where((p) => p.seriesId == widget.series.id && p.isCompleted)
+          .length;
+      
+      if (completedEpisodes < totalEpisodes) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('You can rate this series after watching all episodes. You have watched $completedEpisodes of $totalEpisodes episodes.'),
+              backgroundColor: AppColors.dangerColor,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          setState(() {
+            _isLoading = false;
+          });
         }
         return;
       }

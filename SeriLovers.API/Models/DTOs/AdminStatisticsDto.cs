@@ -51,5 +51,6 @@ namespace SeriLovers.API.Models.DTOs
         public string Title { get; set; } = string.Empty;
         public double AvgRating { get; set; }
         public int Views { get; set; } // Total views = ratings count + watchlist count
+        public string? ImageUrl { get; set; } // Series poster/cover image
     }
 }

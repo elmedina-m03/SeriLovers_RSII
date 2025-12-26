@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../../core/widgets/image_with_placeholder.dart';
 import '../providers/admin_statistics_provider.dart';
 import '../models/admin_statistics.dart';
 
@@ -15,6 +16,9 @@ class AdminStatisticsScreen extends StatefulWidget {
 }
 
 class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
+  final _horizontalScrollController = ScrollController();
+  final _verticalScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -22,6 +26,13 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<AdminStatisticsProvider>(context, listen: false).fetchStats();
     });
+  }
+
+  @override
+  void dispose() {
+    _horizontalScrollController.dispose();
+    _verticalScrollController.dispose();
+    super.dispose();
   }
 
   /// Build a statistics card (matching HOME screen style)
@@ -403,39 +414,8 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
         padding: const EdgeInsets.all(AppDim.paddingLarge),
         child: Consumer<AdminStatisticsProvider>(
         builder: (context, statsProvider, child) {
-          // Show error SnackBar if error exists
-          if (statsProvider.error != null && mounted) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Error loading statistics:',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          statsProvider.error ?? 'Unknown error',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ],
-                    ),
-                    backgroundColor: AppColors.dangerColor,
-                    duration: const Duration(seconds: 10),
-                    action: SnackBarAction(
-                      label: 'Retry',
-                      textColor: Colors.white,
-                      onPressed: () => statsProvider.fetchStats(),
-                    ),
-                  ),
-                );
-              }
-            });
-          }
+          // Note: Error handling is done in the UI below, not via SnackBar in builder
+          // This prevents multiple snackbars from appearing
 
           if (statsProvider.isLoading) {
             return const Center(
@@ -490,10 +470,10 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
           final totals = statsProvider.totals;
 
           return SingleChildScrollView(
-        padding: const EdgeInsets.all(AppDim.paddingLarge),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+            padding: const EdgeInsets.all(AppDim.paddingLarge),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 // Title and refresh button
                 Row(
                   children: [
@@ -609,69 +589,95 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
                                 ),
                               ),
                             )
-                          : SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: DataTable(
-                                headingRowColor: MaterialStateProperty.all(
-                                  AppColors.primaryColor.withOpacity(0.1),
-                                ),
-                                columns: const [
-                                  DataColumn(label: Text('Title')),
-                                  DataColumn(
-                                    label: Text('Average Rating'),
-                                    numeric: true,
-                                  ),
-                                  DataColumn(
-                                    label: Text('Views'),
-                                    numeric: true,
-                                  ),
-                                ],
-                                rows: statsProvider.topSeries.map((series) {
-                                  return DataRow(
-                                    cells: [
-                                      DataCell(
-                                        Text(
-                                          series.title,
-                                          style: theme.textTheme.bodyMedium,
-                                        ),
+                          : Scrollbar(
+                              controller: _horizontalScrollController,
+                              thumbVisibility: true,
+                              child: SingleChildScrollView(
+                                controller: _horizontalScrollController,
+                                scrollDirection: Axis.horizontal,
+                                child: Scrollbar(
+                                  controller: _verticalScrollController,
+                                  thumbVisibility: true,
+                                  child: SingleChildScrollView(
+                                    controller: _verticalScrollController,
+                                    scrollDirection: Axis.vertical,
+                                    child: DataTable(
+                                      headingRowColor: MaterialStateProperty.all(
+                                        AppColors.primaryColor.withOpacity(0.1),
                                       ),
-                                      DataCell(
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              Icons.star,
-                                              size: 16,
-                                              color: AppColors.primaryColor,
+                                      columns: const [
+                                        DataColumn(label: Text('Poster')),
+                                        DataColumn(label: Text('Title')),
+                                        DataColumn(
+                                          label: Text('Average Rating'),
+                                          numeric: true,
+                                        ),
+                                        DataColumn(
+                                          label: Text('Views'),
+                                          numeric: true,
+                                        ),
+                                      ],
+                                      rows: statsProvider.topSeries.map((series) {
+                                        return DataRow(
+                                          cells: [
+                                            DataCell(
+                                              // Poster thumbnail - using ImageWithPlaceholder for consistency
+                                              ImageWithPlaceholder(
+                                                imageUrl: series.imageUrl,
+                                                width: 60,
+                                                height: 90,
+                                                fit: BoxFit.cover,
+                                                borderRadius: 4,
+                                                placeholderIcon: Icons.movie,
+                                                placeholderIconSize: 32,
+                                              ),
                                             ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              series.avgRating.toStringAsFixed(1),
-                                              style: theme.textTheme.bodyMedium,
+                                            DataCell(
+                                              Text(
+                                                series.title,
+                                                style: theme.textTheme.bodyMedium,
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.star,
+                                                    size: 16,
+                                                    color: AppColors.primaryColor,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    series.avgRating.toStringAsFixed(1),
+                                                    style: theme.textTheme.bodyMedium,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                series.views.toString(),
+                                                style: theme.textTheme.bodyMedium,
+                                              ),
                                             ),
                                           ],
-                                        ),
-                                      ),
-                                      DataCell(
-                                        Text(
-                                          series.views.toString(),
-                                          style: theme.textTheme.bodyMedium,
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }).toList(),
+                                        );
+                                      }).toList(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
+              ],
             ),
-          ],
-        ),
           );
         },
-        ),
       ),
+    ),
     );
   }
 }
