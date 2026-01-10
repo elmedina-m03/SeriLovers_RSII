@@ -36,13 +36,18 @@ class WatchlistService {
     }
   }
 
-  Future<void> addSeriesToList(int listId, int seriesId, {String? token}) async {
+  Future<Map<String, dynamic>?> addSeriesToList(int listId, int seriesId, {String? token}) async {
     // Backend expects: POST /api/WatchlistCollection/{collectionId}/series/{seriesId}
-    await _apiService.post(
+    final response = await _apiService.post(
       '/WatchlistCollection/$listId/series/$seriesId',
       {}, // Empty body - seriesId is in the route
       token: token,
     );
+    
+    if (response is Map<String, dynamic>) {
+      return response;
+    }
+    return null;
   }
 
   Future<void> removeSeriesFromList(int listId, int seriesId, {String? token}) async {

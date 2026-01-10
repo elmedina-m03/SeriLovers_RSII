@@ -1,21 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
-import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/episode_progress_provider.dart';
-import '../../providers/series_provider.dart';
-import '../../services/episode_progress_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
-import '../../models/series.dart';
-import '../../models/episode_progress.dart';
-import '../widgets/mobile_page_route.dart';
 import 'mobile_status_screen.dart';
 import 'mobile_statistics_screen.dart';
 import 'mobile_settings_screen.dart';
-import 'mobile_series_detail_screen.dart';
 
 /// Mobile profile screen showing user info and logout button
 class MobileProfileScreen extends StatefulWidget {
@@ -26,122 +18,6 @@ class MobileProfileScreen extends StatefulWidget {
 }
 
 class _MobileProfileScreenState extends State<MobileProfileScreen> {
-  List<Series> _recentlyWatchedSeries = [];
-  bool _isLoadingWatchedHistory = false;
-
-  DateTime? _lastLoadTime;
-  static const _cacheTimeout = Duration(seconds: 5); // Cache for 5 seconds
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadWatchedHistory();
-    });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Refresh when returning to this screen
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_isLoadingWatchedHistory) {
-        final now = DateTime.now();
-        if (_lastLoadTime == null || 
-            now.difference(_lastLoadTime!) > _cacheTimeout) {
-          _loadWatchedHistory();
-        }
-      }
-    });
-  }
-
-  Future<void> _loadWatchedHistory() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    if (!authProvider.isAuthenticated) return;
-
-    setState(() {
-      _isLoadingWatchedHistory = true;
-    });
-
-    try {
-      final progressService = EpisodeProgressService();
-      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-      final token = authProvider.token;
-
-      if (token == null || token.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _recentlyWatchedSeries = [];
-            _isLoadingWatchedHistory = false;
-          });
-        }
-        return;
-      }
-
-      // Load user progress from service
-      final userProgress = await progressService.getUserProgress(token: token);
-
-      if (userProgress.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _recentlyWatchedSeries = [];
-            _isLoadingWatchedHistory = false;
-          });
-        }
-        return;
-      }
-
-      // Get unique series IDs from progress, ordered by most recent watched date
-      final seriesProgressMap = <int, DateTime>{};
-      for (final progress in userProgress) {
-        if (progress.seriesId > 0) {
-          final watchedDate = progress.watchedAt;
-          if (!seriesProgressMap.containsKey(progress.seriesId) ||
-              watchedDate.isAfter(seriesProgressMap[progress.seriesId]!)) {
-            seriesProgressMap[progress.seriesId] = watchedDate;
-          }
-        }
-      }
-
-      // Sort by most recent watched date
-      final sortedSeriesIds = seriesProgressMap.entries
-          .toList()
-          ..sort((a, b) => b.value.compareTo(a.value));
-      final seriesIds = sortedSeriesIds.map((e) => e.key).take(10).toList();
-
-      // Fetch only the needed series by ID (much faster than loading 200)
-      final recentlyWatched = <Series>[];
-      for (final seriesId in seriesIds) {
-        try {
-          // Try to get from cache first
-          var series = seriesProvider.getById(seriesId);
-          if (series == null) {
-            // If not in cache, fetch just this one series
-            series = await seriesProvider.fetchSeriesDetail(seriesId);
-          }
-          if (series != null) {
-            recentlyWatched.add(series);
-          }
-        } catch (e) {
-          // Skip series that fail to load
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _recentlyWatchedSeries = recentlyWatched;
-          _isLoadingWatchedHistory = false;
-          _lastLoadTime = DateTime.now();
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoadingWatchedHistory = false;
-        });
-      }
-    }
-  }
 
   /// Get user info from JWT token
   Map<String, String?> _getUserInfo(String? token) {
@@ -324,11 +200,15 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                   const SizedBox(height: AppDim.paddingSmall),
 
                   // User Avatar Circle
-                  AvatarImage(
-                    avatarUrl: userInfo['avatarUrl'],
-                    radius: 45,
-                    initials: initials,
-                    placeholderIcon: Icons.person,
+                  ClipOval(
+                    child: ImageWithPlaceholder(
+                      imageUrl: userInfo['avatarUrl'],
+                      width: 75,
+                      height: 75,
+                      fit: BoxFit.cover,
+                      placeholderIcon: Icons.person,
+                      placeholderIconSize: 38,
+                    ),
                   ),
 
                   const SizedBox(height: AppDim.paddingMedium),
@@ -352,54 +232,7 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: AppDim.paddingMedium),
-
-                  // Recently Watched Section
-                  if (_recentlyWatchedSeries.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingSmall),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Recently Watched',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const MobileStatusScreen(),
-                                ),
-                              );
-                            },
-                            child: const Text('See All'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: AppDim.paddingSmall),
-                    SizedBox(
-                      height: 180,
-                      child: _isLoadingWatchedHistory
-                          ? const Center(child: CircularProgressIndicator())
-                          : ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                              itemCount: _recentlyWatchedSeries.length,
-                              itemBuilder: (context, index) {
-                                final series = _recentlyWatchedSeries[index];
-                                return _buildWatchedSeriesCard(series, context, theme);
-                              },
-                            ),
-                    ),
-                    const SizedBox(height: AppDim.paddingLarge),
-                  ],
+                  const SizedBox(height: AppDim.paddingLarge),
 
                   // Menu Items
                   _buildMenuCard(
@@ -417,7 +250,6 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
                         // updated token and currentUser and notified listeners.
                         // Force a rebuild to show updated profile data
                         setState(() {});
-                        await _loadWatchedHistory();
                       }
                     },
                   ),
@@ -522,79 +354,4 @@ class _MobileProfileScreenState extends State<MobileProfileScreen> {
     );
   }
 
-  Widget _buildWatchedSeriesCard(Series series, BuildContext context, ThemeData theme) {
-    return Container(
-      width: 120,
-      margin: const EdgeInsets.only(right: AppDim.paddingMedium),
-      child: Card(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        elevation: 2,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MobilePageRoute(
-                builder: (context) => MobileSeriesDetailScreen(series: series),
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(12),
-          child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min, // Avoid forcing extra height that can cause overflow
-          children: [
-              ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: ImageWithPlaceholder(
-                  imageUrl: series.imageUrl,
-                  height: 100,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  placeholderIcon: Icons.movie,
-                  placeholderIconSize: 40,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      series.title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.star,
-                          size: 12,
-                          color: AppColors.primaryColor,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          series.rating.toStringAsFixed(1),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

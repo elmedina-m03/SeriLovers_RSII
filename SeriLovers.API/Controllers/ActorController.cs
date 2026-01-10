@@ -35,7 +35,8 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(Summary = "List actors", Description = "Retrieves all actors with optional search and filtering.")]
         public async Task<IActionResult> GetAll(
             [FromQuery] string? search = null,
-            [FromQuery] int? age = null,
+            [FromQuery] int? minAge = null,
+            [FromQuery] int? maxAge = null,
             [FromQuery] string? sortBy = null,
             [FromQuery] string? sortOrder = "asc")
         {
@@ -55,17 +56,30 @@ namespace SeriLovers.API.Controllers
                     (a.FirstName + " " + a.LastName).ToLower().Contains(searchLower));
             }
 
-            // Filter by age
-            if (age.HasValue)
+            // Filter by age range
+            if (minAge.HasValue || maxAge.HasValue)
             {
                 var today = DateTime.UtcNow;
-                var birthYear = today.Year - age.Value;
-                var minDate = new DateTime(birthYear - 1, 12, 31);
-                var maxDate = new DateTime(birthYear + 1, 1, 1);
+                
+                DateTime? minBirthDate = null; // Earliest birth date (for maxAge)
+                DateTime? maxBirthDate = null; // Latest birth date (for minAge)
+                
+                if (minAge.HasValue)
+                {
+                    var birthYearForMinAge = today.Year - minAge.Value;
+                    maxBirthDate = new DateTime(birthYearForMinAge - 1, 12, 31);
+                }
+                
+                if (maxAge.HasValue)
+                {
+                    var birthYearForMaxAge = today.Year - maxAge.Value;
+                    minBirthDate = new DateTime(birthYearForMaxAge, 1, 1);
+                }
+                
                 query = query.Where(a => 
                     a.DateOfBirth.HasValue &&
-                    a.DateOfBirth >= minDate &&
-                    a.DateOfBirth < maxDate);
+                    (!minBirthDate.HasValue || a.DateOfBirth.Value.Date >= minBirthDate.Value.Date) &&
+                    (!maxBirthDate.HasValue || a.DateOfBirth.Value.Date <= maxBirthDate.Value.Date));
             }
 
             // Apply sorting

@@ -25,6 +25,9 @@ class AppColors {
   /// Danger/error color (red)
   static const Color dangerColor = Color(0xFFE74C3C);
   
+  /// Info color (blue)
+  static const Color infoColor = Color(0xFF3498DB);
+  
   /// Icon color
   static const Color iconColor = Color(0xFF444444);
   

@@ -8,8 +8,33 @@ import '../../models/rating.dart';
 import '../../services/rating_service.dart';
 import '../../providers/auth_provider.dart';
 
+/// Unified review item for display (series reviews only)
+class UnifiedReview {
+  final int id;
+  final String? userName;
+  final String? userEmail;
+  final String? userAvatarUrl;
+  final String? seriesTitle;
+  final String? seriesImageUrl;
+  final int rating;
+  final String? reviewText;
+  final DateTime createdAt;
+  
+  UnifiedReview({
+    required this.id,
+    this.userName,
+    this.userEmail,
+    this.userAvatarUrl,
+    this.seriesTitle,
+    this.seriesImageUrl,
+    required this.rating,
+    this.reviewText,
+    required this.createdAt,
+  });
+}
+
 /// Admin reviews management screen with DataTable
-/// Shows series-level reviews (ratings with comments) instead of episode reviews
+/// Shows series-level reviews (Ratings) only
 class AdminReviewsScreen extends StatefulWidget {
   const AdminReviewsScreen({super.key});
 
@@ -22,16 +47,16 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
   final _horizontalScrollController = ScrollController();
   final _verticalScrollController = ScrollController();
   String _searchQuery = '';
-  List<Rating> _allRatings = []; // Cache all ratings/reviews
-  List<Rating> _filteredRatings = []; // Filtered ratings after search/sort
-  List<Rating> _displayedRatings = []; // Paginated ratings to display
+  List<UnifiedReview> _allReviews = []; // Cache all series reviews
+  List<UnifiedReview> _filteredReviews = []; // Filtered reviews after search/sort
+  List<UnifiedReview> _displayedReviews = []; // Paginated reviews to display
   bool _isLoading = false;
   String? _sortColumn;
   bool _sortAscending = true;
   int _currentPage = 1;
   int _pageSize = 10;
-  int get _totalPages => (_filteredRatings.length / _pageSize).ceil();
-  int get _totalItems => _filteredRatings.length;
+  int get _totalPages => (_filteredReviews.length / _pageSize).ceil();
+  int get _totalItems => _filteredReviews.length;
 
   @override
   void initState() {
@@ -49,7 +74,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     super.dispose();
   }
 
-  /// Load all series reviews (ratings with comments) from API (admin only)
+  /// Load all series reviews from API (admin only)
   Future<void> _loadReviews() async {
     setState(() {
       _isLoading = true;
@@ -63,14 +88,30 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
         throw Exception('Authentication required');
       }
 
+      // Load all ratings (including those with and without comments)
       final ratingService = RatingService();
       final ratings = await ratingService.getAllRatings(token: token);
       
-      // Filter to only show ratings that have comments (actual reviews)
-      final reviews = ratings.where((r) => r.comment != null && r.comment!.isNotEmpty).toList();
+      // Convert all ratings to UnifiedReview (show all ratings, not just those with comments)
+      final seriesReviews = ratings
+          .map((r) => UnifiedReview(
+                id: r.id,
+                userName: r.userName,
+                userEmail: r.userEmail,
+                userAvatarUrl: r.userAvatarUrl,
+                seriesTitle: r.seriesTitle,
+                seriesImageUrl: r.seriesImageUrl,
+                rating: r.score,
+                reviewText: r.comment, // Can be null or empty for ratings without comments
+                createdAt: r.createdAt,
+              ))
+          .toList();
+      
+      // Sort by creation date (newest first)
+      seriesReviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       
       setState(() {
-        _allRatings = reviews;
+        _allReviews = seriesReviews;
         _isLoading = false;
       });
       
@@ -93,22 +134,22 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
 
   /// Apply search filter and sorting to cached reviews
   void _applyFilters() {
-    var ratings = List<Rating>.from(_allRatings);
+    var reviews = List<UnifiedReview>.from(_allReviews);
     
     // Apply search filter
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase().trim();
-      ratings = ratings.where((rating) {
-        return (rating.userName?.toLowerCase().contains(query) ?? false) ||
-               (rating.userEmail?.toLowerCase().contains(query) ?? false) ||
-               (rating.comment?.toLowerCase().contains(query) ?? false) ||
-               (rating.seriesTitle?.toLowerCase().contains(query) ?? false);
+      reviews = reviews.where((review) {
+        return (review.userName?.toLowerCase().contains(query) ?? false) ||
+               (review.userEmail?.toLowerCase().contains(query) ?? false) ||
+               (review.reviewText?.toLowerCase().contains(query) ?? false) ||
+               (review.seriesTitle?.toLowerCase().contains(query) ?? false);
       }).toList();
     }
 
     // Apply sorting
     if (_sortColumn != null) {
-      ratings.sort((a, b) {
+      reviews.sort((a, b) {
         int comparison = 0;
         switch (_sortColumn) {
           case 'userName':
@@ -117,8 +158,8 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
           case 'seriesTitle':
             comparison = (a.seriesTitle ?? '').compareTo(b.seriesTitle ?? '');
             break;
-          case 'score':
-            comparison = a.score.compareTo(b.score);
+          case 'rating':
+            comparison = a.rating.compareTo(b.rating);
             break;
           case 'createdAt':
             comparison = a.createdAt.compareTo(b.createdAt);
@@ -131,17 +172,17 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     }
     
     setState(() {
-      _filteredRatings = ratings;
+      _filteredReviews = reviews;
       _currentPage = 1; // Reset to first page when filters change
       _updateDisplayedRatings();
     });
   }
 
-  /// Update displayed ratings based on current page
+  /// Update displayed reviews based on current page
   void _updateDisplayedRatings() {
-    if (_filteredRatings.isEmpty) {
+    if (_filteredReviews.isEmpty) {
       setState(() {
-        _displayedRatings = [];
+        _displayedReviews = [];
       });
       return;
     }
@@ -149,9 +190,9 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     final startIndex = (_currentPage - 1) * _pageSize;
     final endIndex = startIndex + _pageSize;
     setState(() {
-      _displayedRatings = _filteredRatings.sublist(
-        startIndex.clamp(0, _filteredRatings.length),
-        endIndex.clamp(0, _filteredRatings.length),
+      _displayedReviews = _filteredReviews.sublist(
+        startIndex.clamp(0, _filteredReviews.length),
+        endIndex.clamp(0, _filteredReviews.length),
       );
     });
   }
@@ -176,8 +217,8 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
     }
   }
 
-  /// Handle deleting a review (rating)
-  Future<void> _handleDeleteReview(Rating rating) async {
+  /// Handle deleting a review
+  Future<void> _handleDeleteReview(UnifiedReview review) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -219,7 +260,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
         }
 
         final ratingService = RatingService();
-        await ratingService.deleteRating(rating.id, token: token);
+        await ratingService.deleteRating(review.id, token: token);
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -324,7 +365,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : _displayedRatings.isEmpty
+                  : _displayedReviews.isEmpty
                       ? Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -400,7 +441,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                   ? 0
                                   : _sortColumn == 'seriesTitle'
                                       ? 1
-                                      : _sortColumn == 'score'
+                                      : _sortColumn == 'rating'
                                           ? 2
                                           : _sortColumn == 'createdAt'
                                               ? 3
@@ -421,7 +462,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                   label: AdminDataTableConfig.getColumnLabel('Rating'),
                                   numeric: true,
                                   onSort: (columnIndex, ascending) =>
-                                      _onSort('score'),
+                                      _onSort('rating'),
                                 ),
                                 DataColumn(
                                   label: AdminDataTableConfig.getColumnLabel('Review'),
@@ -435,7 +476,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                   label: AdminDataTableConfig.getColumnLabel('Actions'),
                                 ),
                               ],
-                              rows: _displayedRatings.map((rating) {
+                              rows: _displayedReviews.map((review) {
                                 return DataRow(
                                   cells: [
                                     DataCell(
@@ -444,8 +485,8 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                         children: [
                                           // Use ImageWithPlaceholder for consistent avatar display
                                           ImageWithPlaceholder(
-                                            imageUrl: (rating.userAvatarUrl != null && rating.userAvatarUrl!.isNotEmpty)
-                                                ? rating.userAvatarUrl
+                                            imageUrl: (review.userAvatarUrl != null && review.userAvatarUrl!.isNotEmpty)
+                                                ? review.userAvatarUrl
                                                 : null,
                                             width: 20,
                                             height: 20,
@@ -461,12 +502,12 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Text(
-                                                rating.userName ?? 'Unknown',
+                                                review.userName ?? 'Unknown',
                                                 style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                                               ),
-                                              if (rating.userEmail != null)
+                                              if (review.userEmail != null)
                                                 Text(
-                                                  rating.userEmail!,
+                                                  review.userEmail!,
                                                   style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme).copyWith(
                                                     color: AppColors.textSecondary,
                                                   ),
@@ -480,9 +521,9 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                       Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          if (rating.seriesImageUrl != null)
+                                          if (review.seriesImageUrl != null)
                                             ImageWithPlaceholder(
-                                              imageUrl: rating.seriesImageUrl!,
+                                              imageUrl: review.seriesImageUrl!,
                                               width: 32,
                                               height: 32,
                                               fit: BoxFit.cover,
@@ -492,10 +533,16 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                             const SizedBox(width: 32, height: 32),
                                           const SizedBox(width: 6),
                                           Flexible(
-                                            child: Text(
-                                              rating.seriesTitle ?? 'N/A',
-                                              style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
-                                              overflow: TextOverflow.ellipsis,
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  review.seriesTitle ?? 'N/A',
+                                                  style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
@@ -512,7 +559,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                           ),
                                           const SizedBox(width: 3),
                                           Text(
-                                            '${rating.score}/10',
+                                            '${review.rating}/10',
                                             style: AdminDataTableConfig.getCellTextStyle(theme.textTheme),
                                           ),
                                         ],
@@ -525,7 +572,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                           maxWidth: 400,
                                         ),
                                         child: Text(
-                                          rating.comment ?? 'No review text',
+                                          review.reviewText ?? 'No review text',
                                           style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme),
                                           softWrap: true,
                                           overflow: TextOverflow.visible,
@@ -535,7 +582,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                     ),
                                     DataCell(
                                       Text(
-                                        '${rating.createdAt.day}/${rating.createdAt.month}/${rating.createdAt.year}',
+                                        '${review.createdAt.day}/${review.createdAt.month}/${review.createdAt.year}',
                                         style: AdminDataTableConfig.getCellSmallTextStyle(theme.textTheme),
                                       ),
                                     ),
@@ -545,7 +592,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
                                         child: IconButton(
                                           icon: const Icon(Icons.delete, size: AdminDataTableConfig.actionIconSize),
                                           color: AppColors.dangerColor,
-                                          onPressed: () => _handleDeleteReview(rating),
+                                          onPressed: () => _handleDeleteReview(review),
                                           tooltip: 'Delete',
                                           padding: EdgeInsets.zero,
                                           constraints: const BoxConstraints(
@@ -569,7 +616,7 @@ class _AdminReviewsScreenState extends State<AdminReviewsScreen> {
             ),
             
             // Pagination Controls
-            if (!_isLoading && _filteredRatings.isNotEmpty)
+            if (!_isLoading && _filteredReviews.isNotEmpty)
               Card(
                 color: AppColors.cardBackground,
                 child: Padding(

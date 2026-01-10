@@ -239,12 +239,22 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     if (_searchController.text.isNotEmpty)
                       IconButton(
                         icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                        tooltip: 'Reset search and filters',
                         onPressed: () {
                           _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
+                          final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                          // Clear search and reset all filters
+                          seriesProvider.clearSearch().then((_) {
+                            if (mounted) {
+                              // Reset active filter and reload all series
+                              setState(() {
+                                _searchQuery = '';
+                                _activeFilter = null; // Reset filter
+                              });
+                              // Force fresh fetch to show all series
+                              _loadSeries(forceRefresh: true);
+                            }
                           });
-                          _loadSeries();
                         },
                       ),
                   ],

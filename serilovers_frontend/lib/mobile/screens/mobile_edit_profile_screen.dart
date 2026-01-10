@@ -21,14 +21,8 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _currentPasswordController = TextEditingController();
-  final _newPasswordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
 
   bool _isLoading = false;
-  bool _obscureCurrentPassword = true;
-  bool _obscureNewPassword = true;
-  bool _obscureConfirmPassword = true;
   String? _uploadedAvatarUrl; // Store uploaded avatar URL
   bool _isUploadingAvatar = false;
 
@@ -233,45 +227,12 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
     return null;
   }
 
-  String? _validatePassword(String? value, {required bool isRequired}) {
-    if (isRequired && (value == null || value.isEmpty)) {
-      return 'Password is required';
-    }
-    if (value != null && value.isNotEmpty && value.length < 8) {
-      return 'Password must be at least 8 characters';
-    }
-    return null;
-  }
-
-  String? _validateConfirmPassword(String? value) {
-    if (_newPasswordController.text.isNotEmpty) {
-      if (value == null || value.isEmpty) {
-        return 'Please confirm your new password';
-      }
-      if (value != _newPasswordController.text) {
-        return 'Passwords do not match';
-      }
-    }
-    return null;
-  }
 
   Future<void> _handleSave() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
 
-    // Validate password change if new password is provided
-    if (_newPasswordController.text.isNotEmpty) {
-      if (_currentPasswordController.text.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Current password is required to change password'),
-            backgroundColor: AppColors.dangerColor,
-          ),
-        );
-        return;
-      }
-    }
 
     setState(() {
       _isLoading = true;
@@ -285,12 +246,6 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
       };
-
-      // Add password change if provided
-      if (_newPasswordController.text.isNotEmpty) {
-        updateData['currentPassword'] = _currentPasswordController.text;
-        updateData['newPassword'] = _newPasswordController.text;
-      }
 
       // Add avatar URL if uploaded
       if (_uploadedAvatarUrl != null) {
@@ -349,9 +304,6 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _currentPasswordController.dispose();
-    _newPasswordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -501,125 +453,6 @@ class _MobileEditProfileScreenState extends State<MobileEditProfileScreen> {
                   style: TextStyle(color: AppColors.textPrimary),
                   keyboardType: TextInputType.emailAddress,
                   validator: _validateEmail,
-                ),
-
-                const SizedBox(height: AppDim.paddingLarge),
-
-                // Password Change Section
-                Text(
-                  'Change Password (Optional)',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-
-                const SizedBox(height: AppDim.paddingMedium),
-
-                // Current Password Field
-                TextFormField(
-                  controller: _currentPasswordController,
-                  decoration: InputDecoration(
-                    labelText: 'Current Password',
-                    labelStyle: TextStyle(color: AppColors.textSecondary),
-                    prefixIcon: Icon(Icons.lock, color: AppColors.textSecondary),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureCurrentPassword ? Icons.visibility : Icons.visibility_off,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureCurrentPassword = !_obscureCurrentPassword;
-                        });
-                      },
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                      borderSide: BorderSide(color: AppColors.primaryColor, width: 2),
-                    ),
-                    filled: true,
-                    fillColor: AppColors.cardBackground,
-                  ),
-                  style: TextStyle(color: AppColors.textPrimary),
-                  obscureText: _obscureCurrentPassword,
-                  validator: (value) => _validatePassword(
-                    value,
-                    isRequired: _newPasswordController.text.isNotEmpty,
-                  ),
-                ),
-
-                const SizedBox(height: AppDim.paddingMedium),
-
-                // New Password Field
-                TextFormField(
-                  controller: _newPasswordController,
-                  decoration: InputDecoration(
-                    labelText: 'New Password',
-                    labelStyle: TextStyle(color: AppColors.textSecondary),
-                    prefixIcon: Icon(Icons.lock_outline, color: AppColors.textSecondary),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureNewPassword ? Icons.visibility : Icons.visibility_off,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureNewPassword = !_obscureNewPassword;
-                        });
-                      },
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                      borderSide: BorderSide(color: AppColors.primaryColor, width: 2),
-                    ),
-                    filled: true,
-                    fillColor: AppColors.cardBackground,
-                  ),
-                  style: TextStyle(color: AppColors.textPrimary),
-                  obscureText: _obscureNewPassword,
-                  validator: (value) => _validatePassword(value, isRequired: false),
-                ),
-
-                const SizedBox(height: AppDim.paddingMedium),
-
-                // Confirm Password Field
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  decoration: InputDecoration(
-                    labelText: 'Confirm New Password',
-                    labelStyle: TextStyle(color: AppColors.textSecondary),
-                    prefixIcon: Icon(Icons.lock_outline, color: AppColors.textSecondary),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
-                        color: AppColors.textSecondary,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
-                        });
-                      },
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                      borderSide: BorderSide(color: AppColors.primaryColor, width: 2),
-                    ),
-                    filled: true,
-                    fillColor: AppColors.cardBackground,
-                  ),
-                  style: TextStyle(color: AppColors.textPrimary),
-                  obscureText: _obscureConfirmPassword,
-                  validator: _validateConfirmPassword,
                 ),
 
                 const SizedBox(height: AppDim.paddingLarge),

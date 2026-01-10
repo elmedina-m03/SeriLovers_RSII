@@ -30,7 +30,19 @@ namespace SeriLovers.API.Controllers
             Description = "Retrieves various counts and genre distribution for the admin dashboard.")]
         public async Task<IActionResult> GetStats()
         {
+            // Count all users - no filtering
             var usersCount = await _context.Users.CountAsync();
+            
+            // Verify the count by getting actual user list (for debugging)
+            var allUsers = await _context.Users.Select(u => u.Id).ToListAsync();
+            var actualUsersCount = allUsers.Count;
+            
+            // Use the actual count if different (safety check)
+            if (usersCount != actualUsersCount)
+            {
+                usersCount = actualUsersCount;
+            }
+            
             var seriesCount = await _context.Series.CountAsync();
             var actorsCount = await _context.Actors.CountAsync();
             var ratingsCount = await _context.Ratings.CountAsync();

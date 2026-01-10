@@ -8,6 +8,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/episode_progress_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
+import '../providers/mobile_challenges_provider.dart';
 
 /// Screen for adding/editing a review for a series
 class MobileAddReviewScreen extends StatefulWidget {
@@ -194,6 +195,18 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
             : _commentController.text.trim(),
       );
 
+      // Immediately refresh the reviews list before navigating back
+      await ratingProvider.loadSeriesRatings(widget.series.id);
+
+      // Refresh challenge progress since rating a series counts towards challenges
+      try {
+        final challengesProvider = Provider.of<MobileChallengesProvider>(context, listen: false);
+        await challengesProvider.fetchMyProgress();
+      } catch (e) {
+        // Don't fail if challenge refresh fails
+        print('Error refreshing challenges: $e');
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -206,10 +219,10 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
     } catch (e) {
       if (mounted) {
         // Check if it's an authentication error
-        final errorMessage = e.toString();
+        final errorMessage = e.toString().toLowerCase();
         if (errorMessage.contains('401') || 
-            errorMessage.contains('Unauthorized') ||
-            errorMessage.contains('Authentication required')) {
+            errorMessage.contains('unauthorized') ||
+            errorMessage.contains('authentication required')) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Your session has expired. Please log in again.'),
@@ -218,6 +231,26 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
             ),
           );
           // Don't logout automatically - let user decide
+        } else if (errorMessage.contains('finish') && errorMessage.contains('series')) {
+          // Friendly notification for needing to finish the series
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Watch all episodes to leave a review',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.infoColor,
+              duration: Duration(seconds: 4),
+            ),
+          );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -256,6 +289,67 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
         foregroundColor: AppColors.textLight,
         elevation: 0,
         actions: [
+          // Delete button (only if editing existing review)
+          if (_existingRating != null && !_isLoading)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
+              tooltip: 'Delete Review',
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Delete Review'),
+                    content: const Text('Are you sure you want to delete your review? This action cannot be undone.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Cancel'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.dangerColor,
+                        ),
+                        child: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirm == true && mounted && _existingRating != null) {
+                  setState(() {
+                    _isLoading = true;
+                  });
+
+                  try {
+                    final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+                    await ratingProvider.deleteRating(_existingRating!.id, widget.series.id);
+                    
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Review deleted successfully'),
+                          backgroundColor: AppColors.successColor,
+                        ),
+                      );
+                      Navigator.of(context).pop(true); // Return true to indicate success
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to delete review: ${e.toString().replaceAll('ApiException: ', '')}'),
+                          backgroundColor: AppColors.dangerColor,
+                        ),
+                      );
+                      setState(() {
+                        _isLoading = false;
+                      });
+                    }
+                  }
+                }
+              },
+            ),
           if (_isLoading)
             const Padding(
               padding: EdgeInsets.all(16.0),
@@ -271,9 +365,9 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
           else
             TextButton(
               onPressed: _submitReview,
-              child: const Text(
-                'Submit',
-                style: TextStyle(
+              child: Text(
+                _existingRating != null ? 'Update' : 'Submit',
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
                 ),
@@ -392,9 +486,9 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text(
-                          'Submit Review',
-                          style: TextStyle(
+                      : Text(
+                          _existingRating != null ? 'Update Review' : 'Submit Review',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),

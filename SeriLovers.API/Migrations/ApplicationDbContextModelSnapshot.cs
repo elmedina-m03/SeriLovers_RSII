@@ -213,9 +213,6 @@ namespace SeriLovers.API.Migrations
                     b.Property<DateTime>("DateCreated")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("Name")
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
@@ -228,6 +225,9 @@ namespace SeriLovers.API.Migrations
 
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
@@ -341,7 +341,7 @@ namespace SeriLovers.API.Migrations
                     b.HasIndex("ChallengeId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("ChallengeProgresses");
+                    b.ToTable("ChallengeProgresses", (string)null);
                 });
 
             modelBuilder.Entity("SeriLovers.API.Models.Episode", b =>
@@ -682,6 +682,53 @@ namespace SeriLovers.API.Migrations
                     b.ToTable("SeriesGenres");
                 });
 
+            modelBuilder.Entity("SeriLovers.API.Models.SeriesWatchingState", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime>("LastUpdated")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("SeriesId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalEpisodesCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WatchedEpisodesCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SeriesId");
+
+                    b.HasIndex("UserId", "SeriesId")
+                        .IsUnique();
+
+                    b.ToTable("SeriesWatchingStates");
+                });
+
             modelBuilder.Entity("SeriLovers.API.Models.ViewingEvent", b =>
                 {
                     b.Property<int>("Id")
@@ -1016,6 +1063,25 @@ namespace SeriLovers.API.Migrations
                     b.Navigation("Genre");
 
                     b.Navigation("Series");
+                });
+
+            modelBuilder.Entity("SeriLovers.API.Models.SeriesWatchingState", b =>
+                {
+                    b.HasOne("SeriLovers.API.Models.Series", "Series")
+                        .WithMany()
+                        .HasForeignKey("SeriesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SeriLovers.API.Models.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Series");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SeriLovers.API.Models.ViewingEvent", b =>

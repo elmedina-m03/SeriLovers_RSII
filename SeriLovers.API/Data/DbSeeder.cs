@@ -86,6 +86,9 @@ namespace SeriLovers.API.Data
             }
         }
 
+        /// <summary>
+        /// Seeds recommendation logs for development/testing (only in Development environment)
+        /// </summary>
         private static async Task SeedRecommendationLogsAsync(ApplicationDbContext context)
         {
             if (await context.RecommendationLogs.AnyAsync())
@@ -132,6 +135,8 @@ namespace SeriLovers.API.Data
                     }
                 }
             }
+
+            await context.SaveChangesAsync();
         }
 
         public static async Task SeedGenresAsync(ApplicationDbContext context)
@@ -617,7 +622,10 @@ namespace SeriLovers.API.Data
             }
         }
 
-        public static async Task Seed(IServiceProvider serviceProvider)
+        /// <summary>
+        /// Seeds catalog data (genres, actors, series, challenges) - runs in all environments
+        /// </summary>
+        public static async Task SeedCatalogDataAsync(IServiceProvider serviceProvider)
         {
             using var scope = serviceProvider.CreateScope();
 
@@ -625,50 +633,58 @@ namespace SeriLovers.API.Data
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
             var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
 
-            // Seed roles i korisnika
+            // Seed roles and ensure first user is admin
             await SeedRolesAndUsersAsync(context, userManager, roleManager);
 
-            // Seed genres
+            // Seed catalog data (genres, actors, series)
             await SeedGenresAsync(context);
-
-            // Seed actors
             await SeedActorsAsync(context);
-
-            // Seed series
             await SeedSeriesAsync(context);
 
+            // Seed favorite characters (based on catalog data)
             await SeedFavoriteCharactersAsync(context);
-            await SeedRecommendationLogsAsync(context);
 
-            // Add simple test data
-            await SeedTestUsersAsync(userManager);
-            await SeedTestActorsAsync(context);
-            await SeedTestSeriesAsync(context);
-            await SeedTestRatingsAsync(context);
-            await SeedTestWatchlistsAsync(context);
-            await SeedEpisodeReviewsAsync(context);
-
-            // Seed challenges
+            // Seed challenge definitions (catalog data - challenge progress comes from real user activity)
             await SeedChallengesAsync(context);
-
-            // Challenge progress is now calculated from real watched data, not seeded
-
-            // Seed dummy users (testuser1..testuser8@gmail.com)
-            await SeedDummyUsersAsync(userManager);
-
-            // Seed ratings and watchlists
-            await SeedRatingsAndWatchlistsAsync(context);
-
-            // Seed viewing events for monthly watching statistics
-            await SeedViewingEventsAsync(context);
-
-            // Seed dummy users with activity for statistics
-            await SeedDummyUsersWithActivityAsync(context, userManager);
         }
 
         /// <summary>
-        /// Seeds 10 dummy users with ratings and watchlist entries across different months
-        /// to populate monthly statistics and top-rated series data
+        /// Seeds development/test data (dummy users, fake activity) - runs only in Development
+        /// </summary>
+        public static async Task SeedDevelopmentDataAsync(IServiceProvider serviceProvider)
+        {
+            using var scope = serviceProvider.CreateScope();
+
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+            // Seed test users for development
+            await SeedTestUsersAsync(userManager);
+            await SeedDummyUsersAsync(userManager);
+
+            // Seed test entities for development
+            await SeedTestActorsAsync(context);
+            await SeedTestSeriesAsync(context);
+
+            // Seed dummy users with activity for development statistics
+            await SeedDummyUsersWithActivityAsync(context, userManager);
+
+            // Seed recommendation logs (for testing recommendation system)
+            await SeedRecommendationLogsAsync(context);
+        }
+
+        /// <summary>
+        /// Legacy method for backward compatibility - calls catalog seeding
+        /// </summary>
+        [Obsolete("Use SeedCatalogDataAsync for production and SeedDevelopmentDataAsync for development")]
+        public static async Task Seed(IServiceProvider serviceProvider)
+        {
+            await SeedCatalogDataAsync(serviceProvider);
+        }
+
+        /// <summary>
+        /// Seeds 10 dummy users with watchlist entries (NO RATINGS/REVIEWS)
+        /// Ratings and reviews should only be created via real user actions
         /// </summary>
         private static async Task SeedDummyUsersWithActivityAsync(
             ApplicationDbContext context,
@@ -687,7 +703,6 @@ namespace SeriLovers.API.Data
             }
 
             var users = new List<ApplicationUser>();
-            var ratings = new List<Rating>();
             var watchlists = new List<Watchlist>();
 
             // Create 10 dummy users
@@ -724,7 +739,7 @@ namespace SeriLovers.API.Data
                 return;
             }
 
-            // Generate activity across last 12 months
+            // Generate activity across last 12 months (watchlist only - NO RATINGS)
             var now = DateTime.UtcNow;
             var months = Enumerable.Range(0, 12)
                 .Select(m => now.AddMonths(-m))
@@ -732,7 +747,7 @@ namespace SeriLovers.API.Data
 
             foreach (var user in createdUsers)
             {
-                // Each user rates and adds to watchlist 3-5 random series
+                // Each user adds to watchlist 3-5 random series (NO RATINGS)
                 var userSeries = series.OrderBy(x => Random.Next()).Take(Random.Next(3, 6)).ToList();
 
                 foreach (var s in userSeries)
@@ -740,18 +755,6 @@ namespace SeriLovers.API.Data
                     // Random month from last 12 months
                     var activityMonth = months[Random.Next(months.Count)];
                     var activityDate = activityMonth.AddDays(Random.Next(0, 28)); // Random day in month
-
-                    // Add rating if not exists
-                    if (!await context.Ratings.AnyAsync(r => r.UserId == user.Id && r.SeriesId == s.Id))
-                    {
-                        ratings.Add(new Rating
-                        {
-                            UserId = user.Id,
-                            SeriesId = s.Id,
-                            Score = Random.Next(5, 11), // Rating between 5-10
-                            CreatedAt = activityDate
-                        });
-                    }
 
                     // Add to watchlist if not exists
                     if (!await context.Watchlists.AnyAsync(w => w.UserId == user.Id && w.SeriesId == s.Id))
@@ -766,12 +769,7 @@ namespace SeriLovers.API.Data
                 }
             }
 
-            // Bulk insert ratings and watchlists
-            if (ratings.Any())
-            {
-                await context.Ratings.AddRangeAsync(ratings);
-            }
-
+            // Bulk insert watchlists only (NO RATINGS)
             if (watchlists.Any())
             {
                 await context.Watchlists.AddRangeAsync(watchlists);
@@ -863,6 +861,11 @@ namespace SeriLovers.API.Data
             }
         }
 
+        /// <summary>
+        /// [REMOVED] Ratings should only be created via real user actions.
+        /// This method is kept for reference but no longer called.
+        /// </summary>
+        [Obsolete("Ratings should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedTestRatingsAsync(ApplicationDbContext context)
         {
             var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Email == "admin@test.com");
@@ -889,6 +892,11 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// [REMOVED] Watchlists should only be created via real user actions.
+        /// This method is kept for reference but no longer called.
+        /// </summary>
+        [Obsolete("Watchlists should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedTestWatchlistsAsync(ApplicationDbContext context)
         {
             var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Email == "admin@test.com");
@@ -915,6 +923,11 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// [REMOVED] Episode reviews should only be created via real user actions.
+        /// This method is kept for reference but no longer called.
+        /// </summary>
+        [Obsolete("Episode reviews should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedEpisodeReviewsAsync(ApplicationDbContext context)
         {
             // Check if reviews already exist
@@ -1043,9 +1056,10 @@ namespace SeriLovers.API.Data
         }
 
         /// <summary>
-        /// Seeds ratings and watchlist entries for several series
-        /// Creates high ratings for some series to populate statistics
+        /// [REMOVED] Ratings should only be created via real user actions.
+        /// This method is kept for reference but no longer called.
         /// </summary>
+        [Obsolete("Ratings should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedRatingsAndWatchlistsAsync(ApplicationDbContext context)
         {
             // Get all users and series
@@ -1116,9 +1130,10 @@ namespace SeriLovers.API.Data
         }
 
         /// <summary>
-        /// Seeds viewing events to populate monthly watching statistics and view counts
-        /// Creates viewing events across the last 12 months for users and series
+        /// [REMOVED] Viewing events should only be created via real user actions.
+        /// This method is kept for reference but no longer called.
         /// </summary>
+        [Obsolete("Viewing events should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedViewingEventsAsync(ApplicationDbContext context)
         {
             // Check if viewing events already exist
@@ -1173,9 +1188,10 @@ namespace SeriLovers.API.Data
         }
 
         /// <summary>
-        /// Seeds example challenges
+        /// Seeds initial challenge definitions (catalog data).
+        /// Challenge progress is calculated from real user activity, not seeded.
         /// </summary>
-        private static async Task SeedChallengesAsync(ApplicationDbContext context)
+        public static async Task SeedChallengesAsync(ApplicationDbContext context)
         {
             // Check if challenges already exist
             if (await context.Challenges.AnyAsync())

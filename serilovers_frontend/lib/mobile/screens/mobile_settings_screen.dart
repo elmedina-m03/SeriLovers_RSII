@@ -4,9 +4,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
-import '../../services/api_service.dart';
 
-/// Mobile settings screen with Language, Password, and Privacy settings
+/// Mobile settings screen with Password change functionality
 class MobileSettingsScreen extends StatefulWidget {
   const MobileSettingsScreen({super.key});
 
@@ -24,10 +23,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   bool _isChangingPassword = false;
-
-  bool _profileVisibility = true;
-  bool _activityVisibility = true;
-  bool _emailNotifications = true;
 
   @override
   void dispose() {
@@ -160,62 +155,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Language Preferences Section
-              _buildSectionHeader(theme, languageProvider.translate('languagePreferences')),
-              const SizedBox(height: AppDim.paddingSmall),
-              Card(
-                color: AppColors.cardBackground,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                  child: DropdownButtonFormField<String>(
-                    value: languageProvider.currentLanguage,
-                    decoration: InputDecoration(
-                      labelText: languageProvider.translate('appLanguage'),
-                      labelStyle: TextStyle(color: AppColors.textSecondary),
-                      prefixIcon: Icon(Icons.language, color: AppColors.textSecondary),
-                      border: InputBorder.none,
-                    ),
-                    style: TextStyle(color: AppColors.textPrimary),
-                    dropdownColor: AppColors.cardBackground,
-                    items: LanguageProvider.availableLanguages.map((lang) {
-                      return DropdownMenuItem(
-                        value: lang,
-                        child: Text(lang),
-                      );
-                    }).toList(),
-                    onChanged: (value) async {
-                      if (value != null) {
-                        await languageProvider.setLanguage(value);
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${languageProvider.translate('appLanguage')}: $value'),
-                              backgroundColor: AppColors.successColor,
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppDim.paddingSmall),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppDim.paddingMedium),
-                child: Text(
-                  languageProvider.translate('languageRestartNote'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.textSecondary,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: AppDim.paddingLarge),
 
               // Password Change Section
               _buildSectionHeader(theme, languageProvider.translate('passwordChange')),
@@ -385,110 +324,6 @@ class _MobileSettingsScreenState extends State<MobileSettingsScreen> {
                   ),
                 ),
               ),
-
-              const SizedBox(height: AppDim.paddingLarge),
-
-              // Privacy Settings Section
-              _buildSectionHeader(theme, languageProvider.translate('privacySettings')),
-              const SizedBox(height: AppDim.paddingSmall),
-              Card(
-                color: AppColors.cardBackground,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(AppDim.radiusMedium),
-                ),
-                child: Column(
-                  children: [
-                    SwitchListTile(
-                      title: Text(
-                        languageProvider.translate('profileVisibility'),
-                        style: TextStyle(color: AppColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        languageProvider.translateWithFallback('allowOthersToViewProfile', 'Allow others to view your profile'),
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                      ),
-                      value: _profileVisibility,
-                      onChanged: (value) {
-                        setState(() {
-                          _profileVisibility = value;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              value
-                                  ? languageProvider.translate('profileVisibleOn')
-                                  : languageProvider.translate('profileVisibleOff'),
-                            ),
-                            backgroundColor: AppColors.successColor,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                      activeColor: AppColors.primaryColor,
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      title: Text(
-                        languageProvider.translate('activityVisibility'),
-                        style: TextStyle(color: AppColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        languageProvider.translateWithFallback('showWatchHistory', 'Show your watch history and ratings'),
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                      ),
-                      value: _activityVisibility,
-                      onChanged: (value) {
-                        setState(() {
-                          _activityVisibility = value;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              value
-                                  ? languageProvider.translate('activityVisibleOn')
-                                  : languageProvider.translate('activityVisibleOff'),
-                            ),
-                            backgroundColor: AppColors.successColor,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                      activeColor: AppColors.primaryColor,
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      title: Text(
-                        languageProvider.translate('emailNotifications'),
-                        style: TextStyle(color: AppColors.textPrimary),
-                      ),
-                      subtitle: Text(
-                        languageProvider.translateWithFallback('receiveEmailUpdates', 'Receive email updates and notifications'),
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                      ),
-                      value: _emailNotifications,
-                      onChanged: (value) {
-                        setState(() {
-                          _emailNotifications = value;
-                        });
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              value
-                                  ? languageProvider.translate('emailNotificationsEnabled')
-                                  : languageProvider.translate('emailNotificationsDisabled'),
-                            ),
-                            backgroundColor: AppColors.successColor,
-                            duration: const Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                      activeColor: AppColors.primaryColor,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: AppDim.paddingLarge),
             ],
           ),
         ),

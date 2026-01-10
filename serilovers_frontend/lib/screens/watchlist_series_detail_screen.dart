@@ -3,12 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../models/series.dart';
 import '../providers/episode_progress_provider.dart';
-import '../providers/episode_review_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/series_provider.dart';
 import '../core/theme/app_colors.dart';
-import 'episode_reviews_screen.dart';
-import 'add_episode_review_screen.dart';
 
 class WatchlistSeriesDetailScreen extends StatefulWidget {
   final Series series;
@@ -61,7 +58,7 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
     try {
       final progress = await progressProvider.loadSeriesProgress(widget.series.id);
       setState(() {
-        _currentEpisode = progress.currentEpisodeNumber;
+        _currentEpisode = progress.watchedEpisodes; // Use watched episodes count, not next episode number
         _totalEpisodes = progress.totalEpisodes;
         _isFinished = progress.watchedEpisodes >= progress.totalEpisodes;
       });
@@ -111,7 +108,7 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
       final progress = await progressProvider.loadSeriesProgress(widget.series.id);
       
       setState(() {
-        _currentEpisode = progress.currentEpisodeNumber;
+        _currentEpisode = progress.watchedEpisodes; // Use watched episodes count, not next episode number
         _totalEpisodes = progress.totalEpisodes;
         _isFinished = progress.watchedEpisodes >= progress.totalEpisodes;
       });
@@ -151,7 +148,7 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
       final progress = await progressProvider.loadSeriesProgress(widget.series.id);
       
       setState(() {
-        _currentEpisode = progress.currentEpisodeNumber;
+        _currentEpisode = progress.watchedEpisodes; // Use watched episodes count, not next episode number
         _totalEpisodes = progress.totalEpisodes;
         _isFinished = progress.watchedEpisodes >= progress.totalEpisodes;
       });
@@ -337,7 +334,7 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Episode $_currentEpisode of $_totalEpisodes',
+                          '$_currentEpisode/$_totalEpisodes',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -487,7 +484,7 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
                                 // Reload progress
                                 final progress = await progressProvider.loadSeriesProgress(widget.series.id);
                                 setState(() {
-                                  _currentEpisode = progress.currentEpisodeNumber;
+                                  _currentEpisode = progress.watchedEpisodes; // Use watched episodes count, not next episode number
                                   _totalEpisodes = progress.totalEpisodes;
                                   _isFinished = progress.watchedEpisodes >= progress.totalEpisodes;
                                 });
@@ -529,146 +526,6 @@ class _WatchlistSeriesDetailScreenState extends State<WatchlistSeriesDetailScree
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Reviews Section
-                  Consumer<EpisodeProgressProvider>(
-                    builder: (context, progressProvider, _) {
-                      final progress = progressProvider.getSeriesProgress(widget.series.id);
-                      
-                      if (progress == null || progress.watchedEpisodes == 0) {
-                        return Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppColors.cardBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.primaryColor.withOpacity(0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.info_outline, color: AppColors.primaryColor, size: 20),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Watch episodes to add reviews. Use the + button to track your progress.',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }
-
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Episode Reviews',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: () async {
-                                  // Get the last watched episode ID
-                                  final lastEpisodeId = await progressProvider.getLastWatchedEpisodeId(widget.series.id);
-                                  if (lastEpisodeId != null && mounted) {
-                                    Navigator.pushNamed(
-                                      context,
-                                      '/episode_reviews',
-                                      arguments: lastEpisodeId,
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('No episodes watched yet'),
-                                        backgroundColor: AppColors.dangerColor,
-                                      ),
-                                    );
-                                  }
-                                },
-                                icon: const Icon(Icons.reviews, size: 18),
-                                label: const Text('View All Reviews'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: AppColors.primaryColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: AppColors.cardBackground,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.primaryColor.withOpacity(0.2)),
-                            ),
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Icon(Icons.check_circle, color: AppColors.successColor, size: 20),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        'You\'ve watched ${progress.watchedEpisodes} of ${progress.totalEpisodes} episodes',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: () async {
-                                      // Get the last watched episode ID
-                                      final lastEpisodeId = await progressProvider.getLastWatchedEpisodeId(widget.series.id);
-                                      if (lastEpisodeId != null && mounted) {
-                                        Navigator.pushNamed(
-                                          context,
-                                          '/add_episode_review',
-                                          arguments: {
-                                            'episodeId': lastEpisodeId,
-                                            'existingReview': null,
-                                          },
-                                        );
-                                      } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('No episodes watched yet'),
-                                            backgroundColor: AppColors.dangerColor,
-                                          ),
-                                        );
-                                      }
-                                    },
-                                    icon: const Icon(Icons.edit, size: 18),
-                                    label: const Text('Review Last Watched Episode'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primaryColor,
-                                      foregroundColor: AppColors.textLight,
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
                   ),
                   const SizedBox(height: 16),
                 ],

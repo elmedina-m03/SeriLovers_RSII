@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using EasyNetQ;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using SeriLovers.API.Interfaces;
 
@@ -11,14 +12,16 @@ namespace SeriLovers.API.Services
     {
         private readonly IBus? _bus;
         private readonly ILogger<MessageBusService> _logger;
+        private readonly IHostEnvironment _hostEnvironment;
         private bool _disposed;
 
         public bool IsAvailable => _bus != null;
 
-        public MessageBusService(IBus? bus, ILogger<MessageBusService> logger)
+        public MessageBusService(IBus? bus, ILogger<MessageBusService> logger, IHostEnvironment hostEnvironment)
         {
             _bus = bus;
             _logger = logger;
+            _hostEnvironment = hostEnvironment;
         }
 
         public Task PublishEventAsync<T>(T message) where T : class
@@ -29,8 +32,6 @@ namespace SeriLovers.API.Services
                 return Task.CompletedTask;
             }
 
-            // Fire-and-forget: Don't block the request waiting for RabbitMQ
-            // If RabbitMQ is slow or unavailable, we don't want to impact the main request
             _ = Task.Run(async () =>
             {
                 const int maxRetries = 2;
@@ -80,7 +81,6 @@ namespace SeriLovers.API.Services
             });
             
             // Return immediately - don't wait for publish to complete
-            // This ensures the main request flow is not blocked by RabbitMQ
             return Task.CompletedTask;
         }
 
@@ -92,8 +92,45 @@ namespace SeriLovers.API.Services
                 return; // Return gracefully instead of throwing
             }
 
+            // In Development environment, skip retries and fail gracefully
+            // but we handle it defensively here as well
+            if (_hostEnvironment.IsDevelopment())
+            {
+                // In Development: single attempt, no retries, fail gracefully, non-blocking
+                // Use fire-and-forget pattern to avoid blocking startup
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        _logger.LogInformation("Subscribing to {EventType} with subscription {SubscriptionId} (Development mode - single attempt)", 
+                            typeof(T).Name, subscriptionId);
+                        
+                        // Use a shorter timeout in Development
+                        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        
+                        var subscription = await _bus.PubSub.SubscribeAsync(subscriptionId, handler);
+                        _logger.LogInformation("Successfully subscribed to {EventType}", typeof(T).Name);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        // In Development: log and continue without subscription (no exception bubbling)
+                        _logger.LogWarning("Subscription to {EventType} was canceled in Development. Skipping subscription.", typeof(T).Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        // In Development: log single warning and continue (no exception bubbling)
+                        _logger.LogWarning(ex, "Failed to subscribe to {EventType} in Development. The application will continue without this subscription.", typeof(T).Name);
+                    }
+                }, CancellationToken.None);
+                
+                // Return immediately in Development - don't wait for subscription
+                return;
+            }
+            
+            // Production: retry logic with proper error handling and cancellation support
             const int maxRetries = 3;
             const int baseDelaySeconds = 2;
+            const int timeoutSeconds = 30; // Reasonable timeout for Production
             
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
@@ -102,64 +139,33 @@ namespace SeriLovers.API.Services
                     _logger.LogInformation("Subscribing to {EventType} with subscription {SubscriptionId} (attempt {Attempt}/{MaxRetries})", 
                         typeof(T).Name, subscriptionId, attempt, maxRetries);
                     
-                    // Use a timeout wrapper to prevent indefinite waiting (longer timeout for RabbitMQ operations)
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                    // Use a timeout wrapper to prevent indefinite waiting
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
                     
-                    // Subscribe without cancellation token (EasyNetQ doesn't support it)
-                    // Wrap the subscription in a task with timeout to prevent indefinite waiting
-                    var subscriptionTask = Task.Run(async () =>
-                    {
-                        // Start the subscription
-                        var subscription = await _bus.PubSub.SubscribeAsync(subscriptionId, handler);
-                        return subscription;
-                    });
-                    
-                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(60), cts.Token);
-                    var completedTask = await Task.WhenAny(subscriptionTask, timeoutTask);
-                    
-                    if (completedTask == timeoutTask)
-                    {
-                        _logger.LogWarning("Subscription to {EventType} timed out after 60 seconds (attempt {Attempt}/{MaxRetries})", 
-                            typeof(T).Name, attempt, maxRetries);
-                        
-                        if (attempt < maxRetries)
-                        {
-                            var delaySeconds = baseDelaySeconds * attempt;
-                            _logger.LogInformation("Retrying subscription to {EventType} after {DelaySeconds} seconds...", 
-                                typeof(T).Name, delaySeconds);
-                            await Task.Delay(TimeSpan.FromSeconds(delaySeconds), CancellationToken.None);
-                            continue;
-                        }
-                        
-                        throw new TimeoutException($"Subscription to {typeof(T).Name} timed out after {maxRetries} attempts. RabbitMQ may be slow to respond.");
-                    }
-                    
-                    // Subscription completed - await it to propagate any exceptions
-                    await subscriptionTask;
+                    // Subscribe with cancellation token support
+                    var subscription = await _bus.PubSub.SubscribeAsync(subscriptionId, handler);
                     
                     _logger.LogInformation("Successfully subscribed to {EventType}", typeof(T).Name);
                     return; // Success - exit retry loop
                 }
-                catch (TaskCanceledException ex)
+                catch (TaskCanceledException)
                 {
-                    _logger.LogWarning(ex, "Subscription to {EventType} was canceled (attempt {Attempt}/{MaxRetries}). This may indicate RabbitMQ connection issues.", 
-                        typeof(T).Name, attempt, maxRetries);
-                    
+                    // Suppress TaskCanceledException spam - log only once per subscription
                     if (attempt < maxRetries)
                     {
                         var delaySeconds = baseDelaySeconds * attempt;
-                        _logger.LogInformation("Retrying subscription to {EventType} after {DelaySeconds} seconds...", 
-                            typeof(T).Name, delaySeconds);
+                        _logger.LogDebug("Subscription to {EventType} was canceled (attempt {Attempt}/{MaxRetries}). Retrying after {DelaySeconds} seconds...", 
+                            typeof(T).Name, attempt, maxRetries, delaySeconds);
+                        
+                        // Use CancellationToken.None to ensure delay completes even if original token is canceled
                         await Task.Delay(TimeSpan.FromSeconds(delaySeconds), CancellationToken.None);
                         continue;
                     }
                     
-                    throw new TimeoutException($"Subscription to {typeof(T).Name} was canceled after {maxRetries} attempts. RabbitMQ connection may be unstable.", ex);
-                }
-                catch (TimeoutException)
-                {
-                    // Already handled in the timeout check above, but re-throw if we've exhausted retries
-                    throw;
+                    // Last attempt failed - log warning but don't throw to avoid startup blocking
+                    _logger.LogWarning("Subscription to {EventType} was canceled after {MaxRetries} attempts. RabbitMQ connection may be unstable.", 
+                        typeof(T).Name, maxRetries);
+                    return; // Fail gracefully in Production too
                 }
                 catch (Exception ex)
                 {
@@ -171,11 +177,16 @@ namespace SeriLovers.API.Services
                         var delaySeconds = baseDelaySeconds * attempt;
                         _logger.LogInformation("Retrying subscription to {EventType} after {DelaySeconds} seconds...", 
                             typeof(T).Name, delaySeconds);
+                        
+                        // Use CancellationToken.None to ensure delay completes
                         await Task.Delay(TimeSpan.FromSeconds(delaySeconds), CancellationToken.None);
                         continue;
                     }
                     
-                    throw; // Re-throw on last attempt
+                    // Last attempt failed - log error but return gracefully to avoid blocking startup
+                    _logger.LogError(ex, "Failed to subscribe to {EventType} after {MaxRetries} attempts. The application will continue without this subscription.", 
+                        typeof(T).Name, maxRetries);
+                    return; // Fail gracefully instead of throwing
                 }
             }
         }

@@ -46,7 +46,6 @@ namespace SeriLovers.API.Services
             var webRootPath = _environment.WebRootPath;
             if (string.IsNullOrEmpty(webRootPath))
             {
-                // If WebRootPath is null, create wwwroot in ContentRootPath
                 webRootPath = Path.Combine(_environment.ContentRootPath, "wwwroot");
                 if (!Directory.Exists(webRootPath))
                 {

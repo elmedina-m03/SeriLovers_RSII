@@ -21,7 +21,6 @@ class CreateWatchlistScreen extends StatefulWidget {
 class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _coverUrlController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   bool _submitting = false;
   bool _isUploadingImage = false;
@@ -47,7 +46,6 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _coverUrlController.dispose();
     _notesController.dispose();
     super.dispose();
   }
@@ -63,9 +61,8 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
 
     final provider = Provider.of<WatchlistProvider>(context, listen: false);
     final name = _nameController.text.trim();
-    // Use uploaded image URL if available, otherwise use URL from text field
-    final coverUrl = _uploadedImageUrl ?? 
-        (_coverUrlController.text.trim().isEmpty ? null : _coverUrlController.text.trim());
+    // Use uploaded image URL only
+    final coverUrl = _uploadedImageUrl;
     final description = _notesController.text.trim().isEmpty
         ? null
         : _notesController.text.trim();
@@ -227,7 +224,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
   /// Priority:
   /// 1. While uploading, show a spinner.
   /// 2. If the user just picked an image, show the local preview (bytes/file) immediately.
-  /// 3. Otherwise, show the uploaded image URL or the manual URL from the text field.
+  /// 3. Otherwise, show the uploaded image URL.
   /// 4. If nothing is available, show the default placeholder UI.
   Widget _buildCoverPreview() {
     if (_isUploadingImage) {
@@ -257,13 +254,12 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
       );
     }
 
-    // Fall back to server URL or manual URL entry
-    final effectiveUrl = _uploadedImageUrl ?? _coverUrlController.text;
-    if (effectiveUrl.isNotEmpty) {
+    // Fall back to uploaded image URL
+    if (_uploadedImageUrl != null && _uploadedImageUrl!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Image.network(
-          effectiveUrl,
+          _uploadedImageUrl!,
           fit: BoxFit.cover,
           errorBuilder: (context, error, stackTrace) {
             // If the network image fails, show a neutral placeholder instead of crashing
@@ -278,7 +274,7 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
       );
     }
 
-    // Default placeholder when no image has been selected or entered
+    // Default placeholder when no image has been selected
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -352,32 +348,6 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                   ),
                   child: _buildCoverPreview(),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // Or enter URL option
-              TextFormField(
-                controller: _coverUrlController,
-                decoration: InputDecoration(
-                  labelText: 'Or enter image URL (optional)',
-                  hintText: 'Enter image URL',
-                  prefixIcon: const Icon(Icons.link),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: AppColors.primaryColor,
-                      width: 2,
-                    ),
-                  ),
-                ),
-                onChanged: (value) {
-                  setState(() {}); // Refresh to show/hide preview
-                },
-                keyboardType: TextInputType.url,
               ),
               const SizedBox(height: 24),
               // List Name

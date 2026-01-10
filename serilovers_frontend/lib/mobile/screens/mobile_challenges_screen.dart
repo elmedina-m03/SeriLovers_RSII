@@ -35,10 +35,12 @@ class _MobileChallengesScreenState extends State<MobileChallengesScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Refresh when returning to this screen (e.g., after completing a series)
+    // Refresh when returning to this screen (e.g., after completing a series or rating)
+    // Always refresh to ensure challenge progress is up-to-date
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_isLoadingMore) {
         final now = DateTime.now();
+        // Refresh if cache expired or if we haven't loaded yet
         if (_lastLoadTime == null || 
             now.difference(_lastLoadTime!) > _cacheTimeout) {
           _loadChallenges();

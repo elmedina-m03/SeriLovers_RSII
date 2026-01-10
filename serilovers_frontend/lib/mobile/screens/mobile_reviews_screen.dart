@@ -28,6 +28,7 @@ class MobileReviewsScreen extends StatefulWidget {
 class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
   bool _isLoading = true;
   bool _canAddReview = false;
+  Rating? _myRating; // User's existing rating for this series
 
   @override
   void initState() {
@@ -54,6 +55,10 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
       // Only check if user is authenticated
       if (authProvider.isAuthenticated && authProvider.token != null && authProvider.token!.isNotEmpty) {
         try {
+          // Load user's existing rating for this series
+          await ratingProvider.loadMyRating(widget.series.id);
+          _myRating = ratingProvider.getMyRating(widget.series.id);
+
           // Get all watched episodes for this series
           final progressService = EpisodeProgressService();
           final userProgress = await progressService.getUserProgress(token: authProvider.token);
@@ -78,12 +83,12 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
                 .where((episode) => watchedEpisodeIds.contains(episode.id))
                 .length;
             
-            // Can add review only if all episodes are watched
-            _canAddReview = totalEpisodes > 0 && watchedCount >= totalEpisodes;
+            // Can add review only if all episodes are watched AND user doesn't already have a rating
+            _canAddReview = totalEpisodes > 0 && watchedCount >= totalEpisodes && _myRating == null;
           } else {
             // Fallback to progress percentage if series detail not available
             final progress = await progressProvider.loadSeriesProgress(widget.series.id);
-            _canAddReview = progress != null && progress.progressPercentage >= 100;
+            _canAddReview = progress != null && progress.progressPercentage >= 100 && _myRating == null;
           }
         } catch (_) {
           _canAddReview = false;
@@ -129,46 +134,180 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
 
                 return Column(
                   children: [
-                    // Add Review Button (only if finished)
-                    if (_canAddReview)
+                    // Action Buttons (Add/Edit/Delete Review)
+                    if (_canAddReview || _myRating != null)
                       Padding(
                         padding: const EdgeInsets.all(AppDim.paddingMedium),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              final result = await Navigator.push(
-                                context,
-                                MobilePageRoute(
-                                  builder: (context) => MobileAddReviewScreen(
-                                    series: widget.series,
+                        child: Row(
+                          children: [
+                            // Add Review Button (only if user doesn't have a rating)
+                            if (_canAddReview)
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final result = await Navigator.push(
+                                      context,
+                                      MobilePageRoute(
+                                        builder: (context) => MobileAddReviewScreen(
+                                          series: widget.series,
+                                        ),
+                                      ),
+                                    );
+                                    if (result == true && mounted) {
+                                      // Immediately refresh reviews list
+                                      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+                                      await ratingProvider.loadSeriesRatings(widget.series.id);
+                                      
+                                      // Refresh data to update UI state (can add review, etc.)
+                                      await _loadData();
+                                      
+                                      // Refresh series to update rating count
+                                      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                                      await seriesProvider.fetchSeriesDetail(widget.series.id);
+                                      
+                                      // Force UI update
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.add_comment),
+                                  label: const Text('Add Review'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: AppDim.paddingMedium,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                                    ),
                                   ),
                                 ),
-                              );
-                              if (result == true && mounted) {
-                                // Refresh reviews and check if can add review again
-                                await _loadData();
-                                // Also refresh the rating provider to show new review
-                                final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
-                                await ratingProvider.loadSeriesRatings(widget.series.id);
-                                // Refresh series to update rating count
-                                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                                await seriesProvider.fetchSeriesDetail(widget.series.id);
-                              }
-                            },
-                            icon: const Icon(Icons.add_comment),
-                            label: const Text('Add Review'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryColor,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                vertical: AppDim.paddingMedium,
                               ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                            // Edit/Delete Review Buttons (if user already has a rating)
+                            if (_myRating != null) ...[
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final result = await Navigator.push(
+                                      context,
+                                      MobilePageRoute(
+                                        builder: (context) => MobileAddReviewScreen(
+                                          series: widget.series,
+                                        ),
+                                      ),
+                                    );
+                                    if (result == true && mounted) {
+                                      // Immediately refresh reviews list
+                                      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+                                      await ratingProvider.loadSeriesRatings(widget.series.id);
+                                      
+                                      // Refresh data to update UI state
+                                      await _loadData();
+                                      
+                                      // Refresh series to update rating count
+                                      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                                      await seriesProvider.fetchSeriesDetail(widget.series.id);
+                                      
+                                      // Force UI update
+                                      if (mounted) {
+                                        setState(() {});
+                                      }
+                                    }
+                                  },
+                                  icon: const Icon(Icons.edit),
+                                  label: const Text('Edit Review'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: AppDim.paddingMedium,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
+                              const SizedBox(width: AppDim.paddingSmall),
+                              ElevatedButton.icon(
+                                onPressed: () async {
+                                  // Show confirmation dialog
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Delete Review'),
+                                      content: const Text('Are you sure you want to delete your review? This action cannot be undone.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.of(context).pop(false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => Navigator.of(context).pop(true),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: AppColors.dangerColor,
+                                          ),
+                                          child: const Text('Delete'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                    if (confirm == true && mounted && _myRating != null) {
+                                      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+                                      try {
+                                        await ratingProvider.deleteRating(_myRating!.id, widget.series.id);
+                                        
+                                        // Immediately refresh reviews list
+                                        await ratingProvider.loadSeriesRatings(widget.series.id);
+                                        
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('Review deleted successfully'),
+                                              backgroundColor: AppColors.successColor,
+                                            ),
+                                          );
+                                          // Refresh data to update UI state
+                                          await _loadData();
+                                          
+                                          // Refresh series to update rating count
+                                          final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                                          await seriesProvider.fetchSeriesDetail(widget.series.id);
+                                          
+                                          // Force UI update
+                                          setState(() {});
+                                        }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Failed to delete review: $e'),
+                                            backgroundColor: AppColors.dangerColor,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Delete'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.dangerColor,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: AppDim.paddingMedium,
+                                    horizontal: AppDim.paddingMedium,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(AppDim.radiusMedium),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
 

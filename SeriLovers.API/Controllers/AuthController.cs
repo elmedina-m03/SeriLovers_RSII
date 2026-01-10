@@ -117,7 +117,6 @@ namespace SeriLovers.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to create default Favorites list for user {UserId}", userId);
-                // Don't throw - this is not critical for registration
             }
         }
 
@@ -263,8 +262,7 @@ namespace SeriLovers.API.Controllers
                     }
                     catch (Exception ex)
                     {
-                        // Log but don't fail the request
-                        Console.WriteLine($"Error publishing UserCreatedEvent: {ex.Message}");
+                        _logger.LogWarning(ex, "Error publishing UserCreatedEvent for UserId={UserId}", user.Id);
                     }
                 });
 
@@ -358,6 +356,19 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
+            // Check if email already exists (explicit check for better error message)
+            var existingUser = await _userManager.FindByEmailAsync(registerDto.Email);
+            if (existingUser != null)
+            {
+                _logger.LogWarning("Registration attempt with duplicate email: {Email}", registerDto.Email);
+                return BadRequest(new AuthResponseDto
+                {
+                    Success = false,
+                    Message = "Registration failed",
+                    Errors = new List<string> { $"An account with the email '{registerDto.Email}' already exists. Please use a different email or try logging in." }
+                });
+            }
+
             var user = new ApplicationUser
             {
                 UserName = registerDto.Email,
@@ -389,8 +400,7 @@ namespace SeriLovers.API.Controllers
                     }
                     catch (Exception ex)
                     {
-                        // Log but don't fail the request
-                        Console.WriteLine($"Error publishing UserCreatedEvent: {ex.Message}");
+                        _logger.LogWarning(ex, "Error publishing UserCreatedEvent for UserId={UserId}", user.Id);
                     }
                 });
 
@@ -403,6 +413,7 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
+            // Handle other registration errors (password requirements, etc.)
             return BadRequest(new AuthResponseDto
             {
                 Success = false,
@@ -650,7 +661,6 @@ namespace SeriLovers.API.Controllers
                 }
             }
             
-            // For custom properties (Name, AvatarUrl), use direct SQL update as EF Core tracking is unreliable
             if (nameChanged || avatarChanged)
             {
                 try

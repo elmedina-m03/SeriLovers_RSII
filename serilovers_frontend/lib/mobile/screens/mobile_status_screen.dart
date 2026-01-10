@@ -28,11 +28,14 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
   List<Series> _toDoSeries = [];
   List<Series> _inProgressSeries = [];
   List<Series> _finishedSeries = [];
+  int _totalWatchedEpisodes = 0; // Total episodes watched across all series
+  int _totalSeriesCount = 0; // Total series count
   String? _errorMessage;
   bool _isLoading = true;
   bool _isRefreshing = false;
   DateTime? _lastLoadTime;
   static const _cacheTimeout = Duration(seconds: 30); // Cache for 30 seconds
+  int? _lastKnownUserId; // Track user ID to detect login changes
 
   @override
   void initState() {
@@ -47,14 +50,13 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Refresh when returning to this screen (e.g., after completing a series)
+    // Always refresh to ensure series move from "In Progress" to "Finished" immediately
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_isLoading && !_isRefreshing) {
-        // Only refresh if cache expired
-        final now = DateTime.now();
-        if (_lastLoadTime == null || 
-            now.difference(_lastLoadTime!) > _cacheTimeout) {
-          _loadUserData();
-        }
+        // Force refresh when returning to screen to catch status changes
+        // This ensures series move from "In Progress" to "Finished" immediately
+        // The progress provider will fetch fresh data from backend
+        _loadUserData();
       }
     });
   }
@@ -116,7 +118,15 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
       return;
     }
     
+    // If user ID changed (e.g., different user logged in), clear progress cache
+    // This ensures fresh data is loaded after login
+    if (_lastKnownUserId != null && _lastKnownUserId != userId) {
+      progressProvider.clearAllCache();
+      _lastLoadTime = null; // Force reload
+    }
+    
     _currentUserId = userId;
+    _lastKnownUserId = userId;
     
     // Set loading state at the start
     if (mounted) {
@@ -127,21 +137,11 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
     }
 
     try {
-      // Only reload watchlist if it's empty or cache expired
-      final now = DateTime.now();
-      final shouldReload = watchlistProvider.items.isEmpty || 
-                          _lastLoadTime == null ||
-                          now.difference(_lastLoadTime!) > _cacheTimeout;
+      // Get all series with their status (includes series with progress even if not in watchlist)
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final token = auth.token;
       
-      if (shouldReload) {
-        await watchlistProvider.loadWatchlist();
-        _lastLoadTime = now;
-      }
-      
-      final allItems = watchlistProvider.items;
-      
-      // Handle empty watchlist - API returns 200 OK but list is empty
-      if (allItems.isEmpty) {
+      if (token == null || token.isEmpty) {
         if (mounted) {
           setState(() {
             _toDoSeries = [];
@@ -152,77 +152,68 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
         }
         return;
       }
-      
+
+      // Use the new endpoint that returns all series with status (not just watchlist)
+      final response = await progressProvider.getUserSeriesWithStatus();
+
       // Categorize based on series-level progress
       final toDo = <Series>[];
       final inProgress = <Series>[];
       final finished = <Series>[];
+      int totalWatchedEpisodes = 0; // Sum of all watched episodes across all series
+      final allSeriesIds = <int>{};
       
-      // Load ALL series progress in PARALLEL (much faster!)
-      // Use silent loading to avoid UI flickering from multiple loading state changes
-      final progressFutures = allItems.map((series) async {
-        try {
-          return await progressProvider.loadSeriesProgressSilent(series.id);
-        } catch (e) {
-          return null; // Return null on error so we don't block other series
-        }
-      }).toList();
-      
-      // Wait for all progress loads to complete in parallel
-      // Use eagerError: false so one failure doesn't block others
-      // Add timeout to prevent infinite loading
-      final progressResults = await Future.wait(
-        progressFutures,
-        eagerError: false,
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          return List<SeriesProgress?>.filled(allItems.length, null);
-        },
-      );
-      
-      // Now process each series with its progress
-      for (int i = 0; i < allItems.length; i++) {
-        final series = allItems[i];
-        final progress = progressResults[i];
+      // Process each series from the response
+      for (final item in response) {
+        final seriesData = item['series'] as Map<String, dynamic>?;
+        if (seriesData == null) continue;
         
-        try {
-          // ALWAYS use backend's calculated values (they sum across ALL seasons correctly)
-          // Backend calculates: totalEpisodes = series.Seasons.Sum(s => s.Episodes.Count)
-          // Backend calculates: watchedEpisodes = all episodes across all seasons that are watched
-          final totalEpisodes = progress?.totalEpisodes ?? 0;
-          final watchedEpisodes = progress?.watchedEpisodes ?? 0;
-          
-          // Fallback: If backend didn't provide values, try calculating from series object
-          // (but this is less reliable since series might not have seasons loaded)
-          final effectiveTotalEpisodes = totalEpisodes > 0 
-              ? totalEpisodes 
-              : SeriesProgressUtil.calculateTotalEpisodes(series);
-          
-          // Only show series that have been started (watchedEpisodes > 0)
-          // Series with 0 watched episodes should NOT appear in status screen
-          if (!SeriesProgressUtil.shouldShowInStatus(watchedEpisodes)) {
-            continue; // Skip series that haven't been started
-          }
-          
-          // Determine status based on watchedEpisodes / totalEpisodes
-          // Backend already calculated this correctly across all seasons
-          final status = SeriesProgressUtil.determineStatus(watchedEpisodes, effectiveTotalEpisodes);
-          
-          switch (status) {
-            case SeriesStatus.toDo:
-              // This shouldn't happen due to the filter above, but keep for safety
-              break;
-            case SeriesStatus.inProgress:
-              inProgress.add(series);
-              break;
-            case SeriesStatus.finished:
-              finished.add(series);
-              break;
-          }
-        } catch (e) {
-          // If we can't process this series, skip it
-          continue;
+        final series = Series.fromJson(seriesData);
+        final status = item['status'] as String? ?? 'ToWatch';
+        final watchedEpisodes = (item['watchedEpisodes'] as num?)?.toInt() ?? 0;
+        final totalEpisodes = (item['totalEpisodes'] as num?)?.toInt() ?? 0;
+        
+        // Skip duplicates
+        if (allSeriesIds.contains(series.id)) continue;
+        allSeriesIds.add(series.id);
+        
+        // Add to total watched episodes count
+        totalWatchedEpisodes += watchedEpisodes;
+        
+        // Progress is already cached by the provider method
+        
+        // Categorize by status
+        switch (status.toLowerCase()) {
+          case 'towatch':
+          case 'todo':
+            toDo.add(series);
+            break;
+          case 'inprogress':
+            inProgress.add(series);
+            break;
+          case 'finished':
+            finished.add(series);
+            break;
+        }
+      }
+      
+      // Also load watchlist series that might not have progress yet (for "To Do" tab)
+      final now = DateTime.now();
+      final shouldReload = watchlistProvider.items.isEmpty || 
+                          _lastLoadTime == null ||
+                          now.difference(_lastLoadTime!) > _cacheTimeout;
+      
+      if (shouldReload) {
+        await watchlistProvider.loadWatchlist();
+        _lastLoadTime = now;
+      }
+      
+      // Add watchlist series that aren't already in our lists (for "To Do" tab)
+      for (final watchlistSeries in watchlistProvider.items) {
+        if (!allSeriesIds.contains(watchlistSeries.id)) {
+          // This series is in watchlist but has no episode progress - add to "To Do"
+          toDo.add(watchlistSeries);
+          allSeriesIds.add(watchlistSeries.id);
         }
       }
       
@@ -232,6 +223,8 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
           _toDoSeries = toDo;
           _inProgressSeries = inProgress;
           _finishedSeries = finished;
+          _totalWatchedEpisodes = totalWatchedEpisodes;
+          _totalSeriesCount = allSeriesIds.length; // Total series (with progress or in watchlist)
           _isLoading = false;
         });
       }
@@ -411,51 +404,57 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
     final auth = Provider.of<AuthProvider>(context);
     final userInfo = _getUserInfo(auth.token);
     final username = userInfo['email']!.split('@')[0];
+    final languageProvider = Provider.of<LanguageProvider>(context);
 
     return Container(
       padding: const EdgeInsets.all(AppDim.paddingLarge),
       color: AppColors.backgroundColor,
-      child: Row(
+      child: Column(
         children: [
-          ImageWithPlaceholder(
-            imageUrl: userInfo['avatarUrl'],
-            width: 40,
-            height: 40,
-            fit: BoxFit.cover,
-            borderRadius: 6,
-            placeholderIcon: Icons.person,
-            placeholderIconSize: 20,
-          ),
-          const SizedBox(width: AppDim.paddingMedium),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  userInfo['name']!,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+          Row(
+            children: [
+              ImageWithPlaceholder(
+                imageUrl: userInfo['avatarUrl'],
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                borderRadius: 6,
+                placeholderIcon: Icons.person,
+                placeholderIconSize: 20,
+              ),
+              const SizedBox(width: AppDim.paddingMedium),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userInfo['name']!,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '@$username',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '@$username',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
 
   Widget _buildSeriesList(List<Series> series, ThemeData theme, {bool showFullProgress = false}) {
     if (series.isEmpty) {
@@ -551,6 +550,7 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
                       fit: BoxFit.cover,
                       placeholderIcon: Icons.movie,
                       placeholderIconSize: 40,
+                      isCircular: false,
                     ),
                   ),
                   const SizedBox(width: 12),

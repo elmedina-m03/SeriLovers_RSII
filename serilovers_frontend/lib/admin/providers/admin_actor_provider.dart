@@ -147,14 +147,16 @@ class AdminActorProvider extends ChangeNotifier {
   /// Fetches filtered and sorted actors from the API
   /// 
   /// [search] - Search query for actor name
-  /// [age] - Filter by specific age (null for all ages)
+  /// [minAge] - Minimum age for filtering (null for no minimum)
+  /// [maxAge] - Maximum age for filtering (null for no maximum)
   /// [sortBy] - Field to sort by (lastName, age)
   /// [sortOrder] - Sort order (asc, desc)
   /// [page] - Page number (optional, defaults to currentPage)
   /// [pageSize] - Number of items per page (optional, defaults to this.pageSize)
   Future<void> fetchFiltered({
     String? search,
-    int? age,
+    int? minAge,
+    int? maxAge,
     String sortBy = 'lastName',
     String sortOrder = 'asc',
     int? page,
@@ -188,8 +190,11 @@ class AdminActorProvider extends ChangeNotifier {
       if (search != null && search.isNotEmpty) {
         queryParams['search'] = search;
       }
-      if (age != null) {
-        queryParams['age'] = age.toString();
+      if (minAge != null) {
+        queryParams['minAge'] = minAge.toString();
+      }
+      if (maxAge != null) {
+        queryParams['maxAge'] = maxAge.toString();
       }
       queryParams['sortBy'] = sortBy;
       queryParams['sortOrder'] = sortOrder;

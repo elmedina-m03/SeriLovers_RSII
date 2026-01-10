@@ -21,15 +21,26 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
   final _horizontalScrollController = ScrollController();
   final _verticalScrollController = ScrollController();
   String _nameSearchQuery = '';
-  int? _selectedAge;
+  String? _selectedAgeRange; // e.g., "18-25", "26-30", "31-40"
   String _sortBy = 'lastName';
   bool _sortAscending = true;
   int _pageSize = 10;
 
-  // Age filter options
-  final List<int?> _ageOptions = [
+  // Age range filter options
+  final List<String?> _ageRangeOptions = [
     null, // All ages
-    18, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80,
+    '18-25',
+    '26-30',
+    '31-35',
+    '36-40',
+    '41-45',
+    '46-50',
+    '51-55',
+    '56-60',
+    '61-65',
+    '66-70',
+    '71-75',
+    '76+',
   ];
 
   @override
@@ -53,9 +64,25 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
   Future<void> _loadActors({int? page}) async {
     try {
       final adminActorProvider = Provider.of<AdminActorProvider>(context, listen: false);
+      // Parse age range into minAge and maxAge
+      int? minAge;
+      int? maxAge;
+      if (_selectedAgeRange != null && _selectedAgeRange!.isNotEmpty) {
+        if (_selectedAgeRange == '76+') {
+          minAge = 76;
+        } else {
+          final parts = _selectedAgeRange!.split('-');
+          if (parts.length == 2) {
+            minAge = int.tryParse(parts[0]);
+            maxAge = int.tryParse(parts[1]);
+          }
+        }
+      }
+
       await adminActorProvider.fetchFiltered(
         search: _nameSearchQuery.isEmpty ? null : _nameSearchQuery,
-        age: _selectedAge,
+        minAge: minAge,
+        maxAge: maxAge,
         sortBy: _sortBy,
         sortOrder: _sortAscending ? 'asc' : 'desc',
         page: page,
@@ -210,7 +237,7 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
             }
 
             if (adminActorProvider.items.isEmpty) {
-              final hasActiveFilters = _nameSearchQuery.isNotEmpty || _selectedAge != null;
+              final hasActiveFilters = _nameSearchQuery.isNotEmpty || _selectedAgeRange != null;
               
               return Center(
                 child: Column(
@@ -247,7 +274,7 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                             onPressed: () {
                               setState(() {
                                 _nameSearchQuery = '';
-                                _selectedAge = null;
+                                _selectedAgeRange = null;
                                 _nameSearchController.clear();
                               });
                               _loadActors(page: 1);
@@ -361,19 +388,19 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                         ),
                         const SizedBox(width: AppDim.paddingMedium),
                         
-                        // Age Filter Dropdown
+                        // Age Range Filter Dropdown
                         Expanded(
                           flex: 1,
                           child: Builder(
                             builder: (context) {
                               // Defensive check: ensure value is in available items
-                              final validValue = _selectedAge != null && _ageOptions.contains(_selectedAge)
-                                  ? _selectedAge
+                              final validValue = _selectedAgeRange != null && _ageRangeOptions.contains(_selectedAgeRange)
+                                  ? _selectedAgeRange
                                   : null;
-                              return DropdownButtonFormField<int?>(
+                              return DropdownButtonFormField<String?>(
                                 value: validValue,
                             decoration: InputDecoration(
-                              labelText: 'Filter by Age',
+                              labelText: 'Filter by Age Range',
                               labelStyle: TextStyle(color: AppColors.textSecondary),
                               prefixIcon: Icon(Icons.calendar_today, color: AppColors.textSecondary),
                               border: OutlineInputBorder(
@@ -386,20 +413,20 @@ class _AdminActorsScreenState extends State<AdminActorsScreen> {
                             ),
                             style: TextStyle(color: AppColors.textPrimary),
                             dropdownColor: AppColors.cardBackground,
-                                items: _ageOptions.map((age) {
-                                  return DropdownMenuItem<int?>(
-                                    value: age,
+                                items: _ageRangeOptions.map((range) {
+                                  return DropdownMenuItem<String?>(
+                                    value: range,
                                     child: Text(
-                                      age == null ? 'All Ages' : '$age years',
+                                      range == null ? 'All Ages' : range == '76+' ? '76+ years' : '$range years',
                                       style: TextStyle(color: AppColors.textPrimary),
                                     ),
                                   );
                                 }).toList(),
                                 onChanged: (value) {
                                   // Defensive check: only set if value is in available options
-                                  if (value == null || _ageOptions.contains(value)) {
+                                  if (value == null || _ageRangeOptions.contains(value)) {
                                     setState(() {
-                                      _selectedAge = value;
+                                      _selectedAgeRange = value;
                                     });
                                     // Don't trigger search automatically - wait for Search button
                                   }

@@ -29,12 +29,12 @@ namespace SeriLovers.API.Data
         public DbSet<ViewingEvent> ViewingEvents { get; set; }
         public DbSet<EpisodeProgress> EpisodeProgresses { get; set; }
         public DbSet<EpisodeReview> EpisodeReviews { get; set; }
+        public DbSet<SeriesWatchingState> SeriesWatchingStates { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            // Configure Series entity
             modelBuilder.Entity<Series>(entity =>
             {
                 entity.HasKey(e => e.Id);
@@ -80,7 +80,6 @@ namespace SeriLovers.API.Data
                     .HasForeignKey(rl => rl.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
-            // Configure Season entity
             modelBuilder.Entity<Season>(entity =>
             {
                 entity.HasKey(e => e.Id);
@@ -93,7 +92,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure Episode entity
             modelBuilder.Entity<Episode>(entity =>
             {
                 entity.HasKey(e => e.Id);
@@ -107,7 +105,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure Actor entity
             modelBuilder.Entity<Actor>(entity =>
             {
                 entity.HasKey(e => e.Id);
@@ -116,7 +113,6 @@ namespace SeriLovers.API.Data
                 entity.Property(e => e.Biography).HasMaxLength(2000);
             });
 
-            // Configure Genre entity
             modelBuilder.Entity<Genre>(entity =>
             {
                 entity.HasKey(e => e.Id);
@@ -124,7 +120,6 @@ namespace SeriLovers.API.Data
                 entity.HasIndex(e => e.Name).IsUnique();
             });
 
-            // Configure many-to-many join entity: Series <-> Actor
             modelBuilder.Entity<SeriesActor>(entity =>
             {
                 entity.HasKey(sa => new { sa.SeriesId, sa.ActorId });
@@ -142,7 +137,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure many-to-many join entity: Series <-> Genre
             modelBuilder.Entity<SeriesGenre>(entity =>
             {
                 entity.HasKey(sg => new { sg.SeriesId, sg.GenreId });
@@ -158,7 +152,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure Rating entity
             modelBuilder.Entity<Rating>(entity =>
             {
                 entity.HasKey(r => r.Id);
@@ -179,30 +172,23 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure WatchlistCollection entity
-            // TODO: Uncomment after migration is applied to create WatchlistCollections table
-            // modelBuilder.Entity<WatchlistCollection>(entity =>
-            // {
-            //     entity.HasKey(wc => wc.Id);
-            //     entity.Property(wc => wc.Name).IsRequired().HasMaxLength(100);
-            //     entity.Property(wc => wc.Description).HasMaxLength(500);
-            //     entity.Property(wc => wc.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
-            //
-            //     entity.HasIndex(wc => new { wc.UserId, wc.Name }).IsUnique();
-            //
-            //     entity.HasOne(wc => wc.User)
-            //         .WithMany()
-            //         .HasForeignKey(wc => wc.UserId)
-            //         .OnDelete(DeleteBehavior.Cascade);
-            // });
+            modelBuilder.Entity<WatchlistCollection>(entity =>
+            {
+                entity.HasKey(wc => wc.Id);
+                entity.Property(wc => wc.Name).IsRequired().HasMaxLength(100);
+                entity.Property(wc => wc.Description).HasMaxLength(500);
+                entity.Property(wc => wc.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(wc => new { wc.UserId, wc.Name }).IsUnique();
+                entity.HasOne(wc => wc.User)
+                    .WithMany()
+                    .HasForeignKey(wc => wc.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
 
-            // Configure Watchlist entity
             modelBuilder.Entity<Watchlist>(entity =>
             {
                 entity.HasKey(w => w.Id);
                 entity.Property(w => w.AddedAt).HasDefaultValueSql("GETUTCDATE()");
-
-                // Index to prevent duplicate entries (same user, series, and collection)
                 entity.HasIndex(w => new { w.UserId, w.SeriesId, w.CollectionId }).IsUnique();
 
                 entity.HasOne(w => w.User)
@@ -215,14 +201,12 @@ namespace SeriLovers.API.Data
                     .HasForeignKey(w => w.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
                 
-                // Configure relationship with WatchlistCollection
                 entity.HasOne(w => w.Collection)
                     .WithMany(c => c.Watchlists)
                     .HasForeignKey(w => w.CollectionId)
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
-            // Configure Challenge entity
             modelBuilder.Entity<Challenge>(entity =>
             {
                 entity.HasKey(c => c.Id);
@@ -234,9 +218,9 @@ namespace SeriLovers.API.Data
                 entity.Property(c => c.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             });
 
-            // Configure ChallengeProgress entity
             modelBuilder.Entity<ChallengeProgress>(entity =>
             {
+                entity.ToTable("ChallengeProgresses");
                 entity.HasKey(cp => cp.Id);
                 entity.Property(cp => cp.ProgressCount).IsRequired().HasDefaultValue(0);
                 entity.Property(cp => cp.Status).IsRequired().HasDefaultValue(ChallengeProgressStatus.InProgress);
@@ -253,7 +237,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure ViewingEvent entity
             modelBuilder.Entity<ViewingEvent>(entity =>
             {
                 entity.HasKey(e => e.Id);
@@ -271,7 +254,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure EpisodeProgress entity
             modelBuilder.Entity<EpisodeProgress>(entity =>
             {
                 entity.HasKey(ep => ep.Id);
@@ -291,7 +273,6 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // Configure EpisodeReview entity
             modelBuilder.Entity<EpisodeReview>(entity =>
             {
                 entity.HasKey(er => er.Id);
@@ -310,6 +291,50 @@ namespace SeriLovers.API.Data
                 entity.HasOne(er => er.Episode)
                     .WithMany(e => e.EpisodeReviews)
                     .HasForeignKey(er => er.EpisodeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SeriesWatchingState>(entity =>
+            {
+                entity.HasKey(sws => sws.Id);
+                entity.Property(sws => sws.Status).IsRequired();
+                entity.Property(sws => sws.WatchedEpisodesCount).IsRequired().HasDefaultValue(0);
+                entity.Property(sws => sws.TotalEpisodesCount).IsRequired().HasDefaultValue(0);
+                entity.Property(sws => sws.CreatedAt).IsRequired().HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(sws => sws.LastUpdated).IsRequired().HasDefaultValueSql("GETUTCDATE()");
+                
+                // One user can only have one watching state per series
+                entity.HasIndex(sws => new { sws.UserId, sws.SeriesId }).IsUnique();
+
+                entity.HasOne(sws => sws.User)
+                    .WithMany()
+                    .HasForeignKey(sws => sws.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(sws => sws.Series)
+                    .WithMany()
+                    .HasForeignKey(sws => sws.SeriesId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SeriesWatchingState>(entity =>
+            {
+                entity.HasKey(sws => sws.Id);
+                entity.Property(sws => sws.Status).IsRequired();
+                entity.Property(sws => sws.WatchedEpisodesCount).IsRequired().HasDefaultValue(0);
+                entity.Property(sws => sws.TotalEpisodesCount).IsRequired().HasDefaultValue(0);
+                entity.Property(sws => sws.CreatedAt).IsRequired().HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(sws => sws.LastUpdated).IsRequired().HasDefaultValueSql("GETUTCDATE()");
+                entity.HasIndex(sws => new { sws.UserId, sws.SeriesId }).IsUnique();
+
+                entity.HasOne(sws => sws.User)
+                    .WithMany()
+                    .HasForeignKey(sws => sws.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(sws => sws.Series)
+                    .WithMany()
+                    .HasForeignKey(sws => sws.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }

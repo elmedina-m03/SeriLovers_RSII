@@ -79,11 +79,21 @@ namespace SeriLovers.API.Controllers
                     .Select(g => new { SeriesId = g.Key, Count = g.Count() })
                     .ToDictionaryAsync(x => x.SeriesId, x => x.Count);
 
-                var watchlistCounts = await _context.Watchlists
+                // Get watchlist counts, filtering out test users
+                var allWatchlists = await _context.Watchlists
+                    .Include(w => w.User)
                     .Where(w => seriesIds.Contains(w.SeriesId))
+                    .ToListAsync();
+
+                var watchlistCounts = allWatchlists
+                    .Where(w => w.User != null
+                        && w.User.Email != null
+                        && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
                     .GroupBy(w => w.SeriesId)
-                    .Select(g => new { SeriesId = g.Key, Count = g.Count() })
-                    .ToDictionaryAsync(x => x.SeriesId, x => x.Count);
+                    .ToDictionary(w => w.Key, w => w.Count());
 
                 // Set counts on each series
                 foreach (var entry in watchlistEntries)

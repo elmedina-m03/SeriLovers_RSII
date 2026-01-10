@@ -494,7 +494,7 @@ class _WatchlistDetailScreenState extends State<WatchlistDetailScreen> {
                                                 // Episode progress - Always show progress bar
                                                 if (progress != null && progress.totalEpisodes > 0) ...[
                                                   Text(
-                                                    'Episode ${progress.currentEpisodeNumber} of ${progress.totalEpisodes}',
+                                                    '${progress.watchedEpisodes}/${progress.totalEpisodes}',
                                                     style: TextStyle(
                                                       fontSize: 12,
                                                       fontWeight: FontWeight.w500,
@@ -646,7 +646,7 @@ class _WatchlistDetailScreenState extends State<WatchlistDetailScreen> {
                                     // Episode progress - Always show progress bar
                                     if (progress != null && progress.totalEpisodes > 0) ...[
                                       Text(
-                                        'Episode ${progress.currentEpisodeNumber} of ${progress.totalEpisodes}',
+                                        '${progress.watchedEpisodes}/${progress.totalEpisodes}',
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w500,

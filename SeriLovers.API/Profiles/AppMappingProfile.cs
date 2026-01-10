@@ -1,6 +1,7 @@
 using AutoMapper;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -21,7 +22,8 @@ namespace SeriLovers.API.Profiles
             CreateMap<ActorUpsertDto, Actor>();
             CreateMap<Genre, GenreDto>();
             CreateMap<GenreUpsertDto, Genre>();
-            CreateMap<Episode, EpisodeDto>();
+            CreateMap<Episode, EpisodeDto>()
+                .ForMember(dest => dest.DurationMinutes, opt => opt.MapFrom(src => src.DurationMinutes ?? 40));
             CreateMap<Season, SeasonDto>()
                 .ForMember(dest => dest.Episodes, opt => opt.MapFrom(src => src.Episodes ?? new List<Episode>()));
             CreateMap<SeasonUpsertDto, Season>();
@@ -72,10 +74,8 @@ namespace SeriLovers.API.Profiles
                 .ForMember(dest => dest.Actors, opt => opt.Ignore())
                 .AfterMap((src, dest) =>
                 {
-                    // Build SeriesActors from ActorIds and Actors list
                     var actorDict = new Dictionary<int, SeriesActor>();
                     
-                    // First add ActorIds (without role names)
                     if (src.ActorIds != null && src.ActorIds.Any())
                     {
                         foreach (var id in src.ActorIds)
@@ -87,7 +87,6 @@ namespace SeriLovers.API.Profiles
                         }
                     }
                     
-                    // Then add/update with Actors list (which may have role names)
                     if (src.Actors != null && src.Actors.Any())
                     {
                         foreach (var a in src.Actors)
@@ -103,7 +102,6 @@ namespace SeriLovers.API.Profiles
             CreateMap<WatchlistCreateDto, Watchlist>();
             CreateMap<EpisodeUpsertDto, Episode>();
 
-            // WatchlistCollection mappings
             CreateMap<WatchlistCollection, WatchlistCollectionDto>()
                 .ForMember(dest => dest.SeriesCount, opt => opt.MapFrom(src => src.Watchlists != null ? src.Watchlists.Count : 0));
             CreateMap<WatchlistCollection, WatchlistCollectionDetailDto>()
@@ -113,7 +111,6 @@ namespace SeriLovers.API.Profiles
             CreateMap<WatchlistCollectionUpdateDto, WatchlistCollection>()
                 .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
 
-            // EpisodeProgress mappings
             CreateMap<EpisodeProgress, EpisodeProgressDto>()
                 .ForMember(dest => dest.UserName, opt => opt.MapFrom(src => src.User != null ? src.User.UserName : null))
                 .ForMember(dest => dest.EpisodeTitle, opt => opt.MapFrom(src => src.Episode != null ? src.Episode.Title : null))
@@ -124,7 +121,6 @@ namespace SeriLovers.API.Profiles
                 .ForMember(dest => dest.SeriesTitle, opt => opt.MapFrom(src => src.Episode != null && src.Episode.Season != null && src.Episode.Season.Series != null ? src.Episode.Season.Series.Title : null));
             CreateMap<EpisodeProgressCreateDto, EpisodeProgress>();
 
-            // EpisodeReview mappings
             CreateMap<EpisodeReview, EpisodeReviewDto>()
                 .ForMember(dest => dest.UserName, opt => opt.MapFrom(src => src.IsAnonymous ? "Anonymous" : (src.User != null ? src.User.UserName : null)))
                 .ForMember(dest => dest.UserAvatarUrl, opt => opt.MapFrom(src => src.IsAnonymous ? null : (src.User != null ? src.User.AvatarUrl : null)))

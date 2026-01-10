@@ -36,10 +36,27 @@ namespace SeriLovers.API.Services
             try
             {
                 // Count totals - efficient queries with fallback for empty database
-                var totalUsers = await _context.Users.CountAsync();
+                // Show all users in total count (no filtering)
+                var totalUsers = await _context.Users
+                    .AsNoTracking()
+                    .CountAsync();
+                
                 var totalSeries = await _context.Series.CountAsync();
                 var totalActors = await _context.Actors.CountAsync();
-                var totalWatchlistItems = await _context.Watchlists.CountAsync();
+                
+                // Count watchlist items, filtering out test users (only real user data)
+                var allWatchlistsForCount = await _context.Watchlists
+                    .Include(w => w.User)
+                    .ToListAsync();
+                
+                var totalWatchlistItems = allWatchlistsForCount
+                    .Where(w => w.User != null
+                        && w.User.Email != null
+                        && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    .Count();
 
                 result.Totals = new TotalsDto
                 {
@@ -53,22 +70,76 @@ namespace SeriLovers.API.Services
                     totalUsers, totalSeries, totalActors, totalWatchlistItems);
 
                 // Top rated series - top 5 by average rating with views (ratings + watchlist count)
+                // Filter out test users to match reviews page (only real user activity)
                 if (totalSeries > 0)
                 {
-                    result.TopSeries = await _context.Series
-                        .Where(s => s.Ratings.Any() || s.Watchlists.Any())
+                    // Materialize ratings and watchlists first, then filter test users in memory
+                    // EF Core cannot translate EndsWith with StringComparison to SQL
+                    var allRatings = await _context.Ratings
+                        .Include(r => r.User)
+                        .ToListAsync();
+                    
+                    var allWatchlists = await _context.Watchlists
+                        .Include(w => w.User)
+                        .ToListAsync();
+                    
+                    // Filter out test/dummy users (same filtering as reviews endpoint)
+                    var realRatings = allRatings
+                        .Where(r => r.User != null
+                            && r.User.Email != null
+                            && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    var realWatchlists = allWatchlists
+                        .Where(w => w.User != null
+                            && w.User.Email != null
+                            && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    // Group by series and calculate views (real ratings + real watchlists)
+                    var seriesViews = realRatings
+                        .GroupBy(r => r.SeriesId)
+                        .ToDictionary(g => g.Key, g => g.Count());
+                    
+                    var seriesWatchlistCounts = realWatchlists
+                        .GroupBy(w => w.SeriesId)
+                        .ToDictionary(g => g.Key, g => g.Count());
+                    
+                    var seriesRatings = realRatings
+                        .GroupBy(r => r.SeriesId)
+                        .ToDictionary(g => g.Key, g => g.Average(r => r.Score));
+                    
+                    // Get all series IDs that have ratings or watchlists (materialize to avoid EF Core translation issues)
+                    var seriesIdsWithActivity = seriesViews.Keys
+                        .Union(seriesWatchlistCounts.Keys)
+                        .Distinct()
+                        .ToList();
+                    
+                    // Get all series and calculate TopSeries with real data
+                    var allSeries = await _context.Series
+                        .Where(s => seriesIdsWithActivity.Contains(s.Id))
+                        .ToListAsync();
+                    
+                    result.TopSeries = allSeries
                         .Select(s => new TopSeriesDto
                         {
                             Id = s.Id,
                             Title = s.Title ?? "Unknown",
-                            AvgRating = s.Ratings.Any() ? s.Ratings.Average(r => r.Score) : 0.0,
-                            Views = s.Ratings.Count() + s.Watchlists.Count(),
+                            AvgRating = seriesRatings.ContainsKey(s.Id) ? seriesRatings[s.Id] : 0.0,
+                            Views = (seriesViews.ContainsKey(s.Id) ? seriesViews[s.Id] : 0) + 
+                                    (seriesWatchlistCounts.ContainsKey(s.Id) ? seriesWatchlistCounts[s.Id] : 0),
                             ImageUrl = s.ImageUrl
                         })
                         .OrderByDescending(s => s.AvgRating)
                         .ThenByDescending(s => s.Views)
                         .Take(5)
-                        .ToListAsync();
+                        .ToList();
                 }
                 // Fallback: empty list if no series
 

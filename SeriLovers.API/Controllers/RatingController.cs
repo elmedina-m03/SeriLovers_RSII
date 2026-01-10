@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SeriLovers.API.Data;
 using SeriLovers.API.Events;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
 using SeriLovers.API.Models.DTOs;
+using SeriLovers.API.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,17 +31,23 @@ namespace SeriLovers.API.Controllers
         private readonly IMapper _mapper;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMessageBusService _messageBusService;
+        private readonly ChallengeService _challengeService;
+        private readonly ILogger<RatingController> _logger;
 
         public RatingController(
             ApplicationDbContext context, 
             IMapper mapper, 
             UserManager<ApplicationUser> userManager,
-            IMessageBusService messageBusService)
+            IMessageBusService messageBusService,
+            ChallengeService challengeService,
+            ILogger<RatingController> logger)
         {
             _context = context;
             _mapper = mapper;
             _userManager = userManager;
             _messageBusService = messageBusService;
+            _challengeService = challengeService;
+            _logger = logger;
         }
 
         private async Task<int?> GetCurrentUserIdAsync()
@@ -49,13 +57,17 @@ namespace SeriLovers.API.Controllers
         }
 
         /// <summary>
-        /// Recalculates and updates the average rating for a series based on all user ratings
+        /// Recalculates and updates the average rating for a series.
+        /// Logic:
+        /// - If series has NO user ratings: Series.Rating remains the manually entered fallback value (unchanged)
+        /// - If series HAS user ratings: Series.Rating = average of user ratings only (manual rating is ignored)
         /// </summary>
         /// <param name="seriesId">The series ID to update</param>
         private async Task RecalculateSeriesAverageRating(int seriesId)
         {
             var series = await _context.Series
                 .Include(s => s.Ratings)
+                    .ThenInclude(r => r.User)
                 .FirstOrDefaultAsync(s => s.Id == seriesId);
 
             if (series == null)
@@ -63,13 +75,26 @@ namespace SeriLovers.API.Controllers
                 return;
             }
 
-            if (series.Ratings != null && series.Ratings.Any())
+            // Filter out test/dummy user ratings - only use real user reviews for calculation
+            var realRatings = series.Ratings?
+                .Where(r => r.User != null
+                    && r.User.Email != null
+                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                .ToList() ?? new List<Rating>();
+
+            if (realRatings.Any())
             {
-                series.Rating = Math.Round(series.Ratings.Average(r => r.Score), 2);
+                // Has user ratings: calculate average ONLY from user ratings (ignore manual rating)
+                series.Rating = Math.Round(realRatings.Average(r => r.Score), 2);
             }
             else
             {
-                series.Rating = 0.0;
+                // No user ratings: keep the manually entered fallback value (don't change it)
+                // Series.Rating already contains the manually entered value, so we do nothing
+                return; // No need to save, rating is already correct
             }
 
             await _context.SaveChangesAsync();
@@ -100,7 +125,6 @@ namespace SeriLovers.API.Controllers
                 .Select(episode => episode.Id)
                 .ToList();
 
-            // If series has no episodes, consider it "completed" (edge case)
             if (allEpisodeIds.Count == 0)
             {
                 return true;
@@ -124,13 +148,21 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(Summary = "List all ratings (Admin only)", Description = "Retrieves all ratings with the associated series and user. Admin only.")]
         public async Task<IActionResult> GetAll()
         {
-            var ratings = await _context.Ratings
+            // Load all ratings with their related entities
+            // Don't filter in the query - load everything and filter in memory if needed
+            var allRatings = await _context.Ratings
+                .AsNoTracking()
                 .Include(r => r.Series)
                 .Include(r => r.User)
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();
 
-            var result = _mapper.Map<IEnumerable<RatingDto>>(ratings);
+            // Filter out any ratings with missing User or Series (data integrity issues)
+            var validRatings = allRatings
+                .Where(r => r.User != null && r.Series != null)
+                .ToList();
+
+            var result = _mapper.Map<IEnumerable<RatingDto>>(validRatings);
 
             return Ok(result);
         }
@@ -156,7 +188,7 @@ namespace SeriLovers.API.Controllers
 
         [HttpGet("series/{seriesId}")]
         [AllowAnonymous]
-        [SwaggerOperation(Summary = "Ratings by series", Description = "Lists ratings left for a specific series. Public endpoint - no authentication required.")]
+        [SwaggerOperation(Summary = "Ratings by series", Description = "Lists ratings left for a specific series. Public endpoint - no authentication required. Excludes test/dummy users.")]
         public async Task<IActionResult> GetBySeries(int seriesId)
         {
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == seriesId);
@@ -165,11 +197,19 @@ namespace SeriLovers.API.Controllers
                 return NotFound(new { message = $"Series with ID {seriesId} not found." });
             }
 
-            var ratings = await _context.Ratings
+            var ratingsFromDb = await _context.Ratings
                 .Include(r => r.User)
                 .Where(r => r.SeriesId == seriesId)
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();
+
+            var ratings = ratingsFromDb
+                .Where(r => r.User != null
+                    && r.User.Email != null
+                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
             var result = _mapper.Map<IEnumerable<RatingDto>>(ratings);
 
@@ -177,9 +217,21 @@ namespace SeriLovers.API.Controllers
         }
 
         [HttpGet("user/{userId}")]
-        [SwaggerOperation(Summary = "Ratings by user", Description = "Lists ratings left by a specific user.")]
+        [SwaggerOperation(Summary = "Ratings by user", Description = "Lists ratings left by a specific user. Users can only view their own ratings unless they are an admin.")]
         public async Task<IActionResult> GetByUser(int userId)
         {
+            var currentUserId = await GetCurrentUserIdAsync();
+            if (!currentUserId.HasValue)
+            {
+                return Unauthorized(new { message = "Unable to identify current user." });
+            }
+
+            // Users can only view their own ratings unless they are an admin
+            if (currentUserId.Value != userId && !User.IsInRole("Admin"))
+            {
+                return Forbid();
+            }
+
             var userExists = await _context.Users.AnyAsync(u => u.Id == userId);
             if (!userExists)
             {
@@ -239,6 +291,16 @@ namespace SeriLovers.API.Controllers
                 // Recalculate series average rating
                 await RecalculateSeriesAverageRating(ratingDto.SeriesId);
 
+                // Update challenge progress (rating a series counts towards challenges)
+                try
+                {
+                    await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error updating challenge progress for user {UserId}", currentUserId.Value);
+                }
+
                 await _context.Entry(existingRating).Reference(r => r.Series).LoadAsync();
                 await _context.Entry(existingRating).Reference(r => r.User).LoadAsync();
 
@@ -255,6 +317,16 @@ namespace SeriLovers.API.Controllers
 
             // Recalculate series average rating
             await RecalculateSeriesAverageRating(ratingDto.SeriesId);
+
+            // Update challenge progress (rating a series counts towards challenges)
+            try
+            {
+                await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error updating challenge progress after rating creation");
+            }
 
             await _context.Entry(rating).Reference(r => r.Series).LoadAsync();
             await _context.Entry(rating).Reference(r => r.User).LoadAsync();
@@ -279,8 +351,7 @@ namespace SeriLovers.API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // Log but don't fail the request
-                    Console.WriteLine($"Error publishing ReviewCreatedEvent: {ex.Message}");
+                    _logger.LogWarning(ex, "Error publishing ReviewCreatedEvent for RatingId={RatingId}", rating.Id);
                 }
             });
 
@@ -332,6 +403,16 @@ namespace SeriLovers.API.Controllers
 
             // Recalculate series average rating
             await RecalculateSeriesAverageRating(existingRating.SeriesId);
+
+            // Update challenge progress (rating a series counts towards challenges)
+            try
+            {
+                await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error updating challenge progress after rating creation");
+            }
 
             await _context.Entry(existingRating).Reference(r => r.Series).LoadAsync();
             await _context.Entry(existingRating).Reference(r => r.User).LoadAsync();

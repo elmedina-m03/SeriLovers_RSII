@@ -549,6 +549,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                                       progressProvider,
                                       totalEpisodes,
                                       currentEpisode,
+                                      selectedSeason: selectedSeason,
                                     ),
                                     icon: const Icon(Icons.check_circle_outline, size: 20),
                                     label: const Text('Mark Episodes'),
@@ -738,13 +739,28 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
-                      onPressed: () {
-                        Navigator.push(
+                      onPressed: () async {
+                        final result = await Navigator.push(
                           context,
                           MobilePageRoute(
                             builder: (context) => MobileReviewsScreen(series: _series),
                           ),
                         );
+                        // Refresh reviews if a review was added/edited/deleted
+                        if (result == true && mounted) {
+                          final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+                          await ratingProvider.loadSeriesRatings(_series.id);
+                          // Refresh series detail to update rating count
+                          final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                          await seriesProvider.fetchSeriesDetail(_series.id);
+                          // Update local series data
+                          final updated = seriesProvider.getById(_series.id);
+                          if (updated != null) {
+                            setState(() {
+                              _series = updated;
+                            });
+                          }
+                        }
                       },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.primaryColor,
@@ -1056,8 +1072,8 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
           });
         }
       } else {
-        // Mark as watched
-        await progressProvider.markEpisodeWatched(episodeId);
+        // Mark as watched - explicitly set isCompleted to true
+        await progressProvider.markEpisodeWatched(episodeId, isCompleted: true);
         if (mounted) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
@@ -1276,12 +1292,38 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         setState(() {
           _userRating = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to submit rating: $e'),
-            backgroundColor: AppColors.dangerColor,
-          ),
-        );
+        
+        // Check if the error is about needing to finish the series
+        final errorMessage = e.toString().toLowerCase();
+        if (errorMessage.contains('finish') && errorMessage.contains('series')) {
+          // Friendly notification for this specific case
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Watch all episodes to rate this series',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.infoColor,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        } else {
+          // Generic error for other cases
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to submit rating: ${e.toString().replaceAll('ApiException: ', '')}'),
+              backgroundColor: AppColors.dangerColor,
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -1463,18 +1505,23 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       final progressService = EpisodeProgressService();
       final userProgress = await progressService.getUserProgress(token: token);
       
-      // Use post-frame callback to avoid setState during build
+      // Update watched episodes immediately (filter for completed episodes only)
       if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() {
-              _watchedEpisodeIds = userProgress
-                  .where((p) => p.seriesId == _series.id)
-                  .map((p) => p.episodeId)
-                  .toSet();
-            });
-          }
-        });
+        final newWatchedIds = userProgress
+            .where((p) => p.seriesId == _series.id && p.isCompleted)
+            .map((p) => p.episodeId)
+            .toSet();
+        
+        // Only update if changed to avoid unnecessary rebuilds
+        if (_watchedEpisodeIds.length != newWatchedIds.length || 
+            !_watchedEpisodeIds.containsAll(newWatchedIds)) {
+          setState(() {
+            _watchedEpisodeIds = newWatchedIds;
+          });
+        } else {
+          // Even if not changed, ensure we have the latest data
+          _watchedEpisodeIds = newWatchedIds;
+        }
       }
     } catch (e) {
       // Silently fail - watched indicators just won't show
@@ -1498,8 +1545,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
     BuildContext context,
     EpisodeProgressProvider progressProvider,
     int totalEpisodes,
-    int currentEpisode,
-  ) async {
+    int currentEpisode, {
+    Season? selectedSeason,
+  }) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     if (!authProvider.isAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1533,15 +1581,18 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
 
     if (result != null && mounted) {
       // Mark episodes sequentially up to the selected number
-      await _markEpisodesUpTo(progressProvider, result);
+      // Pass the selected season so we can mark season-specific episodes
+      await _markEpisodesUpTo(progressProvider, result, selectedSeason: selectedSeason);
     }
   }
 
   /// Mark episodes sequentially up to a certain episode number
+  /// If selectedSeason is provided, marks episodes in that season up to the target episode number within that season
   Future<void> _markEpisodesUpTo(
     EpisodeProgressProvider progressProvider,
-    int targetEpisode,
-  ) async {
+    int targetEpisode, {
+    Season? selectedSeason,
+  }) async {
     try {
       // Show loading indicator
       if (mounted) {
@@ -1553,43 +1604,169 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         );
       }
 
-      // Get current progress to know where we are
-      final currentProgress = progressProvider.getSeriesProgress(_series.id);
-      final currentEpisode = currentProgress?.currentEpisodeNumber ?? 0;
-      
-      // We need to mark episodes from currentEpisode + 1 to targetEpisode
-      // Since we don't have direct access to episode IDs, we'll use the "next episode" API
-      // to get episodes and mark them sequentially
-      
-      int episodesToMark = targetEpisode - currentEpisode;
-      if (episodesToMark <= 0) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No new episodes to mark'),
-              backgroundColor: AppColors.dangerColor,
-            ),
-          );
-        }
-        return;
-      }
-
-      // Mark episodes one by one using the next episode API
-      for (int i = 0; i < episodesToMark; i++) {
-        final nextEpisodeData = await progressProvider.getNextEpisodeId(_series.id);
-        if (nextEpisodeData != null) {
-          await progressProvider.markEpisodeWatched(nextEpisodeData);
-        } else {
-          // No more episodes to mark
-          break;
+      // Refresh watched episodes list BEFORE marking to ensure we have the latest state
+      // Do this synchronously by directly fetching and updating
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      if (token != null && token.isNotEmpty) {
+        try {
+          final progressService = EpisodeProgressService();
+          final userProgress = await progressService.getUserProgress(token: token);
+          if (mounted) {
+            setState(() {
+              _watchedEpisodeIds = userProgress
+                  .where((p) => p.seriesId == _series.id && p.isCompleted)
+                  .map((p) => p.episodeId)
+                  .toSet();
+            });
+          }
+        } catch (e) {
+          // If refresh fails, continue with current state
+          print('Error refreshing watched episodes: $e');
         }
       }
 
-      // Refresh progress and watched episodes
+      int episodesToMark = 0;
+      
+      // If a season is selected, we need to mark episodes specifically in that season
+      if (selectedSeason != null && selectedSeason.episodes.isNotEmpty) {
+        // Get all episodes in this season up to the target episode number
+        // that are not yet watched, sorted by episode number
+        final episodesToMarkList = selectedSeason.episodes
+            .where((ep) => 
+                ep.episodeNumber <= targetEpisode && 
+                !_watchedEpisodeIds.contains(ep.id))
+            .toList()
+          ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+        
+        if (episodesToMarkList.isEmpty) {
+          if (mounted) {
+            // Check if all episodes up to target are already watched
+            // First, get all episode numbers that should exist (1 to targetEpisode)
+            final expectedEpisodeNumbers = List.generate(targetEpisode, (i) => i + 1);
+            
+            // Get actual episodes that exist in the season
+            final existingEpisodesUpToTarget = selectedSeason.episodes
+                .where((ep) => ep.episodeNumber <= targetEpisode)
+                .toList();
+            
+            // Check if there are gaps (missing episodes)
+            final existingEpisodeNumbers = existingEpisodesUpToTarget
+                .map((ep) => ep.episodeNumber)
+                .toSet();
+            final missingEpisodes = expectedEpisodeNumbers
+                .where((num) => !existingEpisodeNumbers.contains(num))
+                .toList();
+            
+            // Count watched episodes
+            final watchedUpToTarget = existingEpisodesUpToTarget
+                .where((ep) => _watchedEpisodeIds.contains(ep.id))
+                .length;
+            
+            // Only show "all marked" message if:
+            // 1. All existing episodes up to target are watched, AND
+            // 2. There are no missing episodes (or we account for them)
+            final allExistingWatched = watchedUpToTarget == existingEpisodesUpToTarget.length;
+            
+            String message;
+            if (missingEpisodes.isNotEmpty) {
+              // There are missing episodes - be more specific
+              message = 'All available episodes up to episode $targetEpisode are marked. '
+                  'Note: Episodes ${missingEpisodes.join(", ")} are missing.';
+            } else if (allExistingWatched) {
+              // All episodes exist and are watched
+              message = 'All episodes up to episode $targetEpisode are already marked';
+            } else {
+              // Some episodes exist but aren't watched
+              message = 'No episodes to mark';
+            }
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(message),
+                backgroundColor: AppColors.infoColor,
+                duration: missingEpisodes.isNotEmpty 
+                    ? const Duration(seconds: 5) 
+                    : const Duration(seconds: 2),
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Mark all episodes in the list
+        int markedCount = 0;
+        final List<int> newlyMarkedIds = [];
+        
+        for (final episode in episodesToMarkList) {
+          try {
+            await progressProvider.markEpisodeWatched(episode.id, isCompleted: true);
+            newlyMarkedIds.add(episode.id);
+            markedCount++;
+          } catch (e) {
+            // Log error but continue with other episodes
+            print('Error marking episode ${episode.id}: $e');
+          }
+        }
+        
+        // Update watched episode IDs in one setState call
+        if (newlyMarkedIds.isNotEmpty && mounted) {
+          setState(() {
+            _watchedEpisodeIds.addAll(newlyMarkedIds);
+          });
+        }
+        
+        episodesToMark = markedCount;
+      } else {
+        // No season selected - mark series-wide (original behavior)
+        final currentProgress = progressProvider.getSeriesProgress(_series.id);
+        final currentEpisode = currentProgress?.currentEpisodeNumber ?? 0;
+        
+        episodesToMark = targetEpisode - currentEpisode;
+        if (episodesToMark <= 0) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No new episodes to mark'),
+                backgroundColor: AppColors.infoColor,
+              ),
+            );
+          }
+          return;
+        }
+
+        // Mark episodes one by one using the next episode API
+        int markedCount = 0;
+        final List<int> newlyMarkedIds = [];
+        
+        for (int i = 0; i < episodesToMark; i++) {
+          final nextEpisodeData = await progressProvider.getNextEpisodeId(_series.id);
+          if (nextEpisodeData != null) {
+            // Explicitly mark as completed
+            await progressProvider.markEpisodeWatched(nextEpisodeData, isCompleted: true);
+            newlyMarkedIds.add(nextEpisodeData);
+            markedCount++;
+          } else {
+            // No more episodes to mark
+            break;
+          }
+        }
+        
+        // Update watched episode IDs in one setState call
+        if (newlyMarkedIds.isNotEmpty && mounted) {
+          setState(() {
+            _watchedEpisodeIds.addAll(newlyMarkedIds);
+          });
+        }
+        
+        episodesToMark = markedCount;
+      }
+
+      // Refresh progress and watched episodes from server to ensure consistency
       await progressProvider.loadSeriesProgress(_series.id);
       await _loadWatchedEpisodes();
       
-      // Small delay to ensure watched episodes list is updated
+      // Small delay to ensure watched episodes list is fully updated
       await Future.delayed(const Duration(milliseconds: 300));
 
       if (mounted) {
@@ -1598,7 +1775,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         
         if (isComplete) {
           _showCompletionNotification();
-        } else {
+        } else if (episodesToMark > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Marked ${episodesToMark} episode${episodesToMark > 1 ? 's' : ''} as watched!'),
@@ -1677,6 +1854,62 @@ class _WatchlistSelector extends StatefulWidget {
 
 class _WatchlistSelectorState extends State<_WatchlistSelector> {
   int? _processingListId;
+  Map<int, bool> _seriesInList = {}; // Cache for checking if series is in each list
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSeriesInLists();
+  }
+
+  Future<void> _checkSeriesInLists() async {
+    final seriesId = widget.seriesId;
+    if (seriesId == null) return;
+
+    final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final token = authProvider.token;
+    
+    if (token == null) return;
+
+    try {
+      final decoded = JwtDecoder.decode(token);
+      final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+      int? userId;
+      if (rawId is int) {
+        userId = rawId;
+      } else if (rawId is String) {
+        userId = int.tryParse(rawId);
+      }
+      if (userId == null) return;
+
+      // Check each list to see if series is already in it
+      for (final list in watchlistProvider.lists) {
+        try {
+          final collectionData = await watchlistProvider.service?.getWatchlistCollection(
+            list.id,
+            token: token,
+          );
+          final watchlists = collectionData?['watchlists'] as List?;
+          final isInList = watchlists != null && watchlists.any((w) {
+            if (w is Map<String, dynamic>) {
+              final series = w['series'] as Map<String, dynamic>?;
+              return series != null && series['id'] == seriesId;
+            }
+            return false;
+          });
+          _seriesInList[list.id] = isInList ?? false;
+        } catch (_) {
+          _seriesInList[list.id] = false;
+        }
+      }
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (_) {
+      // Silently fail
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1746,74 +1979,136 @@ class _WatchlistSelectorState extends State<_WatchlistSelector> {
                     itemBuilder: (context, index) {
                       final list = lists[index];
                       final isProcessing = _processingListId == list.id;
+                      final isAlreadyInList = _seriesInList[list.id] ?? false;
+                      final seriesCount = list.totalSeries;
+                      // Always show series count, even if 0
+                      final seriesText = seriesCount == 1 
+                          ? '1 series' 
+                          : seriesCount == 0 
+                              ? '0 series'
+                              : '$seriesCount series';
 
                       return ListTile(
                         title: Text(list.name),
-                        subtitle: Text('${list.totalSeries} series'),
+                        subtitle: Text(
+                          seriesText,
+                          style: const TextStyle(fontSize: 14),
+                        ),
                         trailing: isProcessing
                             ? const SizedBox(
                                 width: 20,
                                 height: 20,
                                 child: CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : IconButton(
-                                icon: const Icon(Icons.add),
-                                onPressed: () async {
-                                  setState(() {
-                                    _processingListId = list.id;
-                                  });
-                                  try {
-                                    final watchlistProvider = Provider.of<WatchlistProvider>(
-                                      context,
-                                      listen: false,
-                                    );
-                                    await watchlistProvider.addSeries(list.id, seriesId);
-                                    
-                                    // Refresh watchlist to show immediately
-                                    try {
-                                      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                                      final decoded = JwtDecoder.decode(authProvider.token!);
-                                      final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
-                                      int? userId;
-                                      if (rawId is int) {
-                                        userId = rawId;
-                                      } else if (rawId is String) {
-                                        userId = int.tryParse(rawId);
-                                      }
-                                      if (userId != null) {
-                                        await watchlistProvider.loadUserWatchlists(userId);
-                                      }
-                                    } catch (_) {
-                                      // Silently fail - refresh is optional
-                                    }
-
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Added to ${list.name}'),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                      Navigator.pop(context);
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Failed to add: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
-                                  } finally {
-                                    if (mounted) {
+                            : isAlreadyInList
+                                ? const Icon(
+                                    Icons.check_circle,
+                                    color: Colors.green,
+                                    size: 24,
+                                  )
+                                : IconButton(
+                                    icon: const Icon(Icons.add),
+                                    onPressed: () async {
                                       setState(() {
-                                        _processingListId = null;
+                                        _processingListId = list.id;
                                       });
-                                    }
-                                  }
-                                },
-                              ),
+                                      try {
+                                        final watchlistProvider = Provider.of<WatchlistProvider>(
+                                          context,
+                                          listen: false,
+                                        );
+                                        await watchlistProvider.addSeries(list.id, seriesId);
+                                        
+                                        // Refresh watchlist to show immediately
+                                        try {
+                                          final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                                          final decoded = JwtDecoder.decode(authProvider.token!);
+                                          final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+                                          int? userId;
+                                          if (rawId is int) {
+                                            userId = rawId;
+                                          } else if (rawId is String) {
+                                            userId = int.tryParse(rawId);
+                                          }
+                                          if (userId != null) {
+                                            await watchlistProvider.loadUserWatchlists(userId);
+                                            // Recheck which lists contain this series
+                                            await _checkSeriesInLists();
+                                          }
+                                        } catch (_) {
+                                          // Silently fail - refresh is optional
+                                        }
+
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Row(
+                                                children: [
+                                                  const Icon(Icons.check_circle, color: Colors.white),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text('Added to "${list.name}"'),
+                                                  ),
+                                                ],
+                                              ),
+                                              backgroundColor: Colors.green,
+                                              duration: const Duration(seconds: 2),
+                                              behavior: SnackBarBehavior.floating,
+                                            ),
+                                          );
+                                          Navigator.pop(context);
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          final errorMessage = e.toString().toLowerCase();
+                                          // Check if it's a duplicate error - show friendly notification
+                                          if (errorMessage.contains('already') || 
+                                              errorMessage.contains('series already in this collection') ||
+                                              errorMessage.contains('already in this collection')) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    const Icon(Icons.info_outline, color: Colors.white),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text('This series is already in "${list.name}"'),
+                                                    ),
+                                                  ],
+                                                ),
+                                                backgroundColor: Colors.orange,
+                                                duration: const Duration(seconds: 3),
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Row(
+                                                  children: [
+                                                    const Icon(Icons.error_outline, color: Colors.white),
+                                                    const SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text('Unable to add series. Please try again.'),
+                                                    ),
+                                                  ],
+                                                ),
+                                                backgroundColor: Colors.red,
+                                                duration: const Duration(seconds: 3),
+                                                behavior: SnackBarBehavior.floating,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() {
+                                            _processingListId = null;
+                                          });
+                                        }
+                                      }
+                                    },
+                                  ),
                       );
                     },
                   ),

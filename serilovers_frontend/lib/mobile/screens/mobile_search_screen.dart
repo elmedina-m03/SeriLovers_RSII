@@ -36,7 +36,9 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
     _debounceTimer?.cancel();
 
     if (query.isEmpty) {
-      // Do not search on empty query; keep current items or show hint
+      // When query is empty, just update state
+      // Don't call clearSearch here - it will be called by the reset button/clear icon
+      // This prevents double calls and race conditions
       return;
     }
 
@@ -56,10 +58,42 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.textLight),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         title: const Text('Search'),
         backgroundColor: AppColors.primaryColor,
         foregroundColor: AppColors.textLight,
         elevation: 0,
+        actions: [
+          // Reset button - clears search and shows all series
+          if (_query.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.refresh, color: AppColors.textLight),
+              tooltip: 'Reset search and show all series',
+              onPressed: () {
+                _searchController.clear();
+                _debounceTimer?.cancel();
+                final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                // Clear search and refresh to show all series
+                seriesProvider.clearSearch().then((_) {
+                  if (mounted) {
+                    // Force a fresh fetch to ensure all series are shown
+                    seriesProvider.fetchSeries(
+                      page: 1,
+                      pageSize: 20,
+                      search: null,
+                      genreId: null,
+                    );
+                  }
+                });
+                setState(() {
+                  _query = '';
+                });
+              },
+            ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -90,9 +124,26 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
                   suffixIcon: _query.isNotEmpty
                       ? IconButton(
                           icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                          tooltip: 'Reset search and show all series',
                           onPressed: () {
                             _searchController.clear();
-                            _onSearchChanged('');
+                            _debounceTimer?.cancel();
+                            final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                            // Clear search and refresh to show all series
+                            seriesProvider.clearSearch().then((_) {
+                              if (mounted) {
+                                // Force a fresh fetch to ensure all series are shown
+                                seriesProvider.fetchSeries(
+                                  page: 1,
+                                  pageSize: 20,
+                                  search: null,
+                                  genreId: null,
+                                );
+                              }
+                            });
+                            setState(() {
+                              _query = '';
+                            });
                           },
                         )
                       : null,
@@ -109,13 +160,24 @@ class _MobileSearchScreenState extends State<MobileSearchScreen> {
               child: Consumer<SeriesProvider>(
                 builder: (context, seriesProvider, child) {
                   if (_query.isEmpty) {
-                    return Center(
-                      child: Text(
-                        'Type to search series…',
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: AppColors.textSecondary,
+                    // Show all series when search is cleared
+                    if (seriesProvider.items.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'Type to search series…',
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
                         ),
-                      ),
+                      );
+                    }
+                    // Show all series that were loaded
+                    return ListView.builder(
+                      itemCount: seriesProvider.items.length,
+                      itemBuilder: (context, index) {
+                        final series = seriesProvider.items[index];
+                        return SeriesCardMobile(series: series);
+                      },
                     );
                   }
 

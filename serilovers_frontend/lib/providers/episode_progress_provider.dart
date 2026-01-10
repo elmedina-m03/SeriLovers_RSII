@@ -14,6 +14,15 @@ class EpisodeProgressProvider extends ChangeNotifier {
         _authProvider = authProvider;
 
   void updateAuthProvider(AuthProvider authProvider) {
+    // If auth provider changed (e.g., user logged in), clear cache to get fresh data
+    final wasAuthenticated = _authProvider?.isAuthenticated ?? false;
+    final isNowAuthenticated = authProvider.isAuthenticated;
+    
+    // Clear cache when user logs in (wasn't authenticated, now is)
+    if (!wasAuthenticated && isNowAuthenticated) {
+      clearAllCache();
+    }
+    
     _authProvider = authProvider;
   }
 
@@ -30,6 +39,12 @@ class EpisodeProgressProvider extends ChangeNotifier {
   /// Clear progress cache for a specific series (useful after completion)
   void clearProgressCache(int seriesId) {
     _seriesProgressCache.remove(seriesId);
+    notifyListeners();
+  }
+
+  /// Clear all progress cache (useful when user logs in/out)
+  void clearAllCache() {
+    _seriesProgressCache.clear();
     notifyListeners();
   }
 
@@ -92,13 +107,16 @@ class EpisodeProgressProvider extends ChangeNotifier {
 
   /// Load progress for a series without setting global loading state (for batch loading)
   /// This is used when loading multiple series in parallel to avoid UI flickering
-  Future<SeriesProgress?> loadSeriesProgressSilent(int seriesId) async {
+  /// Always fetches fresh data from backend (doesn't use cache to ensure accuracy)
+  Future<SeriesProgress?> loadSeriesProgressSilent(int seriesId, {bool forceRefresh = false}) async {
     try {
       final token = _authProvider?.token;
       if (token == null || token.isEmpty) {
         return null;
       }
 
+      // Always fetch fresh data from backend to ensure accuracy
+      // Don't use cache to prevent stale data after login or episode completion
       final progress = await _service.getSeriesProgress(seriesId, token: token);
       _seriesProgressCache[seriesId] = progress;
       return progress;
@@ -160,6 +178,22 @@ class EpisodeProgressProvider extends ChangeNotifier {
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  /// Get all series with their watching status for current user
+  /// Returns all series that the user has watched at least one episode of, regardless of watchlist membership
+  Future<List<Map<String, dynamic>>> getUserSeriesWithStatus() async {
+    try {
+      final token = _authProvider?.token;
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      return await _service.getUserSeriesWithStatus(token: token);
+    } catch (e) {
+      error = e.toString();
+      rethrow;
     }
   }
 }

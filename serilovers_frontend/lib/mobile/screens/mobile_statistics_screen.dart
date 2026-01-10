@@ -112,83 +112,75 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
         _lastLoadTime = now;
       }
       
-      final watchlistItems = watchlistProvider.items;
-      _totalSeries = watchlistItems.length;
-      
-      // Calculate finished series count (all episodes watched)
-      // Load ALL series progress in PARALLEL (much faster!)
-      // Use silent loading to avoid UI flickering from multiple loading state changes
+      // Get all series with status (includes series with progress even if not in watchlist)
       final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
-      final progressFutures = watchlistItems.map((series) async {
-        return await progressProvider.loadSeriesProgressSilent(series.id);
-      }).toList();
+      final allSeriesWithStatus = await progressProvider.getUserSeriesWithStatus();
       
-      // Wait for all progress loads to complete in parallel
-      final progressResults = await Future.wait(progressFutures);
+      // Separate series by status
+      final finishedSeries = <Series>[];
+      final inProgressSeries = <Series>[];
+      final toDoSeries = <Series>[];
       
-      // Create lookup maps for O(1) access instead of O(n) searches
-      final seriesMap = <int, Series>{};
-      final episodeMap = <int, int>{}; // episodeId -> durationMinutes
-      for (var series in watchlistItems) {
-        seriesMap[series.id] = series;
-        // Pre-build episode duration map for fast lookup
-        if (series.seasons != null && series.seasons!.isNotEmpty) {
-          for (var season in series.seasons!) {
-            if (season.episodes != null && season.episodes!.isNotEmpty) {
-              for (var episode in season.episodes!) {
-                // Handle nullable durationMinutes
-                final duration = episode.durationMinutes;
-                if (duration != null) {
-                  episodeMap[episode.id] = duration;
-                }
-              }
-            }
-          }
-        }
-      }
-      
-      int finishedSeriesCount = 0;
       int totalWatchedEpisodes = 0;
       double totalMinutes = 0.0;
       
-      // Process all progress results in a single pass
-      for (int i = 0; i < watchlistItems.length; i++) {
-        final series = watchlistItems[i];
-        final progress = progressResults[i];
+      // Process all series with their status
+      for (final item in allSeriesWithStatus) {
+        final seriesData = item['series'] as Map<String, dynamic>?;
+        if (seriesData == null) continue;
         
-        if (progress != null) {
-          // Count watched episodes from progress
-          totalWatchedEpisodes += progress.watchedEpisodes;
-          
-          // Calculate total episodes for this series
-          int totalEpisodes = 0;
-          if (series.seasons != null && series.seasons!.isNotEmpty) {
-            totalEpisodes = series.seasons!
-                .map((season) => season.episodes?.length ?? 0)
-                .fold(0, (sum, count) => sum + count);
-          }
-          if (totalEpisodes == 0) {
-            totalEpisodes = progress.totalEpisodes;
-          }
-          
-          // Check if series is finished
-          if (totalEpisodes > 0 && progress.watchedEpisodes >= totalEpisodes) {
-            finishedSeriesCount++;
-          }
-          
-          // Estimate hours from watched episodes (use average 40 min per episode)
-          // This is much faster than loading all individual progress records
-          totalMinutes += progress.watchedEpisodes * 40.0;
+        final series = Series.fromJson(seriesData);
+        final status = item['status'] as String? ?? 'ToWatch';
+        final watchedEpisodes = (item['watchedEpisodes'] as num?)?.toInt() ?? 0;
+        final totalEpisodes = (item['totalEpisodes'] as num?)?.toInt() ?? 0;
+        
+        // Count watched episodes
+        totalWatchedEpisodes += watchedEpisodes;
+        
+        // Estimate hours from watched episodes (use average 40 min per episode)
+        totalMinutes += watchedEpisodes * 40.0;
+        
+        // Categorize by status
+        switch (status.toLowerCase()) {
+          case 'finished':
+            finishedSeries.add(series);
+            break;
+          case 'inprogress':
+            inProgressSeries.add(series);
+            break;
+          case 'towatch':
+          case 'todo':
+            toDoSeries.add(series);
+            break;
         }
       }
+      
+      // Also include watchlist series that might not have progress yet
+      final watchlistItems = watchlistProvider.items;
+      final existingSeriesIds = allSeriesWithStatus
+          .map((item) => (item['series'] as Map<String, dynamic>?)?['id'] as int?)
+          .where((id) => id != null)
+          .cast<int>()
+          .toSet();
+      
+      for (final series in watchlistItems) {
+        if (!existingSeriesIds.contains(series.id)) {
+          // Series in watchlist but no progress - add to "To Do"
+          toDoSeries.add(series);
+        }
+      }
+      
+      // Set total series to finished series count (not total watchlist count)
+      _totalSeries = finishedSeries.length;
       
       // Use watched episodes count from progress data (more accurate than loading all progress)
       _totalEpisodes = totalWatchedEpisodes;
       _totalHours = (totalMinutes / 60).round();
       
-      // Calculate genre distribution from watchlist series
+      // Calculate genre distribution from finished and in-progress series (not just watchlist)
       _genreDistribution = {};
-      for (var series in watchlistItems) {
+      final allActiveSeries = [...finishedSeries, ...inProgressSeries];
+      for (var series in allActiveSeries) {
         for (var genre in series.genres) {
           _genreDistribution[genre] = (_genreDistribution[genre] ?? 0) + 1;
         }
@@ -201,9 +193,12 @@ class _MobileStatisticsScreenState extends State<MobileStatisticsScreen> {
           MapEntry(key, (value / total * 100)));
       }
       
-      // Get real reviews count from API
+      // Get reviews count for THIS SPECIFIC USER only (not all users)
+      // Count ALL ratings (not just those with comments) - a rating is a review
       try {
+        // getUserRatings filters by userId on backend - returns only this user's ratings
         final userRatings = await ratingService.getUserRatings(userId, token: token);
+        // Count all ratings as reviews (a rating is a review, even without a comment)
         _totalReviews = userRatings.length;
       } catch (e) {
         // If endpoint fails, fallback to 0

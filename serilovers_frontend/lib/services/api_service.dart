@@ -153,12 +153,27 @@ class ApiService {
   /// [body] - Request body as a Map (will be JSON encoded)
   /// [token] - Optional authentication token
   Future<dynamic> post(String path, Map<String, dynamic> body, {String? token}) async {
-    final uri = Uri.parse('$baseUrl$path');
+    final fullUrl = '$baseUrl$path';
+    final uri = Uri.parse(fullUrl);
+    print('📤 API POST Request:');
+    print('   Base URL: $baseUrl');
+    print('   Path: $path');
+    print('   Full URL: $fullUrl');
+    print('   Body: ${jsonEncode(body)}');
+    print('   Has Token: ${token != null && token.isNotEmpty}');
+    
     final response = await http.post(
       uri,
       headers: _buildHeaders(token: token),
       body: jsonEncode(body),
     );
+
+    print('📥 API POST Response Status: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      print('   Response Body: ${response.body}');
+    } else {
+      print('   Response Body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}...');
+    }
 
     return _handleResponse(response);
   }

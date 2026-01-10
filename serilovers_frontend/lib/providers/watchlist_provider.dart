@@ -46,13 +46,35 @@ class WatchlistProvider extends ChangeNotifier {
 
   // ========== New API Methods (Collections) ==========
 
+  DateTime? _lastLoadUserWatchlistsTime;
+  int? _lastLoadUserWatchlistsUserId;
+  static const _loadUserWatchlistsCacheTimeout = Duration(seconds: 2); // Cache for 2 seconds
+
   Future<void> loadUserWatchlists(int userId) async {
-    if (service == null) return;
+    if (service == null) {
+      loading = false;
+      notifyListeners();
+      return;
+    }
+    
+    // Prevent duplicate calls within cache timeout for the same user
+    final now = DateTime.now();
+    if (_lastLoadUserWatchlistsTime != null && 
+        _lastLoadUserWatchlistsUserId == userId &&
+        now.difference(_lastLoadUserWatchlistsTime!) < _loadUserWatchlistsCacheTimeout &&
+        lists.isNotEmpty) {
+      // Return cached data if available and not expired
+      loading = false;
+      notifyListeners();
+      return;
+    }
     
     loading = true;
     notifyListeners();
 
     try {
+      _lastLoadUserWatchlistsTime = now;
+      _lastLoadUserWatchlistsUserId = userId;
       final token = _authProvider?.token;
       lists = await service!.getWatchlistsForUser(userId, token: token);
       
@@ -60,20 +82,14 @@ class WatchlistProvider extends ChangeNotifier {
       await _cleanupDuplicateFavorites(token);
       
       // Ensure default Favorites folder exists (create if missing)
+      // BUT don't call getOrCreateFavoritesList here as it might cause infinite loop
+      // Just check if it exists, and if not, it will be created when needed
       final hasFavorites = lists.any((list) {
         final name = list.name.toLowerCase();
         return name == 'favorites' || name == 'favourite';
       });
       
-      if (!hasFavorites && token != null && token.isNotEmpty) {
-        // Create default Favorites folder for new users
-        try {
-          await getOrCreateFavoritesList();
-        } catch (e) {
-          // If creation fails, continue - it will be created when needed
-          print('Could not create default Favorites folder: $e');
-        }
-      }
+      // Don't auto-create here to prevent loops - let it be created on-demand
       
       error = null;
     } catch (e) {
@@ -191,7 +207,17 @@ class WatchlistProvider extends ChangeNotifier {
       if (token == null || token.isEmpty) {
         throw Exception('Authentication required');
       }
-      await service!.addSeriesToList(listId, seriesId, token: token);
+      final response = await service!.addSeriesToList(listId, seriesId, token: token);
+      
+      // Check if series is already in the collection
+      if (response != null && response['message'] != null) {
+        final message = response['message'] as String?;
+        if (message != null && message.toLowerCase().contains('already')) {
+          // Throw a user-friendly exception that will be caught and displayed nicely
+          throw Exception('Series already in this collection');
+        }
+      }
+      
       error = null;
       
       // Always refresh all lists to get accurate counts from backend
@@ -594,41 +620,83 @@ class WatchlistProvider extends ChangeNotifier {
   // ========== Backward Compatibility Methods (Series Watchlist) ==========
 
   /// Fetches the user's watchlist series from the API (backward compatibility).
+  /// Uses caching to prevent duplicate calls.
+  DateTime? _lastFetchTime;
+  static const _fetchCacheTimeout = Duration(seconds: 2); // Cache for 2 seconds
+  
   Future<void> fetchWatchlist(String token) async {
-    if (_apiService == null) return;
+    if (_apiService == null) {
+      loading = false;
+      notifyListeners();
+      return;
+    }
+    
+    // Prevent duplicate calls within cache timeout (but only if we have data)
+    final now = DateTime.now();
+    if (_lastFetchTime != null && 
+        now.difference(_lastFetchTime!) < _fetchCacheTimeout &&
+        items.isNotEmpty) {
+      // Return cached data if available and not expired
+      loading = false;
+      notifyListeners();
+      return;
+    }
     
     loading = true;
     notifyListeners();
 
     try {
+      _lastFetchTime = now;
       final response = await _apiService!.get('/Watchlist', token: token);
       
       if (response is List) {
         items = <Series>[];
         final seenSeriesIds = <int>{};
+        
         for (var entry in response) {
           if (entry is Map<String, dynamic>) {
+            // Check for 'series' property (WatchlistDto format)
             if (entry.containsKey('series') && entry['series'] != null) {
               try {
                 final seriesData = entry['series'] as Map<String, dynamic>;
                 final seriesId = seriesData['id'] as int?;
+                
                 // Only add if we haven't seen this series ID before (prevent duplicates)
                 if (seriesId != null && !seenSeriesIds.contains(seriesId)) {
                   seenSeriesIds.add(seriesId);
-                  items.add(Series.fromJson(seriesData));
+                  
+                  // Validate series data has required fields
+                  if (seriesData.containsKey('title') && seriesData['title'] != null) {
+                    items.add(Series.fromJson(seriesData));
+                  }
                 }
               } catch (e) {
-                // Skip invalid entries
+                // Skip invalid entries - don't show error to user
+                continue;
+              }
+            }
+            // Also handle case where entry might be a SeriesDto directly (fallback)
+            else if (entry.containsKey('id') && entry.containsKey('title')) {
+              try {
+                final seriesId = entry['id'] as int?;
+                if (seriesId != null && !seenSeriesIds.contains(seriesId)) {
+                  seenSeriesIds.add(seriesId);
+                  items.add(Series.fromJson(entry));
+                }
+              } catch (e) {
+                continue;
               }
             }
           }
         }
         error = null;
       } else {
-        throw Exception('Invalid response format');
+        // If response is not a list, it might be an error or different format
+        items = <Series>[];
+        error = null; // Don't set error, just show empty list
       }
     } catch (e) {
-      error = e.toString();
+      error = 'Failed to load watchlist: ${e.toString()}';
     } finally {
       loading = false;
       notifyListeners();

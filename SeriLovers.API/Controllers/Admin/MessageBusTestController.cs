@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using SeriLovers.API.Events;
 using SeriLovers.API.Interfaces;
 using Swashbuckle.AspNetCore.Annotations;
@@ -7,32 +9,50 @@ using Swashbuckle.AspNetCore.Annotations;
 namespace SeriLovers.API.Controllers.Admin
 {
     /// <summary>
-    /// Test endpoint to verify RabbitMQ functionality
+    /// Test endpoint to verify RabbitMQ functionality (Development only)
     /// </summary>
     [ApiController]
     [Route("api/admin/[controller]")]
     [Authorize(Roles = "Admin")]
-    [SwaggerTag("Admin - Message Bus Testing")]
+    [SwaggerTag("Admin - Message Bus Testing (Development Only)")]
     public class MessageBusTestController : ControllerBase
     {
         private readonly IMessageBusService _messageBusService;
         private readonly ILogger<MessageBusTestController> _logger;
+        private readonly IWebHostEnvironment _environment;
 
         public MessageBusTestController(
             IMessageBusService messageBusService,
-            ILogger<MessageBusTestController> logger)
+            ILogger<MessageBusTestController> logger,
+            IWebHostEnvironment environment)
         {
             _messageBusService = messageBusService;
             _logger = logger;
+            _environment = environment;
+        }
+
+        /// <summary>
+        /// Checks if the controller is available (only in Development)
+        /// </summary>
+        private IActionResult? CheckDevelopmentOnly()
+        {
+            if (!_environment.IsDevelopment())
+            {
+                return NotFound(new { message = "This endpoint is only available in Development environment." });
+            }
+            return null;
         }
 
         /// <summary>
         /// Check RabbitMQ connection status
         /// </summary>
         [HttpGet("status")]
-        [SwaggerOperation(Summary = "Check RabbitMQ status", Description = "Returns whether RabbitMQ is available and connected.")]
+        [SwaggerOperation(Summary = "Check RabbitMQ status", Description = "Returns whether RabbitMQ is available and connected. (Development only)")]
         public IActionResult GetStatus()
         {
+            var devCheck = CheckDevelopmentOnly();
+            if (devCheck != null) return devCheck;
+
             var status = new
             {
                 IsAvailable = _messageBusService.IsAvailable,
@@ -48,9 +68,12 @@ namespace SeriLovers.API.Controllers.Admin
         /// Test publishing a ReviewCreatedEvent
         /// </summary>
         [HttpPost("test/review-created")]
-        [SwaggerOperation(Summary = "Test ReviewCreatedEvent", Description = "Publishes a test ReviewCreatedEvent to verify RabbitMQ publishing works.")]
+        [SwaggerOperation(Summary = "Test ReviewCreatedEvent", Description = "Publishes a test ReviewCreatedEvent to verify RabbitMQ publishing works. (Development only)")]
         public async Task<IActionResult> TestReviewCreated()
         {
+            var devCheck = CheckDevelopmentOnly();
+            if (devCheck != null) return devCheck;
+
             if (!_messageBusService.IsAvailable)
             {
                 return BadRequest(new { message = "RabbitMQ is not available. Cannot publish test event." });
@@ -89,9 +112,12 @@ namespace SeriLovers.API.Controllers.Admin
         /// Test publishing an EpisodeWatchedEvent
         /// </summary>
         [HttpPost("test/episode-watched")]
-        [SwaggerOperation(Summary = "Test EpisodeWatchedEvent", Description = "Publishes a test EpisodeWatchedEvent to verify RabbitMQ publishing works.")]
+        [SwaggerOperation(Summary = "Test EpisodeWatchedEvent", Description = "Publishes a test EpisodeWatchedEvent to verify RabbitMQ publishing works. (Development only)")]
         public async Task<IActionResult> TestEpisodeWatched()
         {
+            var devCheck = CheckDevelopmentOnly();
+            if (devCheck != null) return devCheck;
+
             if (!_messageBusService.IsAvailable)
             {
                 return BadRequest(new { message = "RabbitMQ is not available. Cannot publish test event." });
@@ -132,9 +158,12 @@ namespace SeriLovers.API.Controllers.Admin
         /// Test publishing a UserCreatedEvent
         /// </summary>
         [HttpPost("test/user-created")]
-        [SwaggerOperation(Summary = "Test UserCreatedEvent", Description = "Publishes a test UserCreatedEvent to verify RabbitMQ publishing works.")]
+        [SwaggerOperation(Summary = "Test UserCreatedEvent", Description = "Publishes a test UserCreatedEvent to verify RabbitMQ publishing works. (Development only)")]
         public async Task<IActionResult> TestUserCreated()
         {
+            var devCheck = CheckDevelopmentOnly();
+            if (devCheck != null) return devCheck;
+
             if (!_messageBusService.IsAvailable)
             {
                 return BadRequest(new { message = "RabbitMQ is not available. Cannot publish test event." });
@@ -169,9 +198,12 @@ namespace SeriLovers.API.Controllers.Admin
         /// Test publishing a UserUpdatedEvent
         /// </summary>
         [HttpPost("test/user-updated")]
-        [SwaggerOperation(Summary = "Test UserUpdatedEvent", Description = "Publishes a test UserUpdatedEvent to verify RabbitMQ publishing works.")]
+        [SwaggerOperation(Summary = "Test UserUpdatedEvent", Description = "Publishes a test UserUpdatedEvent to verify RabbitMQ publishing works. (Development only)")]
         public async Task<IActionResult> TestUserUpdated()
         {
+            var devCheck = CheckDevelopmentOnly();
+            if (devCheck != null) return devCheck;
+
             if (!_messageBusService.IsAvailable)
             {
                 return BadRequest(new { message = "RabbitMQ is not available. Cannot publish test event." });
@@ -205,4 +237,3 @@ namespace SeriLovers.API.Controllers.Admin
         }
     }
 }
-

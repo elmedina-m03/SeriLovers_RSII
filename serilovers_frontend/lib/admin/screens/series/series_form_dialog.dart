@@ -624,6 +624,15 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
         if (seasonId == null) continue;
 
         // Save episodes for this season
+        // First, get all existing episodes for this season to check for duplicates
+        final existingEpisodesResponse = await apiService.get('/Episode/season/$seasonId', token: token);
+        final existingEpisodes = existingEpisodesResponse is List
+            ? (existingEpisodesResponse as List).map((e) => {
+                'id': (e as Map<String, dynamic>)['id'],
+                'episodeNumber': (e as Map<String, dynamic>)['episodeNumber'],
+              }).toList()
+            : <Map<String, dynamic>>[];
+        
         for (var episodeData in seasonData.episodes) {
           final episodePayload = {
             'seasonId': seasonId,
@@ -638,8 +647,19 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
           };
 
           if (episodeData.id == null) {
-            // Create new episode
-            await apiService.post('/Episode', episodePayload, token: token);
+            // Check if an episode with this number already exists
+            final existingEpisode = existingEpisodes.firstWhere(
+              (e) => e['episodeNumber'] == episodeData.episodeNumber,
+              orElse: () => {},
+            );
+            
+            if (existingEpisode.isNotEmpty && existingEpisode['id'] != null) {
+              // Episode already exists, update it instead of creating
+              await apiService.put('/Episode/${existingEpisode['id']}', episodePayload, token: token);
+            } else {
+              // Create new episode
+              await apiService.post('/Episode', episodePayload, token: token);
+            }
           } else {
             // Update existing episode
             await apiService.put('/Episode/${episodeData.id}', episodePayload, token: token);
@@ -1071,34 +1091,9 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
               maxLines: 2,
             ),
             const SizedBox(height: AppDim.paddingSmall),
-            // Episode details row
+            // Episode details row - Duration only (Air Date and Rating removed)
             Row(
               children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: episode.airDateController,
-                    decoration: InputDecoration(
-                      labelText: 'Air Date',
-                      labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-                        borderSide: BorderSide(color: AppColors.primaryColor),
-                      ),
-                      suffixIcon: Icon(Icons.calendar_today, size: 16, color: AppColors.primaryColor),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
-                    ),
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                    readOnly: true,
-                    onTap: () => _selectEpisodeDate(seasonIndex, episodeIndex),
-                  ),
-                ),
-                const SizedBox(width: AppDim.paddingSmall),
                 Expanded(
                   child: TextFormField(
                     controller: episode.durationController,
@@ -1122,35 +1117,6 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     onChanged: (value) {
                       episode.durationMinutes = int.tryParse(value);
-                    },
-                  ),
-                ),
-                const SizedBox(width: AppDim.paddingSmall),
-                Expanded(
-                  child: TextFormField(
-                    controller: episode.ratingController,
-                    decoration: InputDecoration(
-                      labelText: 'Rating (0-10)',
-                      labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(AppDim.radiusSmall),
-                        borderSide: BorderSide(color: AppColors.primaryColor),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
-                      ),
-                    ),
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-                    ],
-                    onChanged: (value) {
-                      episode.rating = double.tryParse(value);
                     },
                   ),
                 ),

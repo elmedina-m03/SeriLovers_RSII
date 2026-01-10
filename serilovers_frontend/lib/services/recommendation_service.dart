@@ -32,10 +32,13 @@ class RecommendationService {
     int maxResults = 10,
     String? token,
   }) async {
-    // Note: The API endpoint doesn't accept maxResults parameter, it defaults to 10
-    // Path is /series/recommendations (baseUrl already includes /api)
+    // Use the better RecommendationService endpoint that considers:
+    // - Watched episodes
+    // - Ratings/reviews
+    // - Watchlists (favorites and custom lists)
+    // Path is /Recommendations/me (baseUrl already includes /api)
     final response = await _apiService.get(
-      '/series/recommendations',
+      '/Recommendations/me?maxResults=$maxResults',
       token: token,
     );
 

@@ -6,6 +6,7 @@ import '../../core/theme/app_dim.dart';
 import '../../core/widgets/image_with_placeholder.dart';
 import '../providers/admin_statistics_provider.dart';
 import '../models/admin_statistics.dart';
+import '../../providers/rating_provider.dart';
 
 /// Admin statistics screen with dashboard cards, charts, and data tables
 class AdminStatisticsScreen extends StatefulWidget {
@@ -25,13 +26,43 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
     // Fetch statistics when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<AdminStatisticsProvider>(context, listen: false).fetchStats();
+      
+      // Listen to rating changes to auto-refresh statistics
+      // When a rating is created/updated/deleted, statistics should refresh immediately
+      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+      ratingProvider.addListener(_onRatingChanged);
     });
+  }
+
+  /// Called when rating provider changes (rating created/updated/deleted)
+  void _onRatingChanged() {
+    // Only refresh statistics if a rating was actually created/updated/deleted
+    // (not just when loading ratings)
+    final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+    if (ratingProvider.ratingChanged) {
+      // Reset the flag
+      ratingProvider.resetRatingChanged();
+      
+      // Refresh statistics when ratings change
+      // This ensures the Top Rated Series table updates immediately
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final statsProvider = Provider.of<AdminStatisticsProvider>(context, listen: false);
+        statsProvider.refresh();
+      });
+    }
   }
 
   @override
   void dispose() {
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
+    // Remove listener when screen is disposed
+    try {
+      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+      ratingProvider.removeListener(_onRatingChanged);
+    } catch (e) {
+      // Provider might not be available during dispose, ignore
+    }
     super.dispose();
   }
 

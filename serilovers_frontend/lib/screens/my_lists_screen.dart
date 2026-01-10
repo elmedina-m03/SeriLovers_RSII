@@ -20,6 +20,8 @@ class _MyListsScreenState extends State<MyListsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -28,11 +30,25 @@ class _MyListsScreenState extends State<MyListsScreen> {
         _searchQuery = _searchController.text.toLowerCase();
       });
     });
+    // Load only once on init
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadWatchlists();
+      if (!_isLoading) {
+        _isLoading = true;
+        _loadWatchlists();
+      }
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh when returning to this screen (e.g., after creating a list)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_isLoading && _currentUserId != null) {
+        _loadWatchlists();
+      }
+    });
+  }
 
   @override
   void dispose() {

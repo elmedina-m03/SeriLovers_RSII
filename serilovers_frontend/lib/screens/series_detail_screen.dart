@@ -11,7 +11,6 @@ import '../services/api_service.dart';
 import '../services/episode_progress_service.dart';
 import '../core/theme/app_colors.dart';
 import '../mobile/widgets/season_selector.dart';
-import 'episode_reviews_screen.dart';
 import 'series_full_description_screen.dart';
 import '../services/reminder_service.dart';
 
@@ -403,7 +402,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'Episode ${progress.currentEpisodeNumber} of ${progress.totalEpisodes}',
+                                        '${progress.watchedEpisodes}/${progress.totalEpisodes}',
                                         style: const TextStyle(
                                           fontSize: 16,
                                           fontWeight: FontWeight.bold,

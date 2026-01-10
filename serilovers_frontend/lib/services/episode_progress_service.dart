@@ -142,5 +142,22 @@ class EpisodeProgressService {
       return null;
     }
   }
+
+  /// Get all series with their watching status for current user
+  /// Returns all series that the user has watched at least one episode of, regardless of watchlist membership
+  Future<List<Map<String, dynamic>>> getUserSeriesWithStatus({String? token}) async {
+    final response = await _apiService.get(
+      '/EpisodeProgress/user/status',
+      token: token,
+    );
+
+    if (response is List) {
+      return response
+          .map((item) => item as Map<String, dynamic>)
+          .toList();
+    } else {
+      throw Exception('Invalid response format');
+    }
+  }
 }
 

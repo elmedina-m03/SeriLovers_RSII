@@ -271,6 +271,17 @@ class SeriesProvider extends ChangeNotifier {
     );
   }
 
+  /// Clears search results and resets to show all series
+  Future<void> clearSearch() async {
+    _currentSearch = null;
+    await fetchSeries(
+      page: 1,
+      pageSize: 20,
+      search: null,
+      genreId: null,
+    );
+  }
+
   /// Fetches all genres from the API
   ///
   /// Populates [genres] list and updates [isGenresLoading].

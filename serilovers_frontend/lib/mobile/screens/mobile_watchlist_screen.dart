@@ -34,7 +34,7 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Refresh when returning to this screen
+    // Always load on first visit, refresh if cache expired
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final now = DateTime.now();
@@ -53,6 +53,7 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
 
     if (token != null && token.isNotEmpty) {
       try {
+        // Force refresh by clearing cache timeout
         await watchlistProvider.fetchWatchlist(token);
         if (mounted) {
           setState(() {
@@ -69,6 +70,13 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
             ),
           );
         }
+      }
+    } else {
+      // If no token, ensure loading state is cleared
+      if (mounted) {
+        setState(() {
+          _lastLoadTime = DateTime.now();
+        });
       }
     }
   }
@@ -171,6 +179,49 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
             );
           }
 
+          // Show error state if there's an error
+          if (watchlistProvider.error != null && watchlistProvider.error!.isNotEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(AppDim.paddingLarge),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: AppColors.dangerColor,
+                    ),
+                    const SizedBox(height: AppDim.paddingMedium),
+                    Text(
+                      'Error loading watchlist',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: AppDim.paddingSmall),
+                    Text(
+                      watchlistProvider.error!,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: AppDim.paddingMedium),
+                    ElevatedButton(
+                      onPressed: _loadWatchlist,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryColor,
+                        foregroundColor: AppColors.textLight,
+                      ),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
           // Show empty state
           if (watchlistProvider.items.isEmpty) {
             return Center(
@@ -211,6 +262,10 @@ class _MobileWatchlistScreenState extends State<MobileWatchlistScreen> {
               itemCount: watchlistProvider.items.length,
               itemBuilder: (context, index) {
                 final series = watchlistProvider.items[index];
+                // Validate series data before displaying
+                if (series.id <= 0 || series.title.isEmpty) {
+                  return const SizedBox.shrink(); // Skip invalid series
+                }
                 return _buildWatchlistCard(series, context, theme);
               },
             ),

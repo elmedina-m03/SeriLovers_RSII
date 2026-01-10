@@ -350,12 +350,22 @@ class _MobileCategoriesScreenState extends State<MobileCategoriesScreen> {
                           ),
                           IconButton(
                             icon: Icon(Icons.clear, color: AppColors.textSecondary),
+                            tooltip: 'Reset search and filters',
                             onPressed: () {
                               _searchController.clear();
-                              setState(() {
-                                _searchQuery = '';
+                              _debounceTimer?.cancel();
+                              final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+                              // Reset search query and genre filter to show ALL series
+                              seriesProvider.clearSearch().then((_) {
+                                if (mounted) {
+                                  setState(() {
+                                    _searchQuery = '';
+                                    _selectedGenreId = null; // Reset genre filter
+                                  });
+                                  // Force refresh to show all series
+                                  _loadAllSeries(forceRefresh: true);
+                                }
                               });
-                              _loadAllSeries();
                             },
                           ),
                         ],

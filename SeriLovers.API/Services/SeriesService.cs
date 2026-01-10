@@ -39,6 +39,7 @@ namespace SeriLovers.API.Services
             {
                 query = query
                     .Include(s => s.Ratings)
+                        .ThenInclude(r => r.User)
                     .Include(s => s.Watchlists);
             }
 
@@ -55,28 +56,23 @@ namespace SeriLovers.API.Services
             // Start with base query - we'll add includes later for the final fetch
             var baseQuery = _context.Series.AsQueryable();
 
-            // Apply search filter (including actor names)
+            // Apply search filter (title and actor names only - precise search)
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var keyword = search.Trim().ToLower();
 
-                // Use a subquery to find series with matching actors.
-                // IMPORTANT: We cannot use Actor.FullName here because it's a computed
-                // property ([NotMapped]) and EF Core can't translate it to SQL,
-                // which would cause a 500 error when searching.
-                var matchingSeriesIds = _context.SeriesActors
-                    .Where(sa => sa.Actor != null && (
-                        sa.Actor.FirstName.ToLower().Contains(keyword) ||
-                        sa.Actor.LastName.ToLower().Contains(keyword) ||
-                        (sa.Actor.FirstName + " " + sa.Actor.LastName).ToLower().Contains(keyword)
-                    ))
-                    .Select(sa => sa.SeriesId)
-                    .Distinct();
-
+                // Search only in title and actor names (FirstName, LastName, FullName)
+                // Description is excluded to avoid too broad matches
+                // Use explicit join through SeriesActors to Actors for proper SQL generation
                 baseQuery = baseQuery.Where(s =>
                     s.Title.ToLower().Contains(keyword) ||
-                    (s.Description != null && s.Description.ToLower().Contains(keyword)) ||
-                    matchingSeriesIds.Contains(s.Id));
+                    _context.SeriesActors
+                        .Where(sa => sa.SeriesId == s.Id)
+                        .Any(sa => _context.Actors
+                            .Any(a => a.Id == sa.ActorId &&
+                                (a.FirstName.ToLower().Contains(keyword) ||
+                                 a.LastName.ToLower().Contains(keyword) ||
+                                 (a.FirstName + " " + a.LastName).ToLower().Contains(keyword)))));
             }
 
             // Apply genre filter
@@ -103,7 +99,6 @@ namespace SeriLovers.API.Services
             var totalItems = baseQuery.Count();
             var totalPages = totalItems == 0 ? 0 : (int)Math.Ceiling(totalItems / (double)pageSize);
 
-            // Apply sorting
             IOrderedQueryable<Series> orderedQuery;
             var isAscending = string.IsNullOrEmpty(sortOrder) || sortOrder.ToLower() == "asc";
             
@@ -127,19 +122,16 @@ namespace SeriLovers.API.Services
                     break;
             }
 
-            // Get the IDs of series to fetch
             var seriesIds = orderedQuery
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .Select(s => s.Id)
                 .ToList();
 
-            // Now fetch the full series with relationships
             var items = QuerySeriesWithRelationships()
                 .Where(s => seriesIds.Contains(s.Id))
                 .ToList();
 
-            // Reorder items to match the original sort order
             var itemsDict = items.ToDictionary(s => s.Id);
             items = seriesIds
                 .Where(id => itemsDict.ContainsKey(id))
@@ -172,8 +164,28 @@ namespace SeriLovers.API.Services
             if (series != null)
             {
                 HydrateSeries(series);
-                series.RatingsCount = series.Ratings?.Count ?? 0;
-                series.WatchlistsCount = series.Watchlists?.Count ?? 0;
+                
+                // Filter out test users when counting
+                var realRatings = series.Ratings?
+                    .Where(r => r.User != null
+                        && r.User.Email != null
+                        && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                        && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                        && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                        && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    .ToList() ?? new List<Rating>();
+                
+                var realWatchlists = series.Watchlists?
+                    .Where(w => w.User != null
+                        && w.User.Email != null
+                        && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                        && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    .ToList() ?? new List<Watchlist>();
+                
+                series.RatingsCount = realRatings.Count;
+                series.WatchlistsCount = realWatchlists.Count;
             }
 
             return series;
@@ -201,9 +213,13 @@ namespace SeriLovers.API.Services
             _logger.LogDebug("Searching series with keyword {Keyword}", keyword);
             var lowerKeyword = keyword.ToLower();
 
+            // Search only in title and actor names (exclude description for precise results)
             var results = QuerySeriesWithRelationships()
                 .Where(s => s.Title.ToLower().Contains(lowerKeyword) ||
-                            (s.Description != null && s.Description.ToLower().Contains(lowerKeyword)))
+                    s.SeriesActors.Any(sa => 
+                        sa.Actor.FirstName.ToLower().Contains(lowerKeyword) ||
+                        sa.Actor.LastName.ToLower().Contains(lowerKeyword) ||
+                        (sa.Actor.FirstName + " " + sa.Actor.LastName).ToLower().Contains(lowerKeyword)))
                 .OrderBy(s => s.Title)
                 .ToList();
 
@@ -230,7 +246,6 @@ namespace SeriLovers.API.Services
             var incomingGenreIds = ExtractGenreIds(series);
             var incomingActorLinks = ExtractActorLinks(series);
 
-            // Reset relational collections to avoid EF attempting to attach duplicate entities
             series.SeriesGenres = new List<SeriesGenre>();
             series.SeriesActors = new List<SeriesActor>();
 
@@ -305,7 +320,6 @@ namespace SeriLovers.API.Services
             if (string.IsNullOrWhiteSpace(series.Title))
                 throw new ArgumentException("Series title cannot be empty.", nameof(series));
 
-            // Update basic properties
             existing.Title = series.Title;
             existing.Description = series.Description;
             existing.ReleaseDate = series.ReleaseDate;
@@ -316,7 +330,6 @@ namespace SeriLovers.API.Services
             var incomingGenreIds = ExtractGenreIds(series);
             var incomingActorLinks = ExtractActorLinks(series);
 
-            // Replace genre links
             existing.SeriesGenres.Clear();
             if (incomingGenreIds.Count > 0)
             {
@@ -330,7 +343,6 @@ namespace SeriLovers.API.Services
                 }
             }
 
-            // Replace actor links
             existing.SeriesActors.Clear();
             if (incomingActorLinks.Count > 0)
             {
@@ -383,7 +395,6 @@ namespace SeriLovers.API.Services
                 throw new KeyNotFoundException($"Series with ID {id} not found.");
             }
 
-            // Note: Seasons will be cascade deleted due to foreign key relationship
             _context.Series.Remove(series);
             _context.SaveChanges();
             _logger.LogInformation("Series {SeriesId} deleted successfully.", id);
@@ -561,9 +572,25 @@ namespace SeriLovers.API.Services
                     {
                         if (s.Episodes != null)
                         {
-                            s.Episodes = s.Episodes
+                            // Order episodes and ensure all are included (no filtering)
+                            // Log if episode 1 is missing for debugging
+                            var episodes = s.Episodes
                                 .OrderBy(e => e.EpisodeNumber)
                                 .ToList();
+                            
+                            // Check if episode 1 exists - log warning if missing
+                            var hasEpisode1 = episodes.Any(e => e.EpisodeNumber == 1);
+                            if (!hasEpisode1 && episodes.Count > 0)
+                            {
+                                _logger.LogWarning(
+                                    "Season {SeasonId} (Season {SeasonNumber}) of Series {SeriesId} ({SeriesTitle}) is missing episode 1. " +
+                                    "Found {EpisodeCount} episodes: {EpisodeNumbers}",
+                                    s.Id, s.SeasonNumber, series.Id, series.Title, 
+                                    episodes.Count, 
+                                    string.Join(", ", episodes.Select(e => $"E{e.EpisodeNumber}")));
+                            }
+                            
+                            s.Episodes = episodes;
                         }
                         else
                         {
@@ -581,7 +608,22 @@ namespace SeriLovers.API.Services
                 series.Seasons = new List<Season>();
             }
 
-            series.Ratings ??= new List<Rating>();
+            // Filter out test/dummy user ratings - only keep real user reviews
+            if (series.Ratings != null)
+            {
+                series.Ratings = series.Ratings
+                    .Where(r => r.User != null 
+                        && r.User.Email != null
+                        && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                        && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                        && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+            else
+            {
+                series.Ratings = new List<Rating>();
+            }
+            
             series.Watchlists ??= new List<Watchlist>();
         }
 
@@ -594,19 +636,40 @@ namespace SeriLovers.API.Services
 
             var seriesIds = seriesList.Select(s => s.Id).ToList();
 
-            var ratingCounts = _context.Ratings
+            // Filter out test/dummy user ratings when counting
+            // Materialize first, then filter in memory since EF Core can't translate EndsWith with StringComparison
+            var allRatings = _context.Ratings
                 .AsNoTracking()
+                .Include(r => r.User)
                 .Where(r => seriesIds.Contains(r.SeriesId))
+                .ToList();
+            
+            var ratingCounts = allRatings
+                .Where(r => r.User != null
+                    && r.User.Email != null
+                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase))
                 .GroupBy(r => r.SeriesId)
-                .Select(g => new { SeriesId = g.Key, Count = g.Count() })
-                .ToDictionary(x => x.SeriesId, x => x.Count);
+                .ToDictionary(g => g.Key, g => g.Count());
 
-            var watchlistCounts = _context.Watchlists
+            // Get watchlist counts, filtering out test users
+            // Materialize first, then filter in memory since EF Core can't translate EndsWith with StringComparison
+            var allWatchlists = _context.Watchlists
                 .AsNoTracking()
+                .Include(w => w.User)
                 .Where(w => seriesIds.Contains(w.SeriesId))
+                .ToList();
+
+            var watchlistCounts = allWatchlists
+                .Where(w => w.User != null
+                    && w.User.Email != null
+                    && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                    && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                    && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                    && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
                 .GroupBy(w => w.SeriesId)
-                .Select(g => new { SeriesId = g.Key, Count = g.Count() })
-                .ToDictionary(x => x.SeriesId, x => x.Count);
+                .ToDictionary(g => g.Key, g => g.Count());
 
             foreach (var series in seriesList)
             {

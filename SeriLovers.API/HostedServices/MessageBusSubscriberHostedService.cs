@@ -1,8 +1,10 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using SeriLovers.API.Consumers;
 using SeriLovers.API.Events;
 using SeriLovers.API.Interfaces;
 
@@ -12,115 +14,151 @@ namespace SeriLovers.API.HostedServices
     {
         private readonly IMessageBusService _messageBusService;
         private readonly ILogger<MessageBusSubscriberHostedService> _logger;
+        private readonly IServiceProvider _serviceProvider;
+        private readonly IHostEnvironment _hostEnvironment;
 
-        public MessageBusSubscriberHostedService(IMessageBusService messageBusService, ILogger<MessageBusSubscriberHostedService> logger)
+        public MessageBusSubscriberHostedService(
+            IMessageBusService messageBusService,
+            ILogger<MessageBusSubscriberHostedService> logger,
+            IServiceProvider serviceProvider,
+            IHostEnvironment hostEnvironment)
         {
             _messageBusService = messageBusService;
             _logger = logger;
+            _serviceProvider = serviceProvider;
+            _hostEnvironment = hostEnvironment;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
+            if (_hostEnvironment.IsDevelopment())
+            {
+                _logger.LogInformation("Development environment detected. Skipping RabbitMQ subscriptions.");
+                return Task.CompletedTask;
+            }
+
             _logger.LogInformation("Starting message bus subscriptions...");
 
-            // Check if RabbitMQ is available before attempting subscriptions
             if (!_messageBusService.IsAvailable)
             {
-                _logger.LogInformation("RabbitMQ is not available. Skipping message bus subscriptions.");
+                _logger.LogWarning("RabbitMQ is not available. Skipping message bus subscriptions.");
                 return Task.CompletedTask;
             }
 
             // Start subscriptions in the background to avoid blocking application startup
-            // Use Task.Run to ensure subscriptions don't block the startup process
+            // Use fire-and-forget pattern with proper error handling for each subscription
             _ = Task.Run(async () =>
             {
-                // Add a delay to ensure RabbitMQ connection is fully established
-                // Increased delay to give RabbitMQ more time to initialize
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
-
-                // Wrap each subscription individually so one failure doesn't prevent others
-                // Add small delays between subscriptions to avoid overwhelming RabbitMQ
-                
-                // Review Created Event
                 try
                 {
-                    await _messageBusService.SubscribeAsync<ReviewCreatedEvent>("ReviewCreatedHandler", async message =>
+                    // Add a delay to ensure RabbitMQ connection is fully established
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+
+                    // Wrap each subscription individually so one failure doesn't prevent others
+                    // Each subscription is handled independently with try/catch
+                    
+                    // Review Created Event
+                    try
                     {
-                        _logger.LogInformation(
-                            "[RabbitMQ] ReviewCreatedEvent received - RatingId: {RatingId}, User: {UserName} ({UserId}), Series: {SeriesTitle} ({SeriesId}), Score: {Score}, Comment: {Comment}",
-                            message.RatingId, message.UserName, message.UserId, message.SeriesTitle, message.SeriesId, message.Score, 
-                            string.IsNullOrEmpty(message.Comment) ? "No comment" : $"\"{message.Comment}\"");
-                        await Task.CompletedTask;
-                    });
-                    _logger.LogInformation("Successfully subscribed to ReviewCreatedEvent.");
+                        await _messageBusService.SubscribeAsync<ReviewCreatedEvent>("ReviewCreatedHandler", async message =>
+                        {
+                            _logger.LogInformation(
+                                "[RabbitMQ] ReviewCreatedEvent received - RatingId: {RatingId}, User: {UserName} ({UserId}), Series: {SeriesTitle} ({SeriesId}), Score: {Score}",
+                                message.RatingId, message.UserName, message.UserId, message.SeriesTitle, message.SeriesId, message.Score);
+                            
+                            // Create a scope for the scoped consumer service
+                            using var scope = _serviceProvider.CreateScope();
+                            var consumer = scope.ServiceProvider.GetRequiredService<ReviewCreatedEventConsumer>();
+                            await consumer.HandleAsync(message, cancellationToken);
+                        });
+                        _logger.LogInformation("Successfully subscribed to ReviewCreatedEvent with consumer.");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log warning but continue - don't crash the hosted service
+                        _logger.LogWarning(ex, "Failed to subscribe to ReviewCreatedEvent. The application will continue without this subscription.");
+                    }
+
+                    // Small delay between subscriptions to avoid overwhelming RabbitMQ
+                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+                    // Episode Watched Event
+                    try
+                    {
+                        await _messageBusService.SubscribeAsync<EpisodeWatchedEvent>("EpisodeWatchedHandler", async message =>
+                        {
+                            _logger.LogInformation(
+                                "[RabbitMQ] EpisodeWatchedEvent received - EpisodeId: {EpisodeId}, User: {UserName} ({UserId}), Series: {SeriesTitle} ({SeriesId}), Season {SeasonNumber} Episode {EpisodeNumber}, Completed: {IsCompleted}",
+                                message.EpisodeId, message.UserName, message.UserId, message.SeriesTitle, message.SeriesId, 
+                                message.SeasonNumber, message.EpisodeNumber, message.IsCompleted);
+                            
+                            // Create a scope for the scoped consumer service
+                            using var scope = _serviceProvider.CreateScope();
+                            var consumer = scope.ServiceProvider.GetRequiredService<EpisodeWatchedEventConsumer>();
+                            await consumer.HandleAsync(message, cancellationToken);
+                        });
+                        _logger.LogInformation("Successfully subscribed to EpisodeWatchedEvent with consumer.");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log warning but continue - don't crash the hosted service
+                        _logger.LogWarning(ex, "Failed to subscribe to EpisodeWatchedEvent. The application will continue without this subscription.");
+                    }
+
+                    // Small delay between subscriptions to avoid overwhelming RabbitMQ
+                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+                    // User Created Event
+                    try
+                    {
+                        await _messageBusService.SubscribeAsync<UserCreatedEvent>("UserCreatedHandler", async message =>
+                        {
+                            _logger.LogInformation(
+                                "[RabbitMQ] UserCreatedEvent received - UserId: {UserId}, UserName: {UserName}, Email: {Email}",
+                                message.UserId, message.UserName, message.Email);
+                            await Task.CompletedTask;
+                        });
+                        _logger.LogInformation("Successfully subscribed to UserCreatedEvent.");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log warning but continue - don't crash the hosted service
+                        _logger.LogWarning(ex, "Failed to subscribe to UserCreatedEvent. The application will continue without this subscription.");
+                    }
+
+                    // Small delay between subscriptions to avoid overwhelming RabbitMQ
+                    await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+
+                    // User Updated Event
+                    try
+                    {
+                        await _messageBusService.SubscribeAsync<UserUpdatedEvent>("UserUpdatedHandler", async message =>
+                        {
+                            _logger.LogInformation(
+                                "[RabbitMQ] UserUpdatedEvent received - UserId: {UserId}, UserName: {UserName}, Email: {Email}, Country: {Country}, AvatarUrl: {AvatarUrl}",
+                                message.UserId, message.UserName, message.Email, message.Country ?? "N/A", message.AvatarUrl ?? "N/A");
+                            await Task.CompletedTask;
+                        });
+                        _logger.LogInformation("Successfully subscribed to UserUpdatedEvent.");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log warning but continue - don't crash the hosted service
+                        _logger.LogWarning(ex, "Failed to subscribe to UserUpdatedEvent. The application will continue without this subscription.");
+                    }
+
+                    _logger.LogInformation("Message bus subscription initialization completed.");
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected when cancellation token is triggered - don't log as error
+                    _logger.LogInformation("Message bus subscription initialization was canceled.");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to subscribe to ReviewCreatedEvent. The application will continue without this subscription.");
+                    // Catch-all for any unexpected errors - log but don't crash
+                    _logger.LogError(ex, "Unexpected error during message bus subscription initialization. The application will continue.");
                 }
-
-                // Small delay between subscriptions to avoid overwhelming RabbitMQ
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-
-                // Episode Watched Event
-                try
-                {
-                    await _messageBusService.SubscribeAsync<EpisodeWatchedEvent>("EpisodeWatchedHandler", async message =>
-                    {
-                        _logger.LogInformation(
-                            "[RabbitMQ] EpisodeWatchedEvent received - EpisodeId: {EpisodeId}, User: {UserName} ({UserId}), Series: {SeriesTitle} ({SeriesId}), Season {SeasonNumber} Episode {EpisodeNumber}, Completed: {IsCompleted}",
-                            message.EpisodeId, message.UserName, message.UserId, message.SeriesTitle, message.SeriesId, 
-                            message.SeasonNumber, message.EpisodeNumber, message.IsCompleted);
-                        await Task.CompletedTask;
-                    });
-                    _logger.LogInformation("Successfully subscribed to EpisodeWatchedEvent.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to subscribe to EpisodeWatchedEvent. The application will continue without this subscription.");
-                }
-
-                // Small delay between subscriptions to avoid overwhelming RabbitMQ
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-
-                // User Created Event
-                try
-                {
-                    await _messageBusService.SubscribeAsync<UserCreatedEvent>("UserCreatedHandler", async message =>
-                    {
-                        _logger.LogInformation(
-                            "[RabbitMQ] UserCreatedEvent received - UserId: {UserId}, UserName: {UserName}, Email: {Email}",
-                            message.UserId, message.UserName, message.Email);
-                        await Task.CompletedTask;
-                    });
-                    _logger.LogInformation("Successfully subscribed to UserCreatedEvent.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to subscribe to UserCreatedEvent. The application will continue without this subscription.");
-                }
-
-                // Small delay between subscriptions to avoid overwhelming RabbitMQ
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-
-                // User Updated Event
-                try
-                {
-                    await _messageBusService.SubscribeAsync<UserUpdatedEvent>("UserUpdatedHandler", async message =>
-                    {
-                        _logger.LogInformation(
-                            "[RabbitMQ] UserUpdatedEvent received - UserId: {UserId}, UserName: {UserName}, Email: {Email}, Country: {Country}, AvatarUrl: {AvatarUrl}",
-                            message.UserId, message.UserName, message.Email, message.Country ?? "N/A", message.AvatarUrl ?? "N/A");
-                        await Task.CompletedTask;
-                    });
-                    _logger.LogInformation("Successfully subscribed to UserUpdatedEvent.");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to subscribe to UserUpdatedEvent. The application will continue without this subscription.");
-                }
-
-                _logger.LogInformation("Message bus subscription initialization completed.");
             }, cancellationToken);
 
             // Return immediately to not block startup

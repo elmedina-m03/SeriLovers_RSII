@@ -6,12 +6,24 @@ import 'auth_provider.dart';
 class RatingProvider extends ChangeNotifier {
   final RatingService _service;
   AuthProvider? _authProvider;
+  
+  /// Flag to indicate if a rating was recently created/updated/deleted
+  /// This is used to trigger statistics refresh
+  bool _ratingChanged = false;
 
   RatingProvider({
     required RatingService service,
     AuthProvider? authProvider,
   })  : _service = service,
         _authProvider = authProvider;
+  
+  /// Check if rating was changed (for statistics refresh)
+  bool get ratingChanged => _ratingChanged;
+  
+  /// Reset the rating changed flag
+  void resetRatingChanged() {
+    _ratingChanged = false;
+  }
 
   void updateAuthProvider(AuthProvider authProvider) {
     _authProvider = authProvider;
@@ -108,6 +120,8 @@ class RatingProvider extends ChangeNotifier {
       }
       _seriesRatingsCache[seriesId] = ratings;
 
+      // Mark that rating was changed (for statistics refresh)
+      _ratingChanged = true;
       error = null;
     } catch (e) {
       error = e.toString();
@@ -137,6 +151,8 @@ class RatingProvider extends ChangeNotifier {
       ratings.removeWhere((r) => r.id == ratingId);
       _seriesRatingsCache[seriesId] = ratings;
 
+      // Mark that rating was changed (for statistics refresh)
+      _ratingChanged = true;
       error = null;
     } catch (e) {
       error = e.toString();

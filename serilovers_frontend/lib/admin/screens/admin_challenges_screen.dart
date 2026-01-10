@@ -684,7 +684,8 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
   }
 
   Widget _buildWatcherCard(BuildContext context, ThemeData theme, Map<String, dynamic> watcher, int index) {
-    final totalWatched = (watcher['ratingsCount'] as int? ?? 0) + (watcher['watchlistCount'] as int? ?? 0);
+    // Use watchedSeriesCount (series where user watched 100% of episodes) instead of ratings + watchlist
+    final totalWatched = watcher['watchedSeriesCount'] as int? ?? 0;
     
     return Card(
       color: AppColors.cardBackground,

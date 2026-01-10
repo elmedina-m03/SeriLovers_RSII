@@ -18,6 +18,9 @@ using SeriLovers.API.Models;
 using SeriLovers.API.Security;
 using SeriLovers.API.Services;
 using SeriLovers.API.Profiles;
+using SeriLovers.API.Domain;
+using SeriLovers.API.Domain.StateMachine;
+using SeriLovers.API.Consumers;
 using Swashbuckle.AspNetCore.Annotations;
 using System.Linq;
 using System.Reflection;
@@ -32,31 +35,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 QuestPDF.Settings.License = LicenseType.Community;
 
-// ============================================
-// Database Configuration
-// ============================================
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
         sqlOptions => sqlOptions.CommandTimeout(60)));
 
-// ============================================
-// ASP.NET Core Identity Configuration
-// ============================================
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<int>>(options =>
 {
-    // Password requirements
     options.Password.RequireDigit = true;
     options.Password.RequireLowercase = true;
     options.Password.RequireUppercase = true;
     options.Password.RequireNonAlphanumeric = true;
     options.Password.RequiredLength = 8;
-    
-    // User requirements
     options.User.RequireUniqueEmail = true;
     options.SignIn.RequireConfirmedEmail = false;
-    
-    // Lockout settings
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
     options.Lockout.MaxFailedAccessAttempts = 5;
     options.Lockout.AllowedForNewUsers = true;
@@ -66,9 +58,6 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole<int>>(options =>
 
 builder.Services.AddAutoMapper(typeof(AppMappingProfile).Assembly);
 
-// ============================================
-// JWT Authentication Configuration
-// ============================================
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? "YourSuperSecretKeyThatIsAtLeast32CharactersLong!";
 var issuer = jwtSettings["Issuer"] ?? "SeriLovers.API";
@@ -92,17 +81,14 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = issuer,
         ValidAudience = audience,
         IssuerSigningKey = key,
-        // Map role claims from JWT token to ASP.NET Core claim types
         RoleClaimType = ClaimTypes.Role,
         NameClaimType = ClaimTypes.NameIdentifier
     };
     
-    // Map JWT "role" claim to ASP.NET Core Role claim type
     options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
     {
         OnTokenValidated = context =>
         {
-            // Ensure role claims are properly mapped
             if (context.Principal != null)
             {
                 var roleClaims = context.Principal.FindAll("role").ToList();
@@ -141,9 +127,6 @@ builder.Services.AddAuthentication(options =>
 })
 .AddScheme<AuthenticationSchemeOptions, BasicAuthHandler>("Basic", options => { });
 
-// ============================================
-// Service Registrations
-// ============================================
 builder.Services.AddScoped<ISeriesService, SeriesService>();
 builder.Services.AddScoped<IActorService, ActorService>();
 builder.Services.AddScoped<IGenreService, GenreService>();
@@ -152,11 +135,18 @@ builder.Services.AddScoped<IAdminStatisticsService, AdminStatisticsService>();
 builder.Services.AddScoped<IImageUploadService, ImageUploadService>();
 builder.Services.AddScoped<RecommendationService>();
 builder.Services.AddScoped<ChallengeService>();
+builder.Services.AddScoped<ISeriesWatchingStateService, SeriesWatchingStateService>();
 
-// RabbitMQ connection - Configured via environment variables
+builder.Services.AddScoped<ToWatchState>();
+builder.Services.AddScoped<InProgressState>();
+builder.Services.AddScoped<FinishedState>();
+
+// RabbitMQ Event Consumers
+builder.Services.AddScoped<EpisodeWatchedEventConsumer>();
+builder.Services.AddScoped<ReviewCreatedEventConsumer>();
+
 builder.Services.AddSingleton<IBus>(sp =>
 {
-    // Get connection string from environment variable or configuration
     var connectionString = Environment.GetEnvironmentVariable("RABBITMQ_CONNECTION") 
         ?? builder.Configuration["RabbitMq:Connection"]
         ?? builder.Configuration.GetConnectionString("RabbitMQ");
@@ -166,7 +156,7 @@ builder.Services.AddSingleton<IBus>(sp =>
     if (string.IsNullOrWhiteSpace(connectionString))
     {
         logger.LogWarning("RabbitMQ connection string is not configured. Message bus will not be available.");
-        return null!; // Return null, will be handled gracefully
+        return null!;
     }
     
     try
@@ -179,24 +169,18 @@ builder.Services.AddSingleton<IBus>(sp =>
     catch (Exception ex)
     {
         logger.LogWarning(ex, "Failed to connect to RabbitMQ. The application will continue without message bus functionality.");
-        return null!; // Return null, will be handled gracefully
+        return null!;
     }
 });
 builder.Services.AddSingleton<IMessageBusService, MessageBusService>();
 builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
 
-// ============================================
-// Controllers Configuration
-// ============================================
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<GlobalExceptionFilter>();
 });
 builder.Services.AddHttpClient();
 
-// ============================================
-// CORS Configuration
-// ============================================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
@@ -205,14 +189,12 @@ builder.Services.AddCors(options =>
 
         if (isDevelopment)
         {
-            // Development: allow everything to make local frontend work from any port
             policy.AllowAnyOrigin()
                   .AllowAnyMethod()
                   .AllowAnyHeader();
         }
         else
         {
-            // Production/staging: use configured allowed origins if present, otherwise fallback
             var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
 
             if (allowedOrigins != null && allowedOrigins.Length > 0)
@@ -231,9 +213,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-// ============================================
-// Swagger/OpenAPI Configuration
-// ============================================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -250,12 +229,9 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 
-    // JWT Bearer Authentication Configuration
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = @"JWT Authorization header using the Bearer scheme. 
-                        Enter 'Bearer' [space] and then your token in the text input below.
-                        Example: 'Bearer 12345abcdef'",
+        Description = @"JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token.",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.Http,
@@ -268,7 +244,6 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 
-    // Apply security globally to all endpoints
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
     {
         {
@@ -284,7 +259,6 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 
-    // Include XML comments for better documentation
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath))
@@ -292,10 +266,8 @@ builder.Services.AddSwaggerGen(c =>
         c.IncludeXmlComments(xmlPath);
     }
 
-    // Enable annotations to show [Authorize] attributes
     c.EnableAnnotations();
 
-    // Customize operation IDs
     c.CustomOperationIds(apiDesc =>
     {
         var controllerActionDescriptor = apiDesc.ActionDescriptor as ControllerActionDescriptor;
@@ -303,19 +275,9 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// ============================================
-// Build Application
-// ============================================
 var app = builder.Build();
 
-// ============================================
-// Middleware Pipeline
-// ============================================
-
-// Global exception handling middleware (must be early in pipeline)
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
-
-// CORS (must be before UseAuthentication and UseAuthorization)
 app.UseCors("DevCors");
 
 // Swagger UI
@@ -334,13 +296,10 @@ app.UseSwaggerUI(c =>
 
 app.UseHttpsRedirection();
 
-// Enable static file serving for uploaded images
-// Configure static files to serve from wwwroot directory
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
     {
-        // Allow CORS for static files
         ctx.Context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
         ctx.Context.Response.Headers.Append("Access-Control-Allow-Methods", "GET");
         ctx.Context.Response.Headers.Append("Cache-Control", "public,max-age=3600");
@@ -349,20 +308,19 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
-// ============================================
-// Database Seeding (Development only)
-// ============================================
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    await DbSeeder.SeedCatalogDataAsync(services);
+}
+
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
-    await DbSeeder.Seed(services);
+    await DbSeeder.SeedDevelopmentDataAsync(services);
 }
 
-// ============================================
-// Run Application
-// ============================================
 app.Run();
