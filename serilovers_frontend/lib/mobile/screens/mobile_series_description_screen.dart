@@ -8,6 +8,7 @@ import '../../core/widgets/image_with_placeholder.dart';
 import '../../providers/watchlist_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/reminder_service.dart';
+import 'package:provider/provider.dart';
 import '../widgets/mobile_page_route.dart';
 
 /// Screen showing extended series description with full layout matching detail screen
@@ -368,41 +369,56 @@ class _MobileSeriesDescriptionScreenState extends State<MobileSeriesDescriptionS
 
   /// Load reminder state for this series
   Future<void> _loadReminderState() async {
-    final isEnabled = await _reminderService.isReminderEnabled(widget.series.id);
-    if (mounted) {
-      setState(() {
-        _isReminderEnabled = isEnabled;
-      });
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      if (token != null && token.isNotEmpty) {
+        final isEnabled = await _reminderService.isReminderEnabled(widget.series.id, token: token);
+        if (mounted) {
+          setState(() {
+            _isReminderEnabled = isEnabled;
+          });
+        }
+      }
+    } catch (_) {
+      // Silently fail - reminder state will default to false
     }
   }
 
   /// Toggle reminder for new episodes
   Future<void> _toggleReminder() async {
     try {
-      if (_isReminderEnabled) {
-        // Disable reminder
-        await _reminderService.disableReminder(_series.id);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      if (token == null || token.isEmpty) {
         if (mounted) {
-          setState(() {
-            _isReminderEnabled = false;
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Reminder disabled'),
-              backgroundColor: AppColors.successColor,
+              content: Text('Please log in to enable reminders'),
+              backgroundColor: AppColors.dangerColor,
             ),
           );
         }
+        return;
+      }
+
+      if (_isReminderEnabled) {
+        // Disable reminder
+        await _reminderService.disableReminder(_series.id, token: token);
       } else {
         // Enable reminder
-        await _reminderService.enableReminder(_series.id, _series.title);
+        await _reminderService.enableReminder(_series.id, _series.title, token: token);
+      }
+      
+      // Reload reminder state from API to ensure consistency
+      if (mounted) {
+        await _loadReminderState();
         if (mounted) {
-          setState(() {
-            _isReminderEnabled = true;
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('You will be notified when new episodes of ${_series.title} are available'),
+              content: Text(_isReminderEnabled 
+                  ? 'You will be notified when new episodes of ${_series.title} are available'
+                  : 'Reminder disabled'),
               backgroundColor: AppColors.successColor,
               duration: const Duration(seconds: 3),
             ),

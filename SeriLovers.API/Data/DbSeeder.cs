@@ -721,8 +721,12 @@ namespace SeriLovers.API.Data
                     var result = await userManager.CreateAsync(user, "Dummy123!");
                     if (result.Succeeded)
                     {
-                        await userManager.AddToRoleAsync(user, "User");
-                        users.Add(user);
+                        user = await userManager.FindByEmailAsync(email);
+                        if (user != null)
+                        {
+                            await userManager.AddToRoleAsync(user, "User");
+                            users.Add(user);
+                        }
                     }
                 }
             }
@@ -783,22 +787,99 @@ namespace SeriLovers.API.Data
             if (await userManager.FindByEmailAsync("admin@test.com") == null)
             {
                 var admin = new ApplicationUser { UserName = "admin@test.com", Email = "admin@test.com", EmailConfirmed = true };
-                await userManager.CreateAsync(admin, "Admin123!");
-                await userManager.AddToRoleAsync(admin, "Admin");
+                var result = await userManager.CreateAsync(admin, "Admin123!");
+                if (result.Succeeded)
+                {
+                    admin = await userManager.FindByEmailAsync("admin@test.com");
+                    if (admin != null)
+                    {
+                        await userManager.AddToRoleAsync(admin, "Admin");
+                    }
+                }
             }
 
             if (await userManager.FindByEmailAsync("user1@test.com") == null)
             {
                 var user1 = new ApplicationUser { UserName = "user1@test.com", Email = "user1@test.com", EmailConfirmed = true };
-                await userManager.CreateAsync(user1, "User123!");
-                await userManager.AddToRoleAsync(user1, "User");
+                var result = await userManager.CreateAsync(user1, "User123!");
+                if (result.Succeeded)
+                {
+                    user1 = await userManager.FindByEmailAsync("user1@test.com");
+                    if (user1 != null)
+                    {
+                        await userManager.AddToRoleAsync(user1, "User");
+                    }
+                }
             }
 
             if (await userManager.FindByEmailAsync("user2@test.com") == null)
             {
                 var user2 = new ApplicationUser { UserName = "user2@test.com", Email = "user2@test.com", EmailConfirmed = true };
-                await userManager.CreateAsync(user2, "User123!");
-                await userManager.AddToRoleAsync(user2, "User");
+                var result = await userManager.CreateAsync(user2, "User123!");
+                if (result.Succeeded)
+                {
+                    user2 = await userManager.FindByEmailAsync("user2@test.com");
+                    if (user2 != null)
+                    {
+                        await userManager.AddToRoleAsync(user2, "User");
+                    }
+                }
+            }
+
+            if (await userManager.FindByNameAsync("desktop") == null)
+            {
+                var desktop = new ApplicationUser { UserName = "desktop", Email = "desktop@test.com", EmailConfirmed = true };
+                var result = await userManager.CreateAsync(desktop, "test");
+                if (result.Succeeded)
+                {
+                    desktop = await userManager.FindByNameAsync("desktop");
+                    if (desktop != null)
+                    {
+                        await userManager.AddToRoleAsync(desktop, "User");
+                    }
+                }
+            }
+
+            if (await userManager.FindByNameAsync("mobile") == null)
+            {
+                var mobile = new ApplicationUser { UserName = "mobile", Email = "mobile@test.com", EmailConfirmed = true };
+                var result = await userManager.CreateAsync(mobile, "test");
+                if (result.Succeeded)
+                {
+                    mobile = await userManager.FindByNameAsync("mobile");
+                    if (mobile != null)
+                    {
+                        await userManager.AddToRoleAsync(mobile, "User");
+                    }
+                }
+            }
+
+            if (await userManager.FindByNameAsync("Admin") == null)
+            {
+                var adminUser = new ApplicationUser { UserName = "Admin", Email = "admin@serilovers.com", EmailConfirmed = true };
+                var adminResult = await userManager.CreateAsync(adminUser, "test");
+                if (adminResult.Succeeded)
+                {
+                    adminUser = await userManager.FindByNameAsync("Admin");
+                    if (adminUser != null)
+                    {
+                        await userManager.AddToRoleAsync(adminUser, "Admin");
+                    }
+                }
+            }
+
+            if (await userManager.FindByNameAsync("User") == null)
+            {
+                var user = new ApplicationUser { UserName = "User", Email = "user@serilovers.com", EmailConfirmed = true };
+                var result = await userManager.CreateAsync(user, "test");
+                if (result.Succeeded)
+                {
+                    user = await userManager.FindByNameAsync("User");
+                    if (user != null)
+                    {
+                        await userManager.AddToRoleAsync(user, "User");
+                    }
+                }
             }
         }
 
@@ -1227,15 +1308,6 @@ namespace SeriLovers.API.Data
                     TargetCount = 5,
                     ParticipantsCount = 0,
                     CreatedAt = DateTime.UtcNow.AddDays(-20)
-                },
-                new Challenge
-                {
-                    Name = "Explore 3 New Genres",
-                    Description = "Watch and rate series from 3 different genres you haven't explored before. Expand your viewing horizons!",
-                    Difficulty = ChallengeDifficulty.Hard,
-                    TargetCount = 3,
-                    ParticipantsCount = 0,
-                    CreatedAt = DateTime.UtcNow.AddDays(-15)
                 },
                 new Challenge
                 {

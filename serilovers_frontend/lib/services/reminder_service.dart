@@ -1,46 +1,54 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'dart:convert';
+import 'api_service.dart';
 import 'notification_service.dart';
 
-/// Service for managing episode reminders
+/// Service for managing episode reminders via backend API
 class ReminderService {
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final ApiService _apiService;
   final NotificationService _notificationService = NotificationService();
-  static const String _reminderPrefix = 'reminder_';
+
+  ReminderService({ApiService? apiService})
+      : _apiService = apiService ?? ApiService();
 
   /// Enable reminder for a series
-  Future<void> enableReminder(int seriesId, String seriesTitle) async {
+  Future<void> enableReminder(int seriesId, String seriesTitle, {String? token}) async {
     try {
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
       // Initialize notification service if needed
       await _notificationService.initialize();
-      
-      final reminderData = {
-        'seriesId': seriesId,
-        'seriesTitle': seriesTitle,
-        'enabled': true,
-        'enabledAt': DateTime.now().toIso8601String(),
-      };
-      await _storage.write(
-        key: '$_reminderPrefix$seriesId',
-        value: jsonEncode(reminderData),
+
+      // Call backend API to enable reminder
+      await _apiService.post(
+        '/Reminder',
+        {
+          'seriesId': seriesId,
+        },
+        token: token,
       );
-      
-      // Schedule a test notification (for demonstration)
-      // In production, this would be triggered when a new episode is actually added
-      await _notificationService.scheduleTestNotification(
-        seriesId: seriesId,
-        seriesTitle: seriesTitle,
-        delay: const Duration(seconds: 10), // Test notification after 10 seconds
-      );
+
+      // Note: Backend will handle tracking episode counts
+      // Frontend notification service is still used for local notifications
+      // when backend sends notification triggers (to be implemented)
     } catch (e) {
       throw Exception('Failed to enable reminder: $e');
     }
   }
 
   /// Disable reminder for a series
-  Future<void> disableReminder(int seriesId) async {
+  Future<void> disableReminder(int seriesId, {String? token}) async {
     try {
-      await _storage.delete(key: '$_reminderPrefix$seriesId');
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+
+      // Call backend API to disable reminder
+      await _apiService.delete(
+        '/Reminder/series/$seriesId',
+        token: token,
+      );
+
       // Cancel any scheduled notifications for this series
       await _notificationService.cancelNotification(seriesId);
     } catch (e) {
@@ -49,43 +57,48 @@ class ReminderService {
   }
 
   /// Check if reminder is enabled for a series
-  Future<bool> isReminderEnabled(int seriesId) async {
+  Future<bool> isReminderEnabled(int seriesId, {String? token}) async {
     try {
-      final reminderData = await _storage.read(key: '$_reminderPrefix$seriesId');
-      if (reminderData == null) {
+      if (token == null || token.isEmpty) {
         return false;
       }
-      final data = jsonDecode(reminderData) as Map<String, dynamic>;
-      return data['enabled'] == true;
+
+      // Call backend API to check reminder status
+      final response = await _apiService.get(
+        '/Reminder/series/$seriesId',
+        token: token,
+      );
+
+      if (response is bool) {
+        return response;
+      }
+      return false;
     } catch (e) {
+      // If error, return false (reminder not enabled)
       return false;
     }
   }
 
-  /// Get all enabled reminders
-  Future<List<Map<String, dynamic>>> getAllReminders() async {
+  /// Get all enabled reminders for the current user
+  Future<List<Map<String, dynamic>>> getAllReminders({String? token}) async {
     try {
-      final allKeys = await _storage.readAll();
-      final reminders = <Map<String, dynamic>>[];
-      
-      for (final entry in allKeys.entries) {
-        if (entry.key.startsWith(_reminderPrefix)) {
-          try {
-            final data = jsonDecode(entry.value) as Map<String, dynamic>;
-            if (data['enabled'] == true) {
-              reminders.add(data);
-            }
-          } catch (e) {
-            // Skip invalid entries
-            continue;
-          }
-        }
+      if (token == null || token.isEmpty) {
+        return [];
       }
-      
-      return reminders;
+
+      final response = await _apiService.get(
+        '/Reminder',
+        token: token,
+      );
+
+      if (response is List) {
+        return response
+            .map((item) => item as Map<String, dynamic>)
+            .toList();
+      }
+      return [];
     } catch (e) {
       return [];
     }
   }
 }
-

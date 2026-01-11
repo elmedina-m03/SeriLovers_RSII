@@ -133,6 +133,10 @@ namespace SeriLovers.API.Profiles
                 .ForMember(dest => dest.IsAnonymous, opt => opt.MapFrom(src => src.IsAnonymous));
             CreateMap<EpisodeReviewCreateDto, EpisodeReview>();
             CreateMap<EpisodeReviewUpdateDto, EpisodeReview>();
+
+            CreateMap<UserSeriesReminder, UserSeriesReminderDto>()
+                .ForMember(dest => dest.SeriesTitle, opt => opt.MapFrom(src => src.Series != null ? src.Series.Title : null));
+            CreateMap<UserSeriesReminderCreateDto, UserSeriesReminder>();
         }
     }
 }

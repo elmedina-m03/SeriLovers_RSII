@@ -42,6 +42,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
   bool _isLoadingDetail = false;
   Set<int> _watchedEpisodeIds = {}; // Track watched episode IDs for UI updates
   Future<SeriesProgress?>? _progressFuture; // Cache the progress future to avoid rebuild loops
+  int _favoriteRebuildKey = 0; // Key to force FutureBuilder rebuild after toggle
 
   @override
   void initState() {
@@ -294,6 +295,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                       Consumer<WatchlistProvider>(
                         builder: (context, watchlistProvider, child) {
                           return FutureBuilder<bool>(
+                            key: ValueKey(_favoriteRebuildKey), // Force rebuild when key changes
                             future: watchlistProvider.isInFavorites(_series.id),
                             builder: (context, snapshot) {
                               final isFavorite = snapshot.data ?? false;
@@ -323,6 +325,8 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                                     try {
                                       await watchlistProvider.toggleFavorites(_series.id);
                                       if (mounted) {
+                                        // Small delay to ensure backend has processed the change
+                                        await Future.delayed(const Duration(milliseconds: 100));
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(
                                             content: Text(
@@ -334,8 +338,10 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                                             duration: const Duration(seconds: 1),
                                           ),
                                         );
-                                        // Refresh the screen state
-                                        setState(() {});
+                                        // Refresh the screen state to force FutureBuilder to rebuild
+                                        setState(() {
+                                          _favoriteRebuildKey++; // Change key to force FutureBuilder rebuild
+                                        });
                                       }
                                     } catch (e) {
                                       if (mounted) {
@@ -489,10 +495,9 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                   // Progress Section
                   Consumer<EpisodeProgressProvider>(
                     builder: (context, progressProvider, child) {
-                      // Use cached future or create new one if not exists
-                      if (_progressFuture == null) {
-                        _progressFuture = _loadProgress(progressProvider);
-                      }
+                      // Use cached future - it's initialized in initState()
+                      // If future is null, use cached data from provider to avoid notifyListeners during build
+                      final cachedProgress = progressProvider.getSeriesProgress(_series.id);
                       
                       return FutureBuilder<SeriesProgress?>(
                         future: _progressFuture,
@@ -1502,6 +1507,11 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         return;
       }
 
+      // Always reload progress for this series to ensure we have the latest data from backend
+      // Don't rely on cache as it might be stale after leaving a review or completing series
+      await progressProvider.loadSeriesProgress(_series.id);
+
+      // Use getUserProgress to get all watched episodes for accurate data
       final progressService = EpisodeProgressService();
       final userProgress = await progressService.getUserProgress(token: token);
       
@@ -1512,19 +1522,25 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
             .map((p) => p.episodeId)
             .toSet();
         
-        // Only update if changed to avoid unnecessary rebuilds
-        if (_watchedEpisodeIds.length != newWatchedIds.length || 
-            !_watchedEpisodeIds.containsAll(newWatchedIds)) {
+        // Always update to ensure we have the latest data from backend
           setState(() {
             _watchedEpisodeIds = newWatchedIds;
           });
-        } else {
-          // Even if not changed, ensure we have the latest data
-          _watchedEpisodeIds = newWatchedIds;
-        }
       }
     } catch (e) {
       // Silently fail - watched indicators just won't show
+      // But try to use cached progress as fallback
+      try {
+        final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+        final progress = progressProvider.getSeriesProgress(_series.id);
+        if (progress != null && mounted) {
+          // If we have progress but couldn't load watched episodes,
+          // at least ensure we don't lose the progress data
+          // Watched episodes will be empty, but progress will still show
+        }
+      } catch (_) {
+        // Silently fail
+      }
     }
   }
 
@@ -1630,14 +1646,19 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       
       // If a season is selected, we need to mark episodes specifically in that season
       if (selectedSeason != null && selectedSeason.episodes.isNotEmpty) {
-        // Get all episodes in this season up to the target episode number
-        // that are not yet watched, sorted by episode number
-        final episodesToMarkList = selectedSeason.episodes
-            .where((ep) => 
-                ep.episodeNumber <= targetEpisode && 
-                !_watchedEpisodeIds.contains(ep.id))
-            .toList()
+        // Get all episodes in this season, sorted by episode number
+        // Then take first N unwatched episodes (not based on episode number, but position)
+        // This handles cases where episodes don't start from 1 (e.g., episodes 3, 4, 5, 6)
+        final allEpisodesSorted = selectedSeason.episodes.toList()
           ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+        
+        // Filter to only unwatched episodes, then take first N
+        final unwatchedEpisodes = allEpisodesSorted
+            .where((ep) => !_watchedEpisodeIds.contains(ep.id))
+            .toList();
+        
+        // Take first targetEpisode number of unwatched episodes
+        final episodesToMarkList = unwatchedEpisodes.take(targetEpisode).toList();
         
         if (episodesToMarkList.isEmpty) {
           if (mounted) {
@@ -1813,7 +1834,8 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       return;
     }
 
-    // Load user's lists if not already loaded
+    // Always reload user's lists to ensure we have the latest data
+    // This prevents issues with stale cache from previous users or deleted lists
     try {
       final decoded = JwtDecoder.decode(token);
       final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
@@ -1824,7 +1846,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         userId = int.tryParse(rawId);
       }
       
-      if (userId != null && watchlistProvider.lists.isEmpty) {
+      if (userId != null) {
         await watchlistProvider.loadUserWatchlists(userId);
       }
     } catch (_) {
@@ -2062,7 +2084,8 @@ class _WatchlistSelectorState extends State<_WatchlistSelector> {
                                         if (mounted) {
                                           final errorMessage = e.toString().toLowerCase();
                                           // Check if it's a duplicate error - show friendly notification
-                                          if (errorMessage.contains('already') || 
+                                          if (errorMessage.contains('lista je već dodata') ||
+                                              errorMessage.contains('already') || 
                                               errorMessage.contains('series already in this collection') ||
                                               errorMessage.contains('already in this collection')) {
                                             ScaffoldMessenger.of(context).showSnackBar(
@@ -2072,7 +2095,7 @@ class _WatchlistSelectorState extends State<_WatchlistSelector> {
                                                     const Icon(Icons.info_outline, color: Colors.white),
                                                     const SizedBox(width: 8),
                                                     Expanded(
-                                                      child: Text('This series is already in "${list.name}"'),
+                                                      child: Text('Lista je već dodata'),
                                                     ),
                                                   ],
                                                 ),

@@ -781,12 +781,25 @@ class _WatchlistSelectorState extends State<_WatchlistSelector> {
                                     }
                                   } catch (e) {
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Failed to add: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
+                                      final errorMessage = e.toString().toLowerCase();
+                                      // Check if it's a duplicate error - show friendly message
+                                      if (errorMessage.contains('lista je već dodata') || 
+                                          errorMessage.contains('already') ||
+                                          errorMessage.contains('already in this collection')) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: const Text('Lista je već dodata'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Greška: ${e.toString().replaceFirst('Exception: ', '')}'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
                                     }
                                   } finally {
                                     if (mounted) {

@@ -25,7 +25,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       final token = authProvider.token;
       
       if (token != null && token.isNotEmpty) {
-        watchlistProvider.fetchWatchlist(token).catchError((error) {
+        watchlistProvider.fetchWatchlist(token).catchErrorr((error) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(

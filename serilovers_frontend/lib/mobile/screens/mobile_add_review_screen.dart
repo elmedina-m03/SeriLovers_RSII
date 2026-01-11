@@ -195,7 +195,9 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
             : _commentController.text.trim(),
       );
 
-      // Immediately refresh the reviews list before navigating back
+      // Review is already added to cache in createOrUpdateRating
+      // Refresh from API to ensure we have the latest data (with a small delay to ensure DB is updated)
+      await Future.delayed(const Duration(milliseconds: 300));
       await ratingProvider.loadSeriesRatings(widget.series.id);
 
       // Refresh challenge progress since rating a series counts towards challenges

@@ -188,7 +188,7 @@ namespace SeriLovers.API.Controllers
 
         [HttpGet("series/{seriesId}")]
         [AllowAnonymous]
-        [SwaggerOperation(Summary = "Ratings by series", Description = "Lists ratings left for a specific series. Public endpoint - no authentication required. Excludes test/dummy users.")]
+        [SwaggerOperation(Summary = "Ratings by series", Description = "Lists ratings left for a specific series. Public endpoint - no authentication required. Shows all user ratings.")]
         public async Task<IActionResult> GetBySeries(int seriesId)
         {
             var seriesExists = await _context.Series.AnyAsync(s => s.Id == seriesId);
@@ -203,12 +203,11 @@ namespace SeriLovers.API.Controllers
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();
 
+            // Show all ratings - don't filter out any users
+            // Previously filtered out @test.com, @example.com, @test, and testuser* emails
+            // but user wants to see reviews from all users including test users
             var ratings = ratingsFromDb
-                .Where(r => r.User != null
-                    && r.User.Email != null
-                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase))
+                .Where(r => r.User != null && r.User.Email != null)
                 .ToList();
 
             var result = _mapper.Map<IEnumerable<RatingDto>>(ratings);

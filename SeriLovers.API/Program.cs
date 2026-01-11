@@ -294,7 +294,6 @@ app.UseSwaggerUI(c =>
     c.EnableValidator();
 });
 
-app.UseHttpsRedirection();
 
 app.UseStaticFiles(new StaticFileOptions
 {

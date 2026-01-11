@@ -111,10 +111,10 @@ namespace SeriLovers.API.Domain.StateMachine
             }
             else
             {
-                stateEntity = await _context.SeriesWatchingStates
+                var existingState = await _context.SeriesWatchingStates
                     .FirstOrDefaultAsync(s => s.UserId == userId && s.SeriesId == seriesId);
 
-                if (stateEntity == null)
+                if (existingState == null)
                 {
                     stateEntity = new SeriesWatchingState
                     {
@@ -130,6 +130,7 @@ namespace SeriLovers.API.Domain.StateMachine
                 }
                 else
                 {
+                    stateEntity = existingState;
                     stateEntity.Status = status;
                     stateEntity.WatchedEpisodesCount = watchedEpisodes;
                     stateEntity.TotalEpisodesCount = totalEpisodes;

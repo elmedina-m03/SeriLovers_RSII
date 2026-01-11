@@ -1,5 +1,6 @@
 import '../models/rating.dart';
 import 'api_service.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
 
 class RatingService {
   final ApiService _apiService;
@@ -26,9 +27,27 @@ class RatingService {
   /// Get current user's rating for a series
   Future<Rating?> getMyRating(int seriesId, {String? token}) async {
     try {
+      if (token == null || token.isEmpty) {
+        return null;
+      }
+
+      // Decode token to get userId
+      final decoded = JwtDecoder.decode(token);
+      final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+      int? userId;
+      if (rawId is int) {
+        userId = rawId;
+      } else if (rawId is String) {
+        userId = int.tryParse(rawId);
+      }
+
+      if (userId == null) {
+        return null;
+      }
+
       // Get all user ratings and find the one for this series
       final response = await _apiService.get(
-        '/Rating',
+        '/Rating/user/$userId',
         token: token,
       );
 

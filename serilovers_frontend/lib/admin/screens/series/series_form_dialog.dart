@@ -530,6 +530,8 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       
       print('💾 Saving series with imageUrl: ${seriesData['imageUrl']}');
       print('💾 Full series data: $seriesData');
+      print('💾 GenreIds being sent: ${seriesData['genreIds']}');
+      print('💾 Number of genres selected: ${_selectedGenreIds.length}');
 
       int? seriesId;
       if (widget.series == null) {

@@ -90,11 +90,19 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
 
   /// Load reminder state for this series
   Future<void> _loadReminderState() async {
-    final isEnabled = await _reminderService.isReminderEnabled(widget.series.id);
-    if (mounted) {
-      setState(() {
-        _isReminderEnabled = isEnabled;
-      });
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      if (token != null && token.isNotEmpty) {
+        final isEnabled = await _reminderService.isReminderEnabled(widget.series.id, token: token);
+        if (mounted) {
+          setState(() {
+            _isReminderEnabled = isEnabled;
+          });
+        }
+      }
+    } catch (_) {
+      // Silently fail - reminder state will default to false
     }
   }
 
@@ -199,12 +207,25 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                     );
                   } catch (e) {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to add to Favorites: $e'),
-                        backgroundColor: AppColors.dangerColor,
-                      ),
-                    );
+                    final errorMessage = e.toString().toLowerCase();
+                    // Check if it's a duplicate error - show friendly message
+                    if (errorMessage.contains('lista je već dodata') || 
+                        errorMessage.contains('already') ||
+                        errorMessage.contains('already in this collection')) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Lista je već dodata'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Greška: ${e.toString().replaceFirst('Exception: ', '')}'),
+                          backgroundColor: AppColors.dangerColor,
+                        ),
+                      );
+                    }
                   }
                 },
               );
@@ -292,12 +313,25 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                 );
                               } catch (e) {
                                 if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Failed to add to Favorites: $e'),
-                                    backgroundColor: AppColors.dangerColor,
-                                  ),
-                                );
+                                final errorMessage = e.toString().toLowerCase();
+                                // Check if it's a duplicate error - show friendly message
+                                if (errorMessage.contains('lista je već dodata') || 
+                                    errorMessage.contains('already') ||
+                                    errorMessage.contains('already in this collection')) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Lista je već dodata'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Greška: ${e.toString().replaceFirst('Exception: ', '')}'),
+                                      backgroundColor: AppColors.dangerColor,
+                                    ),
+                                  );
+                                }
                               }
                             },
                           );
@@ -874,31 +908,38 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
   /// Toggle reminder for new episodes
   Future<void> _toggleReminder() async {
     try {
-      if (_isReminderEnabled) {
-        // Disable reminder
-        await _reminderService.disableReminder(_series.id);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final token = authProvider.token;
+      if (token == null || token.isEmpty) {
         if (mounted) {
-          setState(() {
-            _isReminderEnabled = false;
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Reminder disabled'),
-              backgroundColor: AppColors.textSecondary,
+              content: Text('Please log in to enable reminders'),
+              backgroundColor: AppColors.dangerColor,
             ),
           );
         }
+        return;
+      }
+
+      if (_isReminderEnabled) {
+        // Disable reminder
+        await _reminderService.disableReminder(_series.id, token: token);
       } else {
         // Enable reminder
-        await _reminderService.enableReminder(_series.id, _series.title);
+        await _reminderService.enableReminder(_series.id, _series.title, token: token);
+      }
+      
+      // Reload reminder state from API to ensure consistency
+      if (mounted) {
+        await _loadReminderState();
         if (mounted) {
-          setState(() {
-            _isReminderEnabled = true;
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('You will be notified when a new episode of ${_series.title} is available'),
-              backgroundColor: AppColors.successColor,
+              content: Text(_isReminderEnabled 
+                  ? 'You will be notified when a new episode of ${_series.title} is available'
+                  : 'Reminder disabled'),
+              backgroundColor: _isReminderEnabled ? AppColors.successColor : AppColors.textSecondary,
             ),
           );
         }
@@ -1129,12 +1170,25 @@ class _WatchlistSelectorState extends State<_WatchlistSelector> {
                                     }
                                   } catch (e) {
                                     if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Failed to add: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
+                                      final errorMessage = e.toString().toLowerCase();
+                                      // Check if it's a duplicate error - show friendly message
+                                      if (errorMessage.contains('lista je već dodata') || 
+                                          errorMessage.contains('already') ||
+                                          errorMessage.contains('already in this collection')) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: const Text('Lista je već dodata'),
+                                            backgroundColor: Colors.orange,
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Greška: ${e.toString().replaceFirst('Exception: ', '')}'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
                                     }
                                   } finally {
                                     if (mounted) {

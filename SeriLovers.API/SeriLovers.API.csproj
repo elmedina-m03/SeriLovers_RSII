@@ -15,6 +15,10 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="8.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.0">
       <PrivateAssets>all</PrivateAssets>
@@ -32,6 +36,13 @@
     <Content Remove="Tests\**" />
     <EmbeddedResource Remove="Tests\**" />
     <None Remove="Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="SeriLovers.Worker\**" />
+    <Content Remove="SeriLovers.Worker\**" />
+    <EmbeddedResource Remove="SeriLovers.Worker\**" />
+    <None Remove="SeriLovers.Worker\**" />
   </ItemGroup>
 
 </Project>

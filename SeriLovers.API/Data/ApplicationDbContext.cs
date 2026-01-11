@@ -30,6 +30,7 @@ namespace SeriLovers.API.Data
         public DbSet<EpisodeProgress> EpisodeProgresses { get; set; }
         public DbSet<EpisodeReview> EpisodeReviews { get; set; }
         public DbSet<SeriesWatchingState> SeriesWatchingStates { get; set; }
+        public DbSet<UserSeriesReminder> UserSeriesReminders { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -317,24 +318,23 @@ namespace SeriLovers.API.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            modelBuilder.Entity<SeriesWatchingState>(entity =>
+            modelBuilder.Entity<UserSeriesReminder>(entity =>
             {
-                entity.HasKey(sws => sws.Id);
-                entity.Property(sws => sws.Status).IsRequired();
-                entity.Property(sws => sws.WatchedEpisodesCount).IsRequired().HasDefaultValue(0);
-                entity.Property(sws => sws.TotalEpisodesCount).IsRequired().HasDefaultValue(0);
-                entity.Property(sws => sws.CreatedAt).IsRequired().HasDefaultValueSql("GETUTCDATE()");
-                entity.Property(sws => sws.LastUpdated).IsRequired().HasDefaultValueSql("GETUTCDATE()");
-                entity.HasIndex(sws => new { sws.UserId, sws.SeriesId }).IsUnique();
+                entity.HasKey(usr => usr.Id);
+                entity.Property(usr => usr.EnabledAt).IsRequired().HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(usr => usr.LastEpisodeCount).IsRequired().HasDefaultValue(0);
+                
+                // One user can only have one reminder per series
+                entity.HasIndex(usr => new { usr.UserId, usr.SeriesId }).IsUnique();
 
-                entity.HasOne(sws => sws.User)
-                    .WithMany()
-                    .HasForeignKey(sws => sws.UserId)
+                entity.HasOne(usr => usr.User)
+                    .WithMany(u => u.UserSeriesReminders)
+                    .HasForeignKey(usr => usr.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne(sws => sws.Series)
+                entity.HasOne(usr => usr.Series)
                     .WithMany()
-                    .HasForeignKey(sws => sws.SeriesId)
+                    .HasForeignKey(usr => usr.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }

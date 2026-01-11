@@ -154,20 +154,30 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
                                       ),
                                     );
                                     if (result == true && mounted) {
-                                      // Immediately refresh reviews list
+                                      // Add small delay to ensure backend has processed the new rating
+                                      await Future.delayed(const Duration(milliseconds: 500));
+                                      
+                                      if (!mounted) return;
+                                      
+                                      // Refresh reviews list to ensure new review is displayed
                                       final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
                                       await ratingProvider.loadSeriesRatings(widget.series.id);
                                       
-                                      // Refresh data to update UI state (can add review, etc.)
-                                      await _loadData();
-                                      
-                                      // Refresh series to update rating count
-                                      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                                      await seriesProvider.fetchSeriesDetail(widget.series.id);
-                                      
-                                      // Force UI update
+                                      // Reload user's rating to update _myRating and _canAddReview
+                                      try {
+                                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                                        if (authProvider.isAuthenticated && authProvider.token != null && authProvider.token!.isNotEmpty) {
+                                      if (!mounted) return;
+                                          await ratingProvider.loadMyRating(widget.series.id);
                                       if (mounted) {
-                                        setState(() {});
+                                            setState(() {
+                                              _myRating = ratingProvider.getMyRating(widget.series.id);
+                                              _canAddReview = _myRating == null;
+                                            });
+                                          }
+                                        }
+                                      } catch (_) {
+                                        // Silently fail
                                       }
                                     }
                                   },
@@ -199,20 +209,30 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
                                       ),
                                     );
                                     if (result == true && mounted) {
-                                      // Immediately refresh reviews list
+                                      // Add small delay to ensure backend has processed the updated rating
+                                      await Future.delayed(const Duration(milliseconds: 500));
+                                      
+                                      if (!mounted) return;
+                                      
+                                      // Refresh reviews list to ensure updated review is displayed
                                       final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
                                       await ratingProvider.loadSeriesRatings(widget.series.id);
                                       
-                                      // Refresh data to update UI state
-                                      await _loadData();
-                                      
-                                      // Refresh series to update rating count
-                                      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                                      await seriesProvider.fetchSeriesDetail(widget.series.id);
-                                      
-                                      // Force UI update
+                                      // Reload user's rating to update _myRating and _canAddReview
+                                      try {
+                                        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                                        if (authProvider.isAuthenticated && authProvider.token != null && authProvider.token!.isNotEmpty) {
+                                      if (!mounted) return;
+                                          await ratingProvider.loadMyRating(widget.series.id);
                                       if (mounted) {
-                                        setState(() {});
+                                            setState(() {
+                                              _myRating = ratingProvider.getMyRating(widget.series.id);
+                                              _canAddReview = _myRating == null;
+                                            });
+                                          }
+                                        }
+                                      } catch (_) {
+                                        // Silently fail
                                       }
                                     }
                                   },
@@ -256,11 +276,14 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
                                   );
 
                                     if (confirm == true && mounted && _myRating != null) {
+                                      // Get provider references BEFORE async operations
                                       final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+                                      
                                       try {
                                         await ratingProvider.deleteRating(_myRating!.id, widget.series.id);
                                         
-                                        // Immediately refresh reviews list
+                                        // Refresh reviews list
+                                        if (!mounted) return;
                                         await ratingProvider.loadSeriesRatings(widget.series.id);
                                         
                                         if (mounted) {
@@ -270,15 +293,11 @@ class _MobileReviewsScreenState extends State<MobileReviewsScreen> {
                                               backgroundColor: AppColors.successColor,
                                             ),
                                           );
-                                          // Refresh data to update UI state
-                                          await _loadData();
-                                          
-                                          // Refresh series to update rating count
-                                          final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
-                                          await seriesProvider.fetchSeriesDetail(widget.series.id);
-                                          
-                                          // Force UI update
-                                          setState(() {});
+                                          // Update UI state
+                                          setState(() {
+                                            _myRating = null;
+                                            _canAddReview = true;
+                                          });
                                         }
                                     } catch (e) {
                                       if (mounted) {

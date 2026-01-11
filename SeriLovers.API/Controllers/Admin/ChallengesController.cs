@@ -377,8 +377,9 @@ namespace SeriLovers.API.Controllers.Admin
                     await challengeService.UpdateChallengeProgressAsync(userId);
                     updatedCount++;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
+                    // Ignore individual user update failures
                 }
             }
 

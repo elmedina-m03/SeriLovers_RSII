@@ -5,6 +5,8 @@ VisualStudioVersion = 17.12.35527.113 d17.12
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeriLovers.API", "SeriLovers.API.csproj", "{9AFA2CBA-E435-4069-8ED1-4F2679ED4D43}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeriLovers.Worker", "SeriLovers.Worker\SeriLovers.Worker.csproj", "{FCAC5A66-263F-46AF-BD62-CE3C7CEC9F21}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{9AFA2CBA-E435-4069-8ED1-4F2679ED4D43}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9AFA2CBA-E435-4069-8ED1-4F2679ED4D43}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9AFA2CBA-E435-4069-8ED1-4F2679ED4D43}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FCAC5A66-263F-46AF-BD62-CE3C7CEC9F21}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FCAC5A66-263F-46AF-BD62-CE3C7CEC9F21}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FCAC5A66-263F-46AF-BD62-CE3C7CEC9F21}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FCAC5A66-263F-46AF-BD62-CE3C7CEC9F21}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

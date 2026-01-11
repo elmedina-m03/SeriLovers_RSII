@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   serilovers.api:
     build: .
@@ -8,12 +6,14 @@ services:
       - "5149:5149"
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
-      ConnectionStrings__DefaultConnection: "Server=serilovers.db;Database=SeriLoversDb;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;"
+      ConnectionStrings__DefaultConnection: "Server=serilovers.db;Database=IB220036;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;"
       JwtSettings__SecretKey: "YourDockerSuperSecretKeyThatIsAtLeast32Characters!"
       JwtSettings__Issuer: "SeriLovers.API"
       JwtSettings__Audience: "SeriLovers.API"
+      RabbitMq__Connection: "host=rabbitmq;username=guest;password=guest"
     depends_on:
       - serilovers.db
+      - rabbitmq
 
   serilovers.db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -26,5 +26,31 @@ services:
     volumes:
       - serilovers-data:/var/opt/mssql
 
+  serilovers.worker:
+    build:
+      context: .
+      dockerfile: SeriLovers.Worker/Dockerfile
+    container_name: serilovers.worker
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ConnectionStrings__DefaultConnection: "Server=serilovers.db;Database=IB220036;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;"
+      RabbitMq__Connection: "host=rabbitmq;username=guest;password=guest"
+    depends_on:
+      - serilovers.db
+      - rabbitmq
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: serilovers.rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
 volumes:
   serilovers-data:
+  rabbitmq-data:

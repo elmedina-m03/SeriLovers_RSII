@@ -8,8 +8,9 @@ class WatchlistService {
       : _apiService = apiService ?? ApiService();
 
   Future<List<Watchlist>> getWatchlistsForUser(int userId, {String? token}) async {
+    // Backend automatically filters by current user from token, so userId parameter is not needed
     final response = await _apiService.get(
-      '/WatchlistCollection?userId=$userId',
+      '/WatchlistCollection',
       token: token,
     );
 

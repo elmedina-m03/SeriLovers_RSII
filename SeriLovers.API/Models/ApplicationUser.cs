@@ -17,6 +17,7 @@ namespace SeriLovers.API.Models
         public ICollection<RecommendationLog> RecommendationLogs { get; set; } = new List<RecommendationLog>();
         public ICollection<EpisodeProgress> EpisodeProgresses { get; set; } = new List<EpisodeProgress>();
         public ICollection<EpisodeReview> EpisodeReviews { get; set; } = new List<EpisodeReview>();
+        public ICollection<UserSeriesReminder> UserSeriesReminders { get; set; } = new List<UserSeriesReminder>();
     }
 }
 

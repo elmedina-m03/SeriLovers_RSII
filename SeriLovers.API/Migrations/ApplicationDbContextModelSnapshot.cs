@@ -729,6 +729,43 @@ namespace SeriLovers.API.Migrations
                     b.ToTable("SeriesWatchingStates");
                 });
 
+            modelBuilder.Entity("SeriLovers.API.Models.UserSeriesReminder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("EnabledAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime?>("LastCheckedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("LastEpisodeCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("SeriesId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SeriesId");
+
+                    b.HasIndex("UserId", "SeriesId")
+                        .IsUnique();
+
+                    b.ToTable("UserSeriesReminders");
+                });
+
             modelBuilder.Entity("SeriLovers.API.Models.ViewingEvent", b =>
                 {
                     b.Property<int>("Id")
@@ -807,7 +844,9 @@ namespace SeriLovers.API.Migrations
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
@@ -827,7 +866,8 @@ namespace SeriLovers.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "Name")
+                        .IsUnique();
 
                     b.ToTable("WatchlistCollections");
                 });
@@ -1084,6 +1124,25 @@ namespace SeriLovers.API.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("SeriLovers.API.Models.UserSeriesReminder", b =>
+                {
+                    b.HasOne("SeriLovers.API.Models.Series", "Series")
+                        .WithMany()
+                        .HasForeignKey("SeriesId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SeriLovers.API.Models.ApplicationUser", "User")
+                        .WithMany("UserSeriesReminders")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Series");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("SeriLovers.API.Models.ViewingEvent", b =>
                 {
                     b.HasOne("SeriLovers.API.Models.Series", "Series")
@@ -1158,6 +1217,8 @@ namespace SeriLovers.API.Migrations
                     b.Navigation("Ratings");
 
                     b.Navigation("RecommendationLogs");
+
+                    b.Navigation("UserSeriesReminders");
 
                     b.Navigation("Watchlists");
                 });

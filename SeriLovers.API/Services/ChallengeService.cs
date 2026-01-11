@@ -20,23 +20,74 @@ namespace SeriLovers.API.Services
         }
 
         /// <summary>
+        /// Extracts genre name from challenge name (e.g., "Complete 5 Drama Series" → "Drama")
+        /// Returns null if no genre is found
+        /// </summary>
+        private string? ExtractGenreFromChallengeName(string challengeName, List<string> allGenres)
+        {
+            // Check if challenge name contains any genre name (case-insensitive)
+            foreach (var genreName in allGenres)
+            {
+                if (challengeName.Contains(genreName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return genreName;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Calculates the number of completed series for a user
         /// A series is considered completed if the user has watched 100% of its episodes
         /// Since ratings can only be created after completing 100% of episodes, we use ratings as the primary source
         /// and verify with EpisodeProgress data
+        /// If genreName is provided, only counts series that have that genre
         /// </summary>
-        public async Task<int> GetCompletedSeriesCountAsync(int userId)
+        public async Task<int> GetCompletedSeriesCountAsync(int userId, string? genreName = null)
         {
             // Primary method: Count series that user has rated
             // Ratings can only be created after completing 100% of episodes (enforced by HasUserCompletedSeries)
             // Each user can only rate each series once (unique constraint)
-            var ratedSeriesCount = await _context.Ratings
-                .Where(r => r.UserId == userId)
+            var ratedSeriesQuery = _context.Ratings
+                .Where(r => r.UserId == userId);
+
+            // Filter by genre if provided
+            if (!string.IsNullOrWhiteSpace(genreName))
+            {
+                var genre = await _context.Genres
+                    .FirstOrDefaultAsync(g => g.Name == genreName);
+
+                if (genre != null)
+                {
+                    ratedSeriesQuery = ratedSeriesQuery
+                        .Where(r => _context.SeriesGenres
+                            .Any(sg => sg.SeriesId == r.SeriesId && sg.GenreId == genre.Id));
+                }
+            }
+
+            var ratedSeriesCount = await ratedSeriesQuery
                 .Select(r => r.SeriesId)
                 .Distinct()
                 .CountAsync();
 
-            var allSeries = await _context.Series
+            var allSeriesQuery = _context.Series.AsQueryable();
+
+            // Filter by genre if provided
+            if (!string.IsNullOrWhiteSpace(genreName))
+            {
+                var genre = await _context.Genres
+                    .FirstOrDefaultAsync(g => g.Name == genreName);
+
+                if (genre != null)
+                {
+                    allSeriesQuery = allSeriesQuery
+                        .Where(s => _context.SeriesGenres
+                            .Any(sg => sg.SeriesId == s.Id && sg.GenreId == genre.Id));
+                }
+            }
+
+            var allSeries = await allSeriesQuery
                 .Select(s => new
                 {
                     SeriesId = s.Id,
@@ -99,11 +150,28 @@ namespace SeriLovers.API.Services
         /// <summary>
         /// Calculates the number of series that are BOTH watched (100% of episodes) AND rated by a user
         /// Used for "watch and rate" type challenges
+        /// If genreName is provided, only counts series that have that genre
         /// </summary>
-        public async Task<int> GetWatchedAndRatedSeriesCountAsync(int userId)
+        public async Task<int> GetWatchedAndRatedSeriesCountAsync(int userId, string? genreName = null)
         {
             // Get all series with their episode counts
-            var seriesWithEpisodes = await _context.Series
+            var seriesWithEpisodesQuery = _context.Series.AsQueryable();
+
+            // Filter by genre if provided
+            if (!string.IsNullOrWhiteSpace(genreName))
+            {
+                var genre = await _context.Genres
+                    .FirstOrDefaultAsync(g => g.Name == genreName);
+
+                if (genre != null)
+                {
+                    seriesWithEpisodesQuery = seriesWithEpisodesQuery
+                        .Where(s => _context.SeriesGenres
+                            .Any(sg => sg.SeriesId == s.Id && sg.GenreId == genre.Id));
+                }
+            }
+
+            var seriesWithEpisodes = await seriesWithEpisodesQuery
                 .Select(s => new
                 {
                     SeriesId = s.Id,
@@ -169,14 +237,14 @@ namespace SeriLovers.API.Services
         /// <summary>
         /// Updates challenge progress for a user based on their actual watched series count
         /// Handles both "watch only" and "watch and rate" type challenges
+        /// Supports genre-based filtering (e.g., "Complete 5 Drama Series")
         /// </summary>
         public async Task UpdateChallengeProgressAsync(int userId)
         {
-            // Get completed series count for this user (watched only)
-            var completedSeriesCount = await GetCompletedSeriesCountAsync(userId);
-            
-            // Get watched and rated series count for this user (both watched AND rated)
-            var watchedAndRatedCount = await GetWatchedAndRatedSeriesCountAsync(userId);
+            // Load all genres once for genre extraction
+            var allGenres = await _context.Genres
+                .Select(g => g.Name)
+                .ToListAsync();
 
             // Get all challenges that involve watching series
             var watchSeriesChallenges = await _context.Challenges
@@ -186,6 +254,9 @@ namespace SeriLovers.API.Services
 
             foreach (var challenge in watchSeriesChallenges)
             {
+                // Extract genre from challenge name if present (e.g., "Complete 5 Drama Series" → "Drama")
+                var genreName = ExtractGenreFromChallengeName(challenge.Name ?? "", allGenres);
+
                 // Determine if this is a "watch and rate" challenge
                 // Check if challenge name or description contains "rate" or "rated"
                 var isWatchAndRateChallenge = (challenge.Name != null && 
@@ -195,8 +266,16 @@ namespace SeriLovers.API.Services
                     (challenge.Description.Contains("rate", StringComparison.OrdinalIgnoreCase) ||
                      challenge.Description.Contains("rated", StringComparison.OrdinalIgnoreCase)));
 
-                // Use appropriate count based on challenge type
-                var progressCount = isWatchAndRateChallenge ? watchedAndRatedCount : completedSeriesCount;
+                // Get count based on challenge type and genre filter
+                int progressCount;
+                if (isWatchAndRateChallenge)
+                {
+                    progressCount = await GetWatchedAndRatedSeriesCountAsync(userId, genreName);
+                }
+                else
+                {
+                    progressCount = await GetCompletedSeriesCountAsync(userId, genreName);
+                }
 
                 // Get or create challenge progress for this user
                 var progress = await _context.ChallengeProgresses

@@ -41,6 +41,50 @@ class WatchlistProvider extends ChangeNotifier {
 
   /// Updates the auth provider reference (used by ChangeNotifierProxyProvider).
   void updateAuthProvider(AuthProvider authProvider) {
+    // If auth provider changed (e.g., user logged in/out), clear cache to get fresh data
+    final wasAuthenticated = _authProvider?.isAuthenticated ?? false;
+    final isNowAuthenticated = authProvider.isAuthenticated;
+    
+    // Extract userId from tokens for comparison
+    int? wasUserId;
+    int? isNowUserId;
+    
+    if (_authProvider?.token != null && _authProvider!.token!.isNotEmpty) {
+      try {
+        final decoded = JwtDecoder.decode(_authProvider!.token!);
+        final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+        if (rawId is int) {
+          wasUserId = rawId;
+        } else if (rawId is String) {
+          wasUserId = int.tryParse(rawId);
+        }
+      } catch (_) {
+        // Ignore decode errors
+      }
+    }
+    
+    if (authProvider.token != null && authProvider.token!.isNotEmpty) {
+      try {
+        final decoded = JwtDecoder.decode(authProvider.token!);
+        final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+        if (rawId is int) {
+          isNowUserId = rawId;
+        } else if (rawId is String) {
+          isNowUserId = int.tryParse(rawId);
+        }
+      } catch (_) {
+        // Ignore decode errors
+      }
+    }
+    
+    // Clear cache when user logs in/out or changes
+    if (wasUserId != isNowUserId || (!wasAuthenticated && isNowAuthenticated)) {
+      lists = <Watchlist>[];
+      _lastLoadUserWatchlistsTime = null;
+      _lastLoadUserWatchlistsUserId = null;
+      _cachedFavoritesList = null;
+    }
+    
     _authProvider = authProvider;
   }
 
@@ -64,8 +108,8 @@ class WatchlistProvider extends ChangeNotifier {
         now.difference(_lastLoadUserWatchlistsTime!) < _loadUserWatchlistsCacheTimeout &&
         lists.isNotEmpty) {
       // Return cached data if available and not expired
+      // Don't call notifyListeners() here to avoid rebuild loops
       loading = false;
-      notifyListeners();
       return;
     }
     
@@ -210,11 +254,11 @@ class WatchlistProvider extends ChangeNotifier {
       final response = await service!.addSeriesToList(listId, seriesId, token: token);
       
       // Check if series is already in the collection
-      if (response != null && response['message'] != null) {
+      if (response != null && response is Map<String, dynamic> && response.containsKey('message')) {
         final message = response['message'] as String?;
         if (message != null && message.toLowerCase().contains('already')) {
           // Throw a user-friendly exception that will be caught and displayed nicely
-          throw Exception('Series already in this collection');
+          throw Exception('Lista je već dodata');
         }
       }
       
@@ -271,13 +315,41 @@ class WatchlistProvider extends ChangeNotifier {
       throw Exception('Authentication required');
     }
 
-    // Use cached favorites list if available and still in lists
+    // Always reload lists first to ensure we have the latest data for current user
+    // This prevents issues with stale cache from previous users
+    try {
+      final decoded = JwtDecoder.decode(token);
+      final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+      int? userId;
+      if (rawId is int) {
+        userId = rawId;
+      } else if (rawId is String) {
+        userId = int.tryParse(rawId);
+      }
+      if (userId != null) {
+        await loadUserWatchlists(userId);
+      }
+    } catch (_) {
+      // If reload fails, continue with current lists
+    }
+
+    // Check if cached favorites list still exists and belongs to current user
     if (_cachedFavoritesList != null) {
       final stillExists = lists.any((list) => list.id == _cachedFavoritesList!.id);
       if (stillExists) {
-        return _cachedFavoritesList!;
+        // Double-check that it's still a Favorites list by name
+        final cachedInLists = lists.firstWhere(
+          (list) => list.id == _cachedFavoritesList!.id,
+          orElse: () => Watchlist(id: -1, name: '', coverUrl: '', totalSeries: 0, createdAt: DateTime.now()),
+        );
+        if (cachedInLists.id != -1) {
+          final nameLower = cachedInLists.name.toLowerCase();
+          if (nameLower == 'favorites' || nameLower == 'favourite') {
+            return cachedInLists;
+          }
+        }
       }
-      _cachedFavoritesList = null; // Clear cache if list was deleted
+      _cachedFavoritesList = null; // Clear cache if list was deleted or doesn't match
     }
 
     // Check if Favorites list already exists in current lists
@@ -396,11 +468,68 @@ class WatchlistProvider extends ChangeNotifier {
   /// Check if a series is in the Favorites list
   Future<bool> isInFavorites(int seriesId) async {
     try {
+      final token = _authProvider?.token;
+      if (token == null || token.isEmpty) {
+        return false;
+      }
+      
+      // Only load lists if they're not already loaded and fresh (avoid rebuild loops)
+      final now = DateTime.now();
+      final shouldLoadLists = lists.isEmpty || 
+          _lastLoadUserWatchlistsTime == null || 
+          now.difference(_lastLoadUserWatchlistsTime!) > _loadUserWatchlistsCacheTimeout;
+      
+      if (shouldLoadLists) {
+        // Only load if not already cached and fresh
+        try {
+          final decoded = JwtDecoder.decode(token);
+          final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+          int? userId;
+          if (rawId is int) {
+            userId = rawId;
+          } else if (rawId is String) {
+            userId = int.tryParse(rawId);
+          }
+          if (userId != null) {
+            await loadUserWatchlists(userId);
+          }
+        } catch (_) {
+          // Continue even if reload fails
+        }
+      }
+      
       final favoritesList = await getOrCreateFavoritesList();
       if (favoritesList.id == -1) return false;
       
       // Get the collection details to check if series is in it
-      final collectionData = await service!.getWatchlistCollection(favoritesList.id, token: _authProvider?.token);
+      // Use try-catch to handle 404 if list doesn't belong to current user
+      Map<String, dynamic> collectionData;
+      try {
+        collectionData = await service!.getWatchlistCollection(favoritesList.id, token: token) as Map<String, dynamic>;
+      } catch (e) {
+        // If we get 404, the list doesn't belong to current user - clear cache and retry
+        _cachedFavoritesList = null;
+        try {
+          final decoded = JwtDecoder.decode(token);
+          final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+          int? userId;
+          if (rawId is int) {
+            userId = rawId;
+          } else if (rawId is String) {
+            userId = int.tryParse(rawId);
+          }
+          if (userId != null) {
+            await loadUserWatchlists(userId);
+            final freshFavoritesList = await getOrCreateFavoritesList();
+            if (freshFavoritesList.id == -1) return false;
+            collectionData = await service!.getWatchlistCollection(freshFavoritesList.id, token: token) as Map<String, dynamic>;
+          } else {
+            return false;
+          }
+        } catch (_) {
+          return false;
+        }
+      }
       final watchlists = collectionData['watchlists'] as List?;
       if (watchlists == null) return false;
       
@@ -419,11 +548,66 @@ class WatchlistProvider extends ChangeNotifier {
   /// Toggle series in Favorites list
   Future<void> toggleFavorites(int seriesId) async {
     try {
-      // Get favorites list first
+      final token = _authProvider?.token;
+      if (token == null || token.isEmpty) {
+        throw Exception('Authentication required');
+      }
+      
+      // Ensure lists are loaded for current user first
+      try {
+        final decoded = JwtDecoder.decode(token);
+        final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+        int? userId;
+        if (rawId is int) {
+          userId = rawId;
+        } else if (rawId is String) {
+          userId = int.tryParse(rawId);
+        }
+        if (userId != null) {
+          await loadUserWatchlists(userId);
+        }
+      } catch (_) {
+        // Continue even if reload fails
+      }
+      
+      // Get favorites list first (will reload lists if needed)
       final favoritesList = await getOrCreateFavoritesList();
       
+      if (favoritesList.id == -1) {
+        throw Exception('Failed to get or create Favorites list');
+      }
+      
       // Check if already in favorites by checking the collection
-      final collectionData = await service!.getWatchlistCollection(favoritesList.id, token: _authProvider?.token);
+      // Use try-catch to handle 404 if list doesn't belong to current user
+      Map<String, dynamic> collectionData;
+      Watchlist finalFavoritesList = favoritesList; // Will be updated if cache is cleared
+      
+      try {
+        collectionData = await service!.getWatchlistCollection(favoritesList.id, token: token) as Map<String, dynamic>;
+      } catch (e) {
+        // If we get 404, the list doesn't belong to current user - clear cache and reload
+        _cachedFavoritesList = null;
+        final decoded = JwtDecoder.decode(token);
+        final rawId = decoded['userId'] ?? decoded['id'] ?? decoded['nameid'] ?? decoded['sub'];
+        int? userId;
+        if (rawId is int) {
+          userId = rawId;
+        } else if (rawId is String) {
+          userId = int.tryParse(rawId);
+        }
+        if (userId != null) {
+          await loadUserWatchlists(userId);
+          // Try again with fresh list
+          finalFavoritesList = await getOrCreateFavoritesList();
+          if (finalFavoritesList.id == -1) {
+            throw Exception('Failed to get or create Favorites list for current user');
+          }
+          collectionData = await service!.getWatchlistCollection(finalFavoritesList.id, token: token) as Map<String, dynamic>;
+        } else {
+          rethrow;
+        }
+      }
+      
       final watchlists = collectionData['watchlists'] as List?;
       final isFavorite = watchlists != null && watchlists.any((w) {
         if (w is Map<String, dynamic>) {
@@ -433,10 +617,17 @@ class WatchlistProvider extends ChangeNotifier {
         return false;
       });
       
+      // Use the correct favorites list ID (might be freshFavoritesList if cache was cleared)
+      final finalListId = finalFavoritesList.id;
+      
+      if (finalListId == -1) {
+        throw Exception('Failed to get valid Favorites list ID');
+      }
+      
       if (isFavorite) {
-        await removeSeriesFromList(favoritesList.id, seriesId);
+        await removeSeriesFromList(finalListId, seriesId);
       } else {
-        await addSeries(favoritesList.id, seriesId);
+        await addSeries(finalListId, seriesId);
       }
       
       // Refresh the lists to update counts
@@ -453,11 +644,20 @@ class WatchlistProvider extends ChangeNotifier {
           }
           if (userId != null) {
             await loadUserWatchlists(userId);
-            // Update cache
-            _cachedFavoritesList = lists.firstWhere(
-              (list) => list.id == favoritesList.id,
-              orElse: () => favoritesList,
+            // Update cache with the correct Favorites list (use finalFavoritesList which might have been refreshed)
+            final updatedFavorites = lists.firstWhere(
+              (list) {
+                final nameLower = list.name.toLowerCase();
+                return (nameLower == 'favorites' || nameLower == 'favourite');
+              },
+              orElse: () => Watchlist(id: -1, name: '', coverUrl: '', totalSeries: 0, createdAt: DateTime.now()),
             );
+            if (updatedFavorites.id != -1) {
+              _cachedFavoritesList = updatedFavorites;
+            } else if (finalFavoritesList.id != -1) {
+              // If not found in lists, use finalFavoritesList (it was just created/retrieved)
+              _cachedFavoritesList = finalFavoritesList;
+            }
           }
         } catch (_) {}
       }
