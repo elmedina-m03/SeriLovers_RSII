@@ -641,6 +641,12 @@ namespace SeriLovers.API.Data
             await SeedActorsAsync(context);
             await SeedSeriesAsync(context);
 
+            // Seed series images
+            await SeedSeriesImagesAsync(context);
+
+            // Seed actor images
+            await SeedActorImagesAsync(context);
+
             // Seed favorite characters (based on catalog data)
             await SeedFavoriteCharactersAsync(context);
 
@@ -1321,6 +1327,408 @@ namespace SeriLovers.API.Data
             };
 
             await context.Challenges.AddRangeAsync(challenges);
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds series images from existing files in wwwroot/uploads/series
+        /// </summary>
+        private static async Task SeedSeriesImagesAsync(ApplicationDbContext context)
+        {
+            // Get all series that don't have images yet
+            var seriesWithoutImages = await context.Series
+                .Where(s => string.IsNullOrEmpty(s.ImageUrl))
+                .ToListAsync();
+
+            if (seriesWithoutImages.Count == 0)
+            {
+                return; // All series already have images
+            }
+
+            // Available images from wwwroot/uploads/series
+            var availableImages = new[]
+            {
+                "/uploads/series/ee6fcdda-6eb4-4d26-a52d-a7592b8c5064.jpg",
+                "/uploads/series/52074e01-5488-4711-8cf3-6b8d31e8c7ba.jpg",
+                "/uploads/series/193023cc-777e-4132-86d3-0ca3de03f85d.jpg",
+                "/uploads/series/3378201e-59b5-4095-962a-eea712d6e6a2.jpg",
+                "/uploads/series/97bb735a-7e10-461b-b39f-6dae5c41043c.jpg",
+                "/uploads/series/bcf3597c-f41c-4983-85d8-f00e8d105f7d.jpg",
+                "/uploads/series/564e8102-dddc-42d0-8ce9-993f060dd1a9.jpg",
+                "/uploads/series/0d325a7d-ce7c-4965-91e2-f47024f34045.jpg",
+                "/uploads/series/73c4a968-f749-4a72-b067-2880c58ccf59.jpg",
+                "/uploads/series/89947d14-de36-4784-bfad-09f0a09294c3.jpg",
+                "/uploads/series/4e2fb20f-e8fb-480f-aead-8d0b8b724ff1.jpg",
+                "/uploads/series/64de1f0e-242f-478a-9cae-18000b82d435.jpg",
+                "/uploads/series/c58abe13-f5fb-400c-b480-d70bceb68918.jpg",
+                "/uploads/series/c7fb56ff-97e2-4b18-8379-d30df59109c7.jpg",
+                "/uploads/series/cc2d9e7c-6c60-4b76-be0c-35b8cbdadba8.jpg",
+                "/uploads/series/e8d3d448-0679-4dde-be8e-70c65e541306.jpg",
+                "/uploads/series/a4c1c5d8-1ec9-4e0b-b5ec-ed3627dc59a2.jpg",
+                "/uploads/series/84c130dd-c07b-4de0-a7ac-f96b97b9fc64.jpg",
+                "/uploads/series/4549d292-e4f4-47ef-89ae-8371267759c4.jpg",
+                "/uploads/series/4713505b-547f-431d-9fca-c13f70e41d08.jpg",
+                "/uploads/series/23020610-2eb9-445c-9583-a9bed20d7ecd.jpg",
+                "/uploads/series/0874b386-7ac6-4e6e-9fcd-9a884cde6cc6.jpg",
+                "/uploads/series/41297b9a-c40b-42d8-b56f-edd6b9814102.jpg"
+            };
+
+            var random = new Random();
+            foreach (var series in seriesWithoutImages)
+            {
+                // Assign a random image from available images
+                var randomImage = availableImages[random.Next(availableImages.Length)];
+                series.ImageUrl = randomImage;
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds actor images from existing files in wwwroot/uploads/actors
+        /// </summary>
+        private static async Task SeedActorImagesAsync(ApplicationDbContext context)
+        {
+            // Get all actors that don't have images yet
+            var actorsWithoutImages = await context.Actors
+                .Where(a => string.IsNullOrEmpty(a.ImageUrl))
+                .ToListAsync();
+
+            if (actorsWithoutImages.Count == 0)
+            {
+                return; // All actors already have images
+            }
+
+            // Available images from wwwroot/uploads/actors
+            var availableImages = new[]
+            {
+                "/uploads/actors/037eb0a6-0a09-4d34-a011-967574692cfb.jpg",
+                "/uploads/actors/03b81a61-591c-43cd-a522-7d2e52fa3ac0.jpg",
+                "/uploads/actors/08ffe115-4839-4037-bd4c-0141dd9c6768.jpg",
+                "/uploads/actors/0cad9b28-6acb-4442-a300-97509ed31159.jpg",
+                "/uploads/actors/0e90ff3f-4b1e-467c-98b4-c61a49cd3531.jpg",
+                "/uploads/actors/100216cb-519f-44af-8d33-28ee0071ccb0.jpg",
+                "/uploads/actors/1891480c-99e8-470c-86cc-9e8085e76234.jpg",
+                "/uploads/actors/29fda531-af37-4e1e-b7ca-2a52e74155d7.jpg",
+                "/uploads/actors/39e92b2d-1f6e-41a2-bf2d-1928d369645e.jpg",
+                "/uploads/actors/3b89acbf-681f-48b9-b517-e90bbe461be5.jpg",
+                "/uploads/actors/3e1bdd72-bc7e-44fe-977a-14a19e7b9e44.jpg",
+                "/uploads/actors/4023fc4a-ca9e-4398-bad1-ffcdae3fa46e.jpg",
+                "/uploads/actors/54ec1775-0e11-4941-ba89-2a4d5075f09d.jpg",
+                "/uploads/actors/5503b5d9-9518-400c-be3a-8f1e2a555e33.jpg",
+                "/uploads/actors/5fe76032-636c-4b0f-93dd-6564f912c2c1.jpg",
+                "/uploads/actors/60e32131-60ad-4c55-a5a9-a54e3ee1dd18.jpg",
+                "/uploads/actors/61ecbc5e-a711-4658-a470-40a448a8fd6f.jpg",
+                "/uploads/actors/62477fec-7746-4cbe-9714-4a797490e923.jpeg",
+                "/uploads/actors/66e4c0ca-cb6a-4b7e-98e8-bfb981426368.jpg",
+                "/uploads/actors/69758db6-5e7f-4b2d-9b8c-4a0d36bb9b1c.jpg",
+                "/uploads/actors/6b591092-8261-4434-a57b-4d4cd7cba834.jpg",
+                "/uploads/actors/6d9c4ee7-1de6-4378-afb8-0358539203d1.jpg",
+                "/uploads/actors/73b54684-5c46-4497-9133-03d61ab28ac8.jpg",
+                "/uploads/actors/74b8cba6-da11-4221-940c-83c9d2067437.jpg",
+                "/uploads/actors/7e4232b7-a2fa-48b3-b554-cca7a123e783.jpg",
+                "/uploads/actors/92679616-83e5-45be-abb7-f5f52925cbb3.jpg",
+                "/uploads/actors/95f7c71a-d404-4f2e-afec-91b3aae7b77c.jpg",
+                "/uploads/actors/97dd2581-6350-432e-b60f-c69400dd9e97.jpg",
+                "/uploads/actors/9b96fc8b-c727-4114-9e9a-1b55dd2722a2.jpg",
+                "/uploads/actors/a61c2180-03ee-4a66-b7da-80ccdc646c6d.jpg",
+                "/uploads/actors/aabf2625-3936-43d4-a69c-8fb119325d2b.jpg",
+                "/uploads/actors/aeeb45bc-6e91-4447-8c5b-3611c9d44e9f.jpg",
+                "/uploads/actors/af1742c3-9d85-410d-9bce-103a66f35bfe.jpg",
+                "/uploads/actors/af728eaf-c0f7-4dbc-8670-2587307e1ae2.jpg",
+                "/uploads/actors/b4530d14-0ad5-4adb-b44f-adeaf564abfc.jpg",
+                "/uploads/actors/bfd5150b-e082-4f55-aeda-029cabad3b2b.jpg",
+                "/uploads/actors/cdebb0d4-a3ab-4803-82df-5f8f2ba2adf5.jpg",
+                "/uploads/actors/da4fd053-64f1-467b-9579-60522dc9faa1.jpg",
+                "/uploads/actors/ea898907-d496-48d1-9081-8e2072fcfeba.jpg",
+                "/uploads/actors/eae1fc99-da85-4410-9b4c-c7d4ed389ccc.jpg",
+                "/uploads/actors/eb929e6c-81a8-47ec-8f71-09e39edd154f.jpg",
+                "/uploads/actors/ec3eb0c6-e82d-4fbc-b534-7266fdaa9b80.jpg",
+                "/uploads/actors/f9a92e21-6483-4f42-b1d7-11b1f636cbd1.jpg",
+                "/uploads/actors/fdd94ba1-d054-4023-9737-bf9fd5076e47.jpg"
+            };
+
+            var random = new Random();
+            foreach (var actor in actorsWithoutImages)
+            {
+                // Assign a random image from available images
+                var randomImage = availableImages[random.Next(availableImages.Length)];
+                actor.ImageUrl = randomImage;
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds user activity: episode progress, ratings, and challenge progress for multiple users
+        /// This ensures that when professor runs the app, there will be sample data showing completed series with reviews
+        /// </summary>
+        private static async Task SeedUserActivityAsync(
+            ApplicationDbContext context,
+            UserManager<ApplicationUser> userManager)
+        {
+            // Get or ensure test users exist (using regular users, not admin for activity seeding)
+            var usersToSeed = new List<ApplicationUser>();
+            var userEmails = new[] { "user1@test.com", "user2@test.com" };
+            
+            // First, get or create users
+            foreach (var email in userEmails)
+            {
+                var user = await userManager.FindByEmailAsync(email);
+                if (user == null)
+                {
+                    // Create user if it doesn't exist
+                    user = new ApplicationUser
+                    {
+                        UserName = email,
+                        Email = email,
+                        EmailConfirmed = true
+                    };
+                    var result = await userManager.CreateAsync(user, "User123!");
+                    if (result.Succeeded)
+                    {
+                        user = await userManager.FindByEmailAsync(email);
+                        if (user != null)
+                        {
+                            await userManager.AddToRoleAsync(user, "User");
+                            usersToSeed.Add(user);
+                        }
+                    }
+                }
+                else
+                {
+                    usersToSeed.Add(user);
+                }
+            }
+
+            // Also get or create dummy users for additional activity
+            var dummyUserEmails = new[] { "dummyuser1@test.com", "dummyuser2@test.com", "dummyuser3@test.com", "dummyuser4@test.com" };
+            foreach (var email in dummyUserEmails)
+            {
+                var user = await userManager.FindByEmailAsync(email);
+                if (user == null)
+                {
+                    // Create dummy user if it doesn't exist
+                    user = new ApplicationUser
+                    {
+                        UserName = email,
+                        Email = email,
+                        EmailConfirmed = true,
+                        DateCreated = DateTime.UtcNow.AddDays(-Random.Next(1, 90))
+                    };
+                    var result = await userManager.CreateAsync(user, "Dummy123!");
+                    if (result.Succeeded)
+                    {
+                        user = await userManager.FindByEmailAsync(email);
+                        if (user != null)
+                        {
+                            await userManager.AddToRoleAsync(user, "User");
+                            usersToSeed.Add(user);
+                        }
+                    }
+                }
+                else
+                {
+                    usersToSeed.Add(user);
+                }
+            }
+
+            if (usersToSeed.Count == 0)
+            {
+                return; // No users to seed activity for
+            }
+
+            // Note: We don't check for existing activity here because we check individually
+            // for each episode/rating within the loops to avoid duplicates
+
+            // Get all series with episodes
+            var allSeries = await context.Series
+                .Include(s => s.Seasons!)
+                    .ThenInclude(season => season.Episodes)
+                .ToListAsync();
+
+            if (allSeries.Count == 0)
+            {
+                return; // No series to watch
+            }
+
+            var episodeProgresses = new List<EpisodeProgress>();
+            var ratings = new List<Rating>();
+            var challengeProgresses = new List<ChallengeProgress>();
+
+            var reviewComments = new[]
+            {
+                "Amazing series! Highly recommend it to everyone.",
+                "One of the best shows I've ever watched. The character development is outstanding.",
+                "Great storytelling and excellent acting. Can't wait for more seasons!",
+                "Absolutely loved it! The plot twists kept me on the edge of my seat.",
+                "Fantastic series with well-developed characters and engaging storyline.",
+                "Brilliant writing and amazing performances. A must-watch!",
+                "This series exceeded all my expectations. Highly addictive!",
+                "Perfect blend of drama and suspense. One of my favorites!",
+                "Incredible character arcs and plot development. Masterpiece!",
+                "Couldn't stop watching! Every episode was better than the last."
+            };
+
+            var random = new Random();
+
+            // Different scenarios for each user
+            // User 1: Watches 3 series completely, leaves reviews, has some challenge progress
+            // User 2: Watches 2 series completely, leaves 1 review, has partial challenge progress
+            // Dummy users 1-4: Each watches 1-2 series, leaves 1-2 reviews, has at least 1 challenge progress
+
+            var userScenarios = new List<(int UserIndex, int SeriesCount, int ReviewCount, string ChallengeProgress)>();
+            
+            // Regular test users
+            userScenarios.Add((0, 3, 3, "medium")); // user1@test.com
+            userScenarios.Add((1, 2, 1, "low"));     // user2@test.com
+            
+            // Dummy users (indices 2-5 in usersToSeed list)
+            if (usersToSeed.Count > 2)
+            {
+                userScenarios.Add((2, 2, 2, "medium")); // dummyuser1@test.com
+            }
+            if (usersToSeed.Count > 3)
+            {
+                userScenarios.Add((3, 1, 1, "low"));     // dummyuser2@test.com
+            }
+            if (usersToSeed.Count > 4)
+            {
+                userScenarios.Add((4, 2, 1, "low"));     // dummyuser3@test.com
+            }
+            if (usersToSeed.Count > 5)
+            {
+                userScenarios.Add((5, 1, 1, "low"));     // dummyuser4@test.com
+            }
+
+            foreach (var scenario in userScenarios)
+            {
+                if (scenario.UserIndex >= usersToSeed.Count)
+                    continue;
+
+                var user = usersToSeed[scenario.UserIndex];
+                var (_, seriesCount, reviewCount, challengeProgress) = scenario;
+                var seriesForUser = allSeries
+                    .OrderBy(x => random.Next())
+                    .Take(seriesCount)
+                    .ToList();
+
+                var userEpisodeProgresses = new List<EpisodeProgress>();
+                var userRatings = new List<Rating>();
+                var baseWatchedDate = DateTime.UtcNow.AddDays(-random.Next(1, 60));
+
+                foreach (var series in seriesForUser)
+                {
+                    // Mark all episodes as watched
+                    var allEpisodes = series.Seasons?
+                        .SelectMany(s => s.Episodes ?? new List<Episode>())
+                        .ToList() ?? new List<Episode>();
+
+                    foreach (var episode in allEpisodes)
+                    {
+                        // Check if progress already exists
+                        if (!await context.EpisodeProgresses
+                            .AnyAsync(ep => ep.UserId == user.Id && ep.EpisodeId == episode.Id))
+                        {
+                            userEpisodeProgresses.Add(new EpisodeProgress
+                            {
+                                UserId = user.Id,
+                                EpisodeId = episode.Id,
+                                WatchedAt = baseWatchedDate.AddDays(-random.Next(0, 14)),
+                                IsCompleted = true
+                            });
+                        }
+                    }
+
+                    // Add rating/review (only for some series based on scenario)
+                    var shouldAddReview = userRatings.Count < reviewCount && allEpisodes.Count > 0;
+                    if (shouldAddReview && !await context.Ratings
+                        .AnyAsync(r => r.UserId == user.Id && r.SeriesId == series.Id))
+                    {
+                        userRatings.Add(new Rating
+                        {
+                            UserId = user.Id,
+                            SeriesId = series.Id,
+                            Score = random.Next(7, 11), // Score between 7-10
+                            Comment = reviewComments[random.Next(reviewComments.Length)],
+                            CreatedAt = baseWatchedDate
+                        });
+                    }
+                }
+
+                episodeProgresses.AddRange(userEpisodeProgresses);
+                ratings.AddRange(userRatings);
+
+                // Create challenge progress based on user activity
+                var challenges = await context.Challenges.ToListAsync();
+                var completedSeriesCount = seriesForUser.Count;
+                var watchedEpisodesCount = userEpisodeProgresses.Count;
+
+                foreach (var challenge in challenges)
+                {
+                    // Skip if progress already exists
+                    if (await context.ChallengeProgresses
+                        .AnyAsync(cp => cp.UserId == user.Id && cp.ChallengeId == challenge.Id))
+                    {
+                        continue;
+                    }
+
+                    int progressCount = 0;
+                    bool shouldCreateProgress = false;
+
+                    if (challenge.Name.Contains("Series"))
+                    {
+                        progressCount = completedSeriesCount;
+                        shouldCreateProgress = challengeProgress != "low" || completedSeriesCount > 0;
+                    }
+                    else if (challenge.Name.Contains("Episodes"))
+                    {
+                        progressCount = watchedEpisodesCount;
+                        shouldCreateProgress = watchedEpisodesCount > 0;
+                    }
+                    else if (challenge.Name.Contains("Drama"))
+                    {
+                        progressCount = seriesForUser.Count(s => s.Genre.Contains("Drama", StringComparison.OrdinalIgnoreCase));
+                        shouldCreateProgress = progressCount > 0;
+                    }
+                    else if (challenge.Name.Contains("Master"))
+                    {
+                        // For 100 Series Master, give partial progress based on scenario
+                        progressCount = scenario.ChallengeProgress == "high" ? random.Next(15, 25) : random.Next(5, 15);
+                        shouldCreateProgress = true;
+                    }
+
+                    if (shouldCreateProgress && progressCount > 0)
+                    {
+                        var isCompleted = progressCount >= challenge.TargetCount;
+                        challengeProgresses.Add(new ChallengeProgress
+                        {
+                            UserId = user.Id,
+                            ChallengeId = challenge.Id,
+                            ProgressCount = Math.Min(progressCount, challenge.TargetCount),
+                            Status = isCompleted ? ChallengeProgressStatus.Completed : ChallengeProgressStatus.InProgress,
+                            CompletedAt = isCompleted ? DateTime.UtcNow.AddDays(-random.Next(1, 10)) : null
+                        });
+                    }
+                }
+            }
+
+            // Save all activity
+            if (episodeProgresses.Any())
+            {
+                await context.EpisodeProgresses.AddRangeAsync(episodeProgresses);
+            }
+
+            if (ratings.Any())
+            {
+                await context.Ratings.AddRangeAsync(ratings);
+            }
+
+            if (challengeProgresses.Any())
+            {
+                await context.ChallengeProgresses.AddRangeAsync(challengeProgresses);
+            }
+
             await context.SaveChangesAsync();
         }
 

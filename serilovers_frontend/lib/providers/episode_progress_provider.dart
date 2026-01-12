@@ -20,7 +20,14 @@ class EpisodeProgressProvider extends ChangeNotifier {
     
     // Clear cache when user logs in (wasn't authenticated, now is)
     if (!wasAuthenticated && isNowAuthenticated) {
+      // Clear all cache to force fresh data load from backend
+      // This ensures we don't use stale data after login
       clearAllCache();
+      // Note: We don't automatically reload data here because we don't know which series
+      // the user wants to view. Screens that display progress should reload their data
+      // when they detect authentication state changes or when they are opened.
+      // The cache is now empty, so any call to getSeriesProgress will return null
+      // and screens should call loadSeriesProgress to fetch fresh data.
     }
     
     _authProvider = authProvider;
@@ -82,6 +89,7 @@ class EpisodeProgressProvider extends ChangeNotifier {
 
 
   /// Load progress for a series
+  /// Always fetches fresh data from backend to ensure accuracy
   Future<SeriesProgress> loadSeriesProgress(int seriesId) async {
     loading = true;
     notifyListeners();
@@ -92,12 +100,18 @@ class EpisodeProgressProvider extends ChangeNotifier {
         throw Exception('Authentication required');
       }
 
+      // Always fetch fresh data from backend (don't use cache)
+      // This ensures we get the latest data after login or when data might have changed
       final progress = await _service.getSeriesProgress(seriesId, token: token);
+      
+      // Update cache with fresh data
       _seriesProgressCache[seriesId] = progress;
       error = null;
       return progress;
     } catch (e) {
       error = e.toString();
+      // Clear cache for this series on error to force reload next time
+      _seriesProgressCache.remove(seriesId);
       rethrow;
     } finally {
       loading = false;

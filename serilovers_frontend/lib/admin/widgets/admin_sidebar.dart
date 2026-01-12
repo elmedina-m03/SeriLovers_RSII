@@ -97,6 +97,7 @@ class AdminSidebar extends StatelessWidget {
               ),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 // User info with avatar
                 Row(
@@ -110,8 +111,9 @@ class AdminSidebar extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     // User name and role
-                    Expanded(
+                    Flexible(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
@@ -122,6 +124,7 @@ class AdminSidebar extends StatelessWidget {
                               color: AppColors.textPrimary,
                             ),
                             overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -130,6 +133,8 @@ class AdminSidebar extends StatelessWidget {
                               fontSize: 11,
                               color: AppColors.textSecondary,
                             ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
                           ),
                         ],
                       ),

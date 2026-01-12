@@ -5,6 +5,7 @@ import '../../models/series.dart';
 import '../../models/rating.dart';
 import '../../providers/rating_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/episode_progress_provider.dart';
 import '../../services/episode_progress_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
@@ -199,6 +200,22 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
       // Refresh from API to ensure we have the latest data (with a small delay to ensure DB is updated)
       await Future.delayed(const Duration(milliseconds: 300));
       await ratingProvider.loadSeriesRatings(widget.series.id);
+
+      // IMPORTANT: Refresh episode progress to ensure status screen shows correct progress (e.g., 10/10)
+      // This ensures that when user returns to status screen, progress is up-to-date
+      try {
+        final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        if (authProvider.isAuthenticated && authProvider.token != null && authProvider.token!.isNotEmpty) {
+          // Clear cache for this series to force fresh load
+          progressProvider.clearProgressCache(widget.series.id);
+          // Load fresh progress data
+          await progressProvider.loadSeriesProgress(widget.series.id);
+        }
+      } catch (e) {
+        // Don't fail if progress refresh fails
+        print('Error refreshing progress: $e');
+      }
 
       // Refresh challenge progress since rating a series counts towards challenges
       try {

@@ -36,6 +36,8 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
   DateTime? _lastLoadTime;
   static const _cacheTimeout = Duration(seconds: 30); // Cache for 30 seconds
   int? _lastKnownUserId; // Track user ID to detect login changes
+  // Cache for series progress data from getUserSeriesWithStatus
+  final Map<int, Map<String, dynamic>> _seriesProgressCache = {};
 
   @override
   void initState() {
@@ -122,6 +124,7 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
     // This ensures fresh data is loaded after login
     if (_lastKnownUserId != null && _lastKnownUserId != userId) {
       progressProvider.clearAllCache();
+      _seriesProgressCache.clear(); // Clear local cache too
       _lastLoadTime = null; // Force reload
     }
     
@@ -153,6 +156,9 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
         return;
       }
 
+      // Clear local cache before loading new data
+      _seriesProgressCache.clear();
+
       // Use the new endpoint that returns all series with status (not just watchlist)
       final response = await progressProvider.getUserSeriesWithStatus();
 
@@ -177,10 +183,33 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
         if (allSeriesIds.contains(series.id)) continue;
         allSeriesIds.add(series.id);
         
+        // Cache progress data for this series (to use in _buildSeriesCard)
+        _seriesProgressCache[series.id] = {
+          'watchedEpisodes': watchedEpisodes,
+          'totalEpisodes': totalEpisodes,
+          'status': status,
+        };
+        
+        // Also cache in provider for consistency (if not already cached)
+        final cachedProgress = progressProvider.getSeriesProgress(series.id);
+        if (cachedProgress == null && totalEpisodes > 0) {
+          // Create a SeriesProgress object from the data we have
+          // This ensures getSeriesProgress returns data even if not explicitly loaded
+          final progress = SeriesProgress(
+            seriesId: series.id,
+            seriesTitle: series.title,
+            totalEpisodes: totalEpisodes,
+            watchedEpisodes: watchedEpisodes,
+            currentEpisodeNumber: 0, // We don't have this from getUserSeriesWithStatus
+            currentSeasonNumber: 0, // We don't have this from getUserSeriesWithStatus
+            progressPercentage: totalEpisodes > 0 ? (watchedEpisodes * 100.0 / totalEpisodes) : 0.0,
+          );
+          // Note: We can't directly set cache, but we can trigger a load
+          // Actually, let's just use our local cache in _buildSeriesCard
+        }
+        
         // Add to total watched episodes count
         totalWatchedEpisodes += watchedEpisodes;
-        
-        // Progress is already cached by the provider method
         
         // Categorize by status
         switch (status.toLowerCase()) {
@@ -490,18 +519,28 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
   }
 
   Widget _buildSeriesCard(Series series, ThemeData theme, bool showFullProgress) {
-    // Get actual progress from provider
+    // Get actual progress from provider or local cache
     return Consumer<EpisodeProgressProvider>(
       builder: (context, progressProvider, child) {
-        final progress = progressProvider.getSeriesProgress(series.id);
+        // First try to get from provider cache
+        var progress = progressProvider.getSeriesProgress(series.id);
         
-        // ALWAYS prioritize backend's calculated values (sums across ALL seasons correctly)
-        // Backend: totalEpisodes = sum of all episodes across all seasons
-        // Backend: watchedEpisodes = count of watched episodes across all seasons
-        final totalEpisodes = progress?.totalEpisodes ?? 0;
-        final watchedEpisodes = progress?.watchedEpisodes ?? 0;
+        // If not in provider cache, try local cache from getUserSeriesWithStatus
+        int totalEpisodes = 0;
+        int watchedEpisodes = 0;
         
-        // Fallback: If backend didn't provide values, calculate from series object
+        if (progress != null) {
+          // Use provider data (most accurate)
+          totalEpisodes = progress.totalEpisodes;
+          watchedEpisodes = progress.watchedEpisodes;
+        } else if (_seriesProgressCache.containsKey(series.id)) {
+          // Use local cache data from getUserSeriesWithStatus
+          final cachedData = _seriesProgressCache[series.id]!;
+          totalEpisodes = (cachedData['totalEpisodes'] as num?)?.toInt() ?? 0;
+          watchedEpisodes = (cachedData['watchedEpisodes'] as num?)?.toInt() ?? 0;
+        }
+        
+        // Fallback: If no cached data, calculate from series object
         final effectiveTotalEpisodes = totalEpisodes > 0 
             ? totalEpisodes 
             : SeriesProgressUtil.calculateTotalEpisodes(series);

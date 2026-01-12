@@ -138,14 +138,29 @@ namespace SeriLovers.API.Services
                 .Select(episode => episode.Id)
                 .ToList();
 
-            var watchedEpisodeIds = await _context.EpisodeProgresses
+            // Get all episode progress records for this series (including non-completed ones for debugging)
+            var allProgress = await _context.EpisodeProgresses
                 .Where(ep => ep.UserId == userId
-                          && ep.IsCompleted
                           && seriesEpisodeIds.Contains(ep.EpisodeId))
-                .Select(ep => ep.EpisodeId)
                 .ToListAsync();
             
-            var watchedEpisodes = watchedEpisodeIds.Distinct().Count();
+            // Log any records with IsCompleted = false for debugging
+            var incompleteRecords = allProgress.Where(ep => !ep.IsCompleted).ToList();
+            if (incompleteRecords.Any())
+            {
+                _logger.LogWarning("SeriesWatchingStateService: Found {Count} incomplete episode progress records for UserId={UserId}, SeriesId={SeriesId}. EpisodeIds: {EpisodeIds}",
+                    incompleteRecords.Count, userId, seriesId, 
+                    string.Join(", ", incompleteRecords.Select(ep => ep.EpisodeId)));
+            }
+            
+            // Only count completed episodes
+            var watchedEpisodeIds = allProgress
+                .Where(ep => ep.IsCompleted)
+                .Select(ep => ep.EpisodeId)
+                .Distinct()
+                .ToList();
+            
+            var watchedEpisodes = watchedEpisodeIds.Count;
 
             var currentStateEntity = await _context.SeriesWatchingStates
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.SeriesId == seriesId);
