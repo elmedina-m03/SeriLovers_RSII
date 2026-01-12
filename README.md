@@ -1,107 +1,78 @@
 # SeriLovers
 
-SeriLovers is a TV series discovery and management platform that allows users to browse series, manage watchlists, rate episodes, and receive personalized recommendations. Administrators can curate content and access detailed statistics.
+SeriLovers je platforma za otkrivanje i upravljanje TV serijama.
 
-## Technologies
+## Tehnologije
 
-- ASP.NET Core Web API
+- ASP.NET Core Web API (.NET 8)
 - Flutter (Mobile & Desktop)
 - SQL Server
 - RabbitMQ
-- Docker
+- Docker & Docker Compose
 
-## How to Run
+## Pokretanje aplikacije
 
-### Prerequisites
+### Preko Docker-a (Preporučeno)
 
-- .NET 8 SDK
-- Flutter SDK
-- Docker and Docker Compose (for RabbitMQ and database)
-- SQL Server (if not using Docker)
-
-### API Setup
-
-1. Navigate to `SeriLovers.API` directory
-2. Update `appsettings.json` with your database connection string
-3. Run migrations:
+1. Navigirajte do `SeriLovers.API` direktorijuma
+2. Pokrenite servise:
    ```bash
-   dotnet ef database update
+   docker-compose up -d --build
    ```
-4. Start the API:
-   ```bash
-   dotnet run
-   ```
-   The API will be available at `http://localhost:5149`
-
-### Database, RabbitMQ and Worker (Docker)
-
-1. Navigate to `SeriLovers.API` directory
-2. Start services:
-   ```bash
-   docker-compose up -d
-   ```
-   This starts:
-   - SQL Server on port 1433
-   - RabbitMQ on ports 5672 (AMQP) and 15672 (Management UI)
-   - Worker service (processes RabbitMQ messages)
-
-3. Run migrations inside the container:
+3. Pokrenite migracije:
    ```bash
    docker exec -it serilovers.api dotnet ef database update
    ```
 
-### Flutter App Setup
+Aplikacija će biti dostupna na:
+- **API Swagger:** http://localhost:5149/swagger
+- **RabbitMQ Management:** http://localhost:15672 (guest/guest)
 
-1. Navigate to `serilovers_frontend` directory
-2. Install dependencies:
+### Bez Docker-a
+
+1. **API:**
    ```bash
-   flutter pub get
+   cd SeriLovers.API
+   dotnet ef database update
+   dotnet run
    ```
-3. Copy `env.template` to `.env` and update `API_BASE_URL`:
-   - Android Emulator: `http://10.0.2.2:5149/api`
-   - Windows: `http://localhost:5149/api`
-   - iOS Simulator: `http://localhost:5149/api`
-4. Run the app:
+
+2. **Flutter:**
    ```bash
+   cd serilovers_frontend
+   flutter pub get
+   # Kopirajte env.template u .env i ažurirajte API_BASE_URL
    flutter run
    ```
 
-## Test Credentials
+## Test korisnički podaci
 
-### Desktop Application
-- **Username:** `desktop`
-- **Password:** `test`
+### Admin
+- **Email/Korisničko ime:** `admin@test.com`
+- **Lozinka:** `Admin123!`
 
-### Mobile Application
-- **Username:** `mobile`
-- **Password:** `test`
+### User
+- **Email/Korisničko ime:** `user1@test.com`
+- **Lozinka:** `User123!`
 
-### By Role
+## Docker servisi
 
-**Admin Role:**
-- **Username:** `Admin`
-- **Password:** `test`
+Docker Compose pokreće 4 servisa:
+- **serilovers.api** - Glavni REST API (port 5149)
+- **serilovers.worker** - Pomoćni servis za obradu RabbitMQ poruka
+- **serilovers.db** - SQL Server baza podataka (port 1433, baza: IB220036)
+- **rabbitmq** - Message broker (portovi 5672, 15672)
 
-**User Role:**
-- **Username:** `User`
-- **Password:** `test`
+## Sistem preporuke
 
-### Alternative Test Users
+Aplikacija koristi hibridni sistem preporuke (Item-based + User-based filtering). Detaljna dokumentacija u `recommender_dokumentacija.pdf`.
 
-**Admin (Email-based):**
-- **Email/Username:** `admin@test.com`
-- **Password:** `Admin123!`
+## Struktura projekta
 
-**Regular Users (Email-based):**
-- **Email/Username:** `user1@test.com`
-- **Password:** `User123!`
-
-- **Email/Username:** `user2@test.com`
-- **Password:** `User123!`
-
-## Notes
-
-- HTTPS is intentionally not used.
-- Configuration files are part of the repository.
-- RabbitMQ subscriptions are disabled in Development environment by default.
-
+```
+SeriLovers_RSII/
+├── SeriLovers.API/          # Backend API + Worker servis
+│   ├── docker-compose.yml   # Docker konfiguracija
+│   └── SeriLovers.Worker/   # Worker mikroservis
+└── serilovers_frontend/      # Flutter aplikacija
+```
