@@ -49,19 +49,27 @@ class AuthService {
   /// 
   /// [email] - User's email address
   /// [password] - User's password
+  /// [platform] - Platform type: "desktop" or "mobile" (optional)
   /// 
   /// Returns a Map containing the API response
   /// Automatically saves the token if the response contains one
   /// 
   /// Throws [ApiException] or [AuthException] on failure
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  Future<Map<String, dynamic>> login(String email, String password, {String? platform}) async {
     try {
+      final body = {
+        'email': email,
+        'password': password,
+      };
+      
+      // Add platform if specified
+      if (platform != null && platform.isNotEmpty) {
+        body['platform'] = platform;
+      }
+      
       final response = await _apiService.post(
         '/Auth/login',
-        {
-          'email': email,
-          'password': password,
-        },
+        body,
       );
 
       // Ensure response is a Map

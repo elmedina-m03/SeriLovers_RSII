@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
@@ -122,10 +123,44 @@ class AdminScreenState extends State<AdminScreen> {
     
     try {
       final decodedToken = JwtDecoder.decode(token);
-      final role = decodedToken['role'] as String? ?? 
-                   (decodedToken['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] as String?) ?? 
-                   'User';
-      return role == 'Admin';
+      
+      // Check for Admin role - role can be a string, list, or in JSON array
+      bool isAdmin = false;
+      
+      // Method 1: Check "roles" JSON array
+      final rolesJson = decodedToken['roles'];
+      if (rolesJson != null && rolesJson is String) {
+        try {
+          final rolesList = (jsonDecode(rolesJson) as List).map((e) => e.toString()).toList();
+          if (rolesList.contains('Admin')) {
+            isAdmin = true;
+          }
+        } catch (e) {
+          // Ignore JSON parse errors
+        }
+      }
+      
+      // Method 2: Check "role" claim (can be string or list)
+      if (!isAdmin) {
+        final roleClaim = decodedToken['role'];
+        if (roleClaim is String && roleClaim == 'Admin') {
+          isAdmin = true;
+        } else if (roleClaim is List && roleClaim.contains('Admin')) {
+          isAdmin = true;
+        }
+      }
+      
+      // Method 3: Check alternative claim name
+      if (!isAdmin) {
+        final altRoleClaim = decodedToken['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];
+        if (altRoleClaim is String && altRoleClaim == 'Admin') {
+          isAdmin = true;
+        } else if (altRoleClaim is List && altRoleClaim.contains('Admin')) {
+          isAdmin = true;
+        }
+      }
+      
+      return isAdmin;
     } catch (e) {
       return false;
     }

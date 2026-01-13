@@ -40,6 +40,7 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
       final success = await authProvider.login(
         _emailController.text.trim(),
         _passwordController.text,
+        platform: 'mobile', // Mobile application
       );
 
       if (!mounted) return;
@@ -150,9 +151,9 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
-                    labelText: 'Email',
+                    labelText: 'Email or Username',
                     labelStyle: const TextStyle(color: Color(0xFF757575)), // Visible label color
-                    hintText: 'Enter your email',
+                    hintText: 'Enter your email or username',
                     hintStyle: TextStyle(color: const Color(0xFF757575).withOpacity(0.6)),
                     prefixIcon: const Icon(Icons.email_outlined, color: AppColors.primaryColor),
                     filled: true,
@@ -184,12 +185,9 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.isEmpty) {
-                      return 'Please enter your email';
+                      return 'Please enter your email or username';
                     }
-                    if (!value.contains('@')) {
-                      return 'Please enter a valid email';
-                    }
-                    return null;
+                    return null; // Allow both email and username (e.g., "mobile")
                   },
                 ),
                 
@@ -249,8 +247,8 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                     if (value == null || value.isEmpty) {
                       return 'Please enter your password';
                     }
-                    if (value.length < 6) {
-                      return 'Password must be at least 6 characters';
+                    if (value.length < 4) {
+                      return 'Password must be at least 4 characters';
                     }
                     return null;
                   },

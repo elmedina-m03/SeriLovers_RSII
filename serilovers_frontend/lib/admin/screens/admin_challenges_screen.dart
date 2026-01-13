@@ -32,6 +32,18 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh data when navigating back to this screen (e.g., after user activity changes)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadUserProgress();
+        _loadSummary();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
@@ -244,10 +256,27 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Add button at top-right
+                      // Add button and refresh button at top-right
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              await _loadUserProgress();
+                              await _loadSummary();
+                            },
+                            icon: const Icon(Icons.refresh, size: 20),
+                            label: const Text('Refresh'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.infoColor,
+                              foregroundColor: AppColors.textLight,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppDim.paddingMedium,
+                                vertical: AppDim.paddingSmall,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: AppDim.paddingSmall),
                           ElevatedButton.icon(
                             onPressed: _handleAddChallenge,
                             icon: const Icon(Icons.add, size: 20),

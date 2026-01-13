@@ -22,7 +22,7 @@ namespace SeriLovers.API.Data
             (string FirstName, string LastName, string RoleName)[] Actors,
             int SeasonsToEnsure = 2);
 
-        private static readonly string[] DefaultRoles = { "Admin", "User" };
+        private static readonly string[] DefaultRoles = { "Admin", "User", "DesktopUser", "MobileUser" };
 
         public static async Task SeedRolesAndUsersAsync(
             ApplicationDbContext context,
@@ -585,6 +585,27 @@ namespace SeriLovers.API.Data
                 }
             }
 
+            // CRITICAL: Ensure all EpisodeProgress entries have IsCompleted = true before saving
+            // Also check for any entries that might have NULL IsCompleted (from database)
+            var episodeProgressEntries = context.ChangeTracker.Entries<EpisodeProgress>()
+                .Where(e => e.State == Microsoft.EntityFrameworkCore.EntityState.Added || 
+                           e.State == Microsoft.EntityFrameworkCore.EntityState.Modified ||
+                           e.State == Microsoft.EntityFrameworkCore.EntityState.Unchanged)
+                .ToList();
+            
+            foreach (var entry in episodeProgressEntries)
+            {
+                // Always ensure IsCompleted is true, even if it was NULL from database
+                if (!entry.Entity.IsCompleted)
+                {
+                    entry.Entity.IsCompleted = true;
+                    if (entry.State == Microsoft.EntityFrameworkCore.EntityState.Unchanged)
+                    {
+                        entry.State = Microsoft.EntityFrameworkCore.EntityState.Modified;
+                    }
+                }
+            }
+
             await context.SaveChangesAsync();
         }
 
@@ -632,9 +653,13 @@ namespace SeriLovers.API.Data
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
             var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>();
 
             // Seed roles and ensure first user is admin
             await SeedRolesAndUsersAsync(context, userManager, roleManager);
+
+            // Seed seminar test users (desktop and mobile) - required in all environments
+            await SeedSeminarTestUsersAsync(context, userManager, roleManager, logger);
 
             // Seed catalog data (genres, actors, series)
             await SeedGenresAsync(context);
@@ -671,6 +696,9 @@ namespace SeriLovers.API.Data
             // Seed test entities for development
             await SeedTestActorsAsync(context);
             await SeedTestSeriesAsync(context);
+
+            // Seed additional test users with various activities (for testing)
+            await SeedAdditionalTestUsersWithActivityAsync(context, userManager);
 
             // Seed dummy users with activity for development statistics
             await SeedDummyUsersWithActivityAsync(context, userManager);
@@ -731,6 +759,8 @@ namespace SeriLovers.API.Data
                         if (user != null)
                         {
                             await userManager.AddToRoleAsync(user, "User");
+                            // Add MobileUser role so they can access mobile app
+                            await userManager.AddToRoleAsync(user, "MobileUser");
                             users.Add(user);
                         }
                     }
@@ -788,8 +818,909 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// Seeds seminar test users (desktop and mobile) - required in all environments
+        /// Desktop user: Admin + DesktopUser roles only
+        /// Mobile user: User + MobileUser roles only
+        /// </summary>
+        /// <summary>
+        /// Seeds seminar test users with watchlist, reviews, and challenge progress
+        /// </summary>
+        private static async Task SeedSeminarTestUsersAsync(
+            ApplicationDbContext context,
+            UserManager<ApplicationUser> userManager,
+            RoleManager<IdentityRole<int>> roleManager,
+            ILogger<DbSeeder> logger)
+        {
+            // Ensure roles exist
+            var requiredRoles = new[] { "Admin", "User", "DesktopUser", "MobileUser" };
+            foreach (var roleName in requiredRoles)
+            {
+                if (!await roleManager.RoleExistsAsync(roleName))
+                {
+                    await roleManager.CreateAsync(new IdentityRole<int>(roleName));
+                }
+            }
+
+            // Desktop user: Admin + DesktopUser (NO User or MobileUser)
+            var desktop = await userManager.FindByNameAsync("desktop");
+            if (desktop == null)
+            {
+                desktop = new ApplicationUser
+                {
+                    UserName = "desktop",
+                    Email = "desktop@test.com",
+                    EmailConfirmed = true,
+                    Name = "desktop" // Set Name for display
+                };
+                var result = await userManager.CreateAsync(desktop, "test");
+                if (result.Succeeded)
+                {
+                    desktop = await userManager.FindByNameAsync("desktop");
+                }
+                else
+                {
+                    // Log errors if creation fails
+                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    throw new Exception($"Failed to create desktop user: {errors}");
+                }
+            }
+            else
+            {
+                // Update Name if not set
+                if (string.IsNullOrEmpty(desktop.Name))
+                    {
+                    desktop.Name = "desktop";
+                    await userManager.UpdateAsync(desktop);
+                    logger.LogInformation("Updated Name for desktop user: {UserName}", desktop.UserName);
+                    }
+                
+                // Reset password if incorrect
+                if (!await userManager.CheckPasswordAsync(desktop, "test"))
+            {
+                    var token = await userManager.GeneratePasswordResetTokenAsync(desktop);
+                    var resetResult = await userManager.ResetPasswordAsync(desktop, token, "test");
+                    if (!resetResult.Succeeded)
+                {
+                        var errors = string.Join(", ", resetResult.Errors.Select(e => e.Description));
+                        throw new Exception($"Failed to reset password for desktop user: {errors}");
+                    }
+                }
+            }
+
+            if (desktop != null)
+                    {
+                var currentRoles = await userManager.GetRolesAsync(desktop);
+                
+                // Remove incorrect roles
+                if (currentRoles.Contains("User"))
+            {
+                    await userManager.RemoveFromRoleAsync(desktop, "User");
+                }
+                if (currentRoles.Contains("MobileUser"))
+            {
+                    await userManager.RemoveFromRoleAsync(desktop, "MobileUser");
+                }
+                
+                // Add required roles
+                if (!currentRoles.Contains("Admin"))
+                {
+                    var addResult = await userManager.AddToRoleAsync(desktop, "Admin");
+                    if (!addResult.Succeeded)
+                {
+                        var errors = string.Join(", ", addResult.Errors.Select(e => e.Description));
+                        throw new Exception($"Failed to add Admin role to desktop user: {errors}");
+                    }
+                }
+                if (!currentRoles.Contains("DesktopUser"))
+                    {
+                    var addResult = await userManager.AddToRoleAsync(desktop, "DesktopUser");
+                    if (!addResult.Succeeded)
+                {
+                        var errors = string.Join(", ", addResult.Errors.Select(e => e.Description));
+                        throw new Exception($"Failed to add DesktopUser role to desktop user: {errors}");
+                    }
+                }
+
+                // Verify final roles
+                var finalRoles = await userManager.GetRolesAsync(desktop);
+                if (!finalRoles.Contains("Admin") || !finalRoles.Contains("DesktopUser"))
+                {
+                    throw new Exception($"Desktop user does not have required roles. Current roles: {string.Join(", ", finalRoles)}");
+                    }
+                }
+            else
+            {
+                throw new Exception("Desktop user is null after creation attempt");
+            }
+
+            // Mobile user: User + MobileUser (NO Admin or DesktopUser)
+            var mobile = await userManager.FindByNameAsync("mobile");
+            if (mobile == null)
+            {
+                mobile = new ApplicationUser
+                {
+                    UserName = "mobile",
+                    Email = "mobile@test.com",
+                    EmailConfirmed = true,
+                    Name = "mobile" // Set Name for display
+                };
+                var result = await userManager.CreateAsync(mobile, "test");
+                if (result.Succeeded)
+                {
+                    mobile = await userManager.FindByNameAsync("mobile");
+                }
+                else
+                {
+                    // Log errors if creation fails
+                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    throw new Exception($"Failed to create mobile user: {errors}");
+                }
+            }
+            else
+            {
+                // Update Name if not set
+                if (string.IsNullOrEmpty(mobile.Name))
+                {
+                    mobile.Name = "mobile";
+                    await userManager.UpdateAsync(mobile);
+                    logger.LogInformation("Updated Name for mobile user: {UserName}", mobile.UserName);
+                }
+                
+                // Reset password if incorrect
+                if (!await userManager.CheckPasswordAsync(mobile, "test"))
+                    {
+                    var token = await userManager.GeneratePasswordResetTokenAsync(mobile);
+                    var resetResult = await userManager.ResetPasswordAsync(mobile, token, "test");
+                    if (!resetResult.Succeeded)
+                    {
+                        var errors = string.Join(", ", resetResult.Errors.Select(e => e.Description));
+                        throw new Exception($"Failed to reset password for mobile user: {errors}");
+                    }
+                }
+            }
+
+                    if (mobile != null)
+                    {
+                var currentRoles = await userManager.GetRolesAsync(mobile);
+                
+                // Remove incorrect roles
+                if (currentRoles.Contains("Admin"))
+                {
+                    await userManager.RemoveFromRoleAsync(mobile, "Admin");
+                }
+                if (currentRoles.Contains("DesktopUser"))
+            {
+                    await userManager.RemoveFromRoleAsync(mobile, "DesktopUser");
+                    }
+                
+                // Add required roles
+                if (!currentRoles.Contains("User"))
+                {
+                    var addResult = await userManager.AddToRoleAsync(mobile, "User");
+                    if (!addResult.Succeeded)
+                    {
+                        var errors = string.Join(", ", addResult.Errors.Select(e => e.Description));
+                        throw new Exception($"Failed to add User role to mobile user: {errors}");
+                    }
+                }
+                if (!currentRoles.Contains("MobileUser"))
+            {
+                    var addResult = await userManager.AddToRoleAsync(mobile, "MobileUser");
+                    if (!addResult.Succeeded)
+                {
+                        var errors = string.Join(", ", addResult.Errors.Select(e => e.Description));
+                        throw new Exception($"Failed to add MobileUser role to mobile user: {errors}");
+                    }
+                }
+
+                // Verify final roles
+                var finalRoles = await userManager.GetRolesAsync(mobile);
+                if (!finalRoles.Contains("User") || !finalRoles.Contains("MobileUser"))
+                {
+                    throw new Exception($"Mobile user does not have required roles. Current roles: {string.Join(", ", finalRoles)}");
+                }
+            }
+            else
+            {
+                throw new Exception("Mobile user is null after creation attempt");
+            }
+
+            // Seed user activity data (watchlist, reviews, challenges, episode progress, favorites)
+            await SeedSeminarUserActivityAsync(context, desktop, mobile, logger);
+        }
+
+        /// <summary>
+        /// Seeds user activity data for seminar test users (watchlist, reviews, challenges, episode progress, favorites)
+        /// Also seeds activity for admin and user accounts to ensure Top 3 Watchers has data
+        /// </summary>
+        private static async Task SeedSeminarUserActivityAsync(
+            ApplicationDbContext context,
+            ApplicationUser desktop,
+            ApplicationUser mobile,
+            ILogger<DbSeeder> logger)
+        {
+            // Get first 4-5 series for watchlist (more variety)
+            var allSeries = await context.Series.OrderBy(s => s.Id).Take(5).ToListAsync();
+
+            if (allSeries.Count < 2)
+            {
+                // Series will be seeded by SeedSeriesAsync, so we can skip if they don't exist yet
+                logger.LogWarning("Not enough series available for seeding user activity. Need at least 2 series.");
+                return;
+            }
+
+            // Use first 2 series for reviews and challenges, but more for watchlist
+            var seriesIds = new[] { allSeries[0].Id, allSeries[1].Id };
+            var watchlistSeriesIds = allSeries.Take(4).Select(s => s.Id).ToArray(); // 4 series for watchlist
+
+            // Get first 2 challenges
+            var challenge1 = await context.Challenges.OrderBy(c => c.Id).FirstOrDefaultAsync();
+            var challenge2 = await context.Challenges.OrderBy(c => c.Id).Skip(1).FirstOrDefaultAsync();
+
+            if (challenge1 == null || challenge2 == null)
+            {
+                // Challenges will be seeded by SeedChallengesAsync, so we can skip if they don't exist yet
+                return;
+            }
+
+            var challengeIds = new[] { challenge1.Id, challenge2.Id };
+
+            // Seed desktop user activity
+            try
+            {
+                await SeedUserActivityAsync(context, desktop, seriesIds, watchlistSeriesIds, challengeIds, "desktop", logger);
+            }
+            catch (Exception ex)
+            {
+                // Log error but continue with mobile user
+                logger.LogError(ex, "Error seeding desktop user activity");
+            }
+
+            // Seed mobile user activity
+            try
+            {
+                await SeedUserActivityAsync(context, mobile, seriesIds, watchlistSeriesIds, challengeIds, "mobile", logger);
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't throw
+                logger.LogError(ex, "Error seeding mobile user activity");
+            }
+
+            // Seed activity for admin and user accounts (to ensure Top 3 Watchers has data)
+            try
+            {
+                var adminUser = await context.Users.FirstOrDefaultAsync(u => u.UserName == "Admin" || u.Email == "admin@serilovers.com");
+                var regularUser = await context.Users.FirstOrDefaultAsync(u => u.UserName == "User" || u.Email == "user@serilovers.com");
+
+                    if (adminUser != null)
+                    {
+                    // Add watchlist for admin user (2-3 series)
+                    var adminWatchlistSeries = allSeries.Take(3).Select(s => s.Id).ToArray();
+                    foreach (var seriesId in adminWatchlistSeries)
+                    {
+                        var exists = await context.Watchlists.AnyAsync(w => w.UserId == adminUser.Id && w.SeriesId == seriesId);
+                        if (!exists)
+                        {
+                            context.Watchlists.Add(new Watchlist
+                            {
+                                UserId = adminUser.Id,
+                                SeriesId = seriesId,
+                                AddedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30))
+                            });
+                            logger.LogInformation("Added series {SeriesId} to watchlist for admin user", seriesId);
+                        }
+                    }
+                }
+
+                if (regularUser != null)
+                {
+                    // Add watchlist for regular user (2-3 series)
+                    var userWatchlistSeries = allSeries.Skip(1).Take(3).Select(s => s.Id).ToArray();
+                    foreach (var seriesId in userWatchlistSeries)
+                    {
+                        var exists = await context.Watchlists.AnyAsync(w => w.UserId == regularUser.Id && w.SeriesId == seriesId);
+                        if (!exists)
+                        {
+                            context.Watchlists.Add(new Watchlist
+                            {
+                                UserId = regularUser.Id,
+                                SeriesId = seriesId,
+                                AddedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30))
+                            });
+                            logger.LogInformation("Added series {SeriesId} to watchlist for user", seriesId);
+                        }
+                    }
+                }
+
+                await context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error seeding admin/user activity");
+            }
+        }
+
+        /// <summary>
+        /// Seeds activity data for a single user (watchlist, reviews, challenges, episode progress, favorites)
+        /// Creates different series statuses: To Watch (watchlist only), In Progress (some episodes), Finished (all episodes + reviews)
+        /// </summary>
+        private static async Task SeedUserActivityAsync(
+            ApplicationDbContext context,
+            ApplicationUser user,
+            int[] seriesIds,
+            int[] watchlistSeriesIds,
+            int[] challengeIds,
+            string userName,
+            ILogger<DbSeeder> logger)
+        {
+            // Get all series with episodes
+            var allSeriesWithEpisodes = await context.Series
+                .Include(s => s.Seasons!)
+                    .ThenInclude(season => season.Episodes)
+                .Where(s => watchlistSeriesIds.Contains(s.Id))
+                .ToListAsync();
+
+            if (allSeriesWithEpisodes.Count == 0)
+            {
+                logger.LogWarning("No series found for user {UserName} activity seeding", userName);
+                return;
+            }
+
+            var completedSeriesIds = new List<int>();
+            var inProgressSeriesIds = new List<int>();
+
+            // 1. To Watch - Add watchlist entries (no episode progress)
+            foreach (var seriesId in watchlistSeriesIds)
+            {
+                var exists = await context.Watchlists
+                    .AnyAsync(w => w.UserId == user.Id && w.SeriesId == seriesId);
+                
+                if (!exists)
+                {
+                    context.Watchlists.Add(new Watchlist
+                    {
+                        UserId = user.Id,
+                        SeriesId = seriesId,
+                        AddedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30))
+                    });
+                    logger.LogInformation("Added series {SeriesId} to watchlist for user {UserName} (To Watch)", seriesId, userName);
+                }
+            }
+
+            // 2. In Progress - Mark SOME episodes as watched for some series (no reviews)
+            var inProgressSeries = allSeriesWithEpisodes
+                .Where(s => seriesIds.Contains(s.Id))
+                .Take(1)
+                .ToList();
+
+            foreach (var series in inProgressSeries)
+            {
+                var allEpisodes = series.Seasons?
+                    .SelectMany(s => s.Episodes ?? new List<Episode>())
+                    .ToList() ?? new List<Episode>();
+
+                if (allEpisodes.Any())
+                {
+                    // Mark only 30-50% of episodes as watched (In Progress)
+                    var episodesToWatchCount = (int)(allEpisodes.Count * (Random.NextDouble() * 0.2 + 0.3)); // 30-50%
+                    var episodesToWatch = allEpisodes.Take(episodesToWatchCount).ToList();
+
+                    foreach (var episode in episodesToWatch)
+                    {
+                        var exists = await context.EpisodeProgresses
+                            .AnyAsync(ep => ep.UserId == user.Id && ep.EpisodeId == episode.Id && ep.IsCompleted);
+                        
+                        if (!exists)
+                        {
+                            context.EpisodeProgresses.Add(new EpisodeProgress
+                            {
+                                UserId = user.Id,
+                                EpisodeId = episode.Id,
+                                WatchedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30)),
+                                IsCompleted = true
+                            });
+                            logger.LogInformation("Marked episode {EpisodeId} (Series {SeriesId}) as completed for user {UserName} (In Progress)", episode.Id, series.Id, userName);
+                        }
+                    }
+                    inProgressSeriesIds.Add(series.Id);
+                }
+            }
+
+            // 3. Finished - Mark ALL episodes as watched for remaining series + add reviews
+            var finishedSeries = allSeriesWithEpisodes
+                .Where(s => seriesIds.Contains(s.Id) && !inProgressSeriesIds.Contains(s.Id))
+                .Take(2)
+                .ToList();
+
+            foreach (var series in finishedSeries)
+            {
+                var allEpisodes = series.Seasons?
+                    .SelectMany(s => s.Episodes ?? new List<Episode>())
+                    .ToList() ?? new List<Episode>();
+
+                if (allEpisodes.Any())
+                {
+                    // Mark ALL episodes as watched (Finished)
+                    foreach (var episode in allEpisodes)
+                    {
+                        var exists = await context.EpisodeProgresses
+                            .AnyAsync(ep => ep.UserId == user.Id && ep.EpisodeId == episode.Id && ep.IsCompleted);
+                        
+                        if (!exists)
+                        {
+                            context.EpisodeProgresses.Add(new EpisodeProgress
+                            {
+                                UserId = user.Id,
+                                EpisodeId = episode.Id,
+                                WatchedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30)),
+                                IsCompleted = true
+                            });
+                            logger.LogInformation("Marked episode {EpisodeId} (Series {SeriesId}) as completed for user {UserName} (Finished)", episode.Id, series.Id, userName);
+                        }
+                    }
+                    
+                    // Save episode progress BEFORE adding reviews to ensure data integrity
+                    await context.SaveChangesAsync();
+                    
+                    // Verify that ALL episodes are marked as completed before adding to completedSeriesIds
+                    var totalEpisodes = allEpisodes.Count;
+                    var completedEpisodesCount = await context.EpisodeProgresses
+                        .CountAsync(ep => ep.UserId == user.Id 
+                            && ep.IsCompleted 
+                            && allEpisodes.Select(e => e.Id).Contains(ep.EpisodeId));
+                    
+                    if (completedEpisodesCount == totalEpisodes)
+                    {
+                        completedSeriesIds.Add(series.Id);
+                        logger.LogInformation("Series {SeriesId} verified: {CompletedCount}/{TotalEpisodes} episodes completed for user {UserName}", 
+                            series.Id, completedEpisodesCount, totalEpisodes, userName);
+                    }
+                    else
+                    {
+                        logger.LogWarning("Series {SeriesId} NOT added to completed list: {CompletedCount}/{TotalEpisodes} episodes completed for user {UserName}. Skipping review.", 
+                            series.Id, completedEpisodesCount, totalEpisodes, userName);
+                    }
+                }
+            }
+
+            // 4. Reviews - Add reviews ONLY for series where user has completed ALL episodes (Finished)
+            // Double-check that all episodes are completed before adding reviews
+            foreach (var seriesId in completedSeriesIds)
+            {
+                // Verify that user has completed ALL episodes before adding review
+                var series = allSeriesWithEpisodes.FirstOrDefault(s => s.Id == seriesId);
+                if (series == null)
+                {
+                    logger.LogWarning("Series {SeriesId} not found in allSeriesWithEpisodes, skipping review", seriesId);
+                    continue;
+                }
+                
+                var allEpisodes = series.Seasons?
+                    .SelectMany(s => s.Episodes ?? new List<Episode>())
+                    .ToList() ?? new List<Episode>();
+                
+                if (allEpisodes.Count == 0)
+                {
+                    logger.LogWarning("Series {SeriesId} has no episodes, skipping review", seriesId);
+                    continue;
+                }
+                
+                // Count completed episodes for this series
+                var completedEpisodesCount = await context.EpisodeProgresses
+                    .CountAsync(ep => ep.UserId == user.Id 
+                        && ep.IsCompleted 
+                        && allEpisodes.Select(e => e.Id).Contains(ep.EpisodeId));
+                
+                // Only add review if ALL episodes are completed
+                if (completedEpisodesCount != allEpisodes.Count)
+                {
+                    logger.LogWarning("Cannot add review for series {SeriesId}: {CompletedCount}/{TotalEpisodes} episodes completed for user {UserName}", 
+                        seriesId, completedEpisodesCount, allEpisodes.Count, userName);
+                    continue;
+                }
+                
+                var exists = await context.Ratings
+                    .AnyAsync(r => r.UserId == user.Id && r.SeriesId == seriesId);
+                
+                if (!exists)
+                {
+                    var rating = Random.Next(3, 6); // Rating 3-5
+                    context.Ratings.Add(new Rating
+                    {
+                        UserId = user.Id,
+                        SeriesId = seriesId,
+                        Score = rating,
+                        Comment = $"Test review from {userName}",
+                        CreatedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30))
+                    });
+                    logger.LogInformation("Added review (rating: {Rating}) for series {SeriesId} by user {UserName} - verified {CompletedCount}/{TotalEpisodes} episodes completed", 
+                        rating, seriesId, userName, completedEpisodesCount, allEpisodes.Count);
+                }
+            }
+
+            // 5. Challenge Progress - Calculate based on actual activity (rate, watch, genre drama)
+            var challenges = await context.Challenges.ToListAsync();
+            var completedSeries = allSeriesWithEpisodes.Where(s => completedSeriesIds.Contains(s.Id)).ToList();
+            var watchedEpisodesCount = await context.EpisodeProgresses
+                .Where(ep => ep.UserId == user.Id && ep.IsCompleted)
+                .CountAsync();
+            var ratedSeriesCount = await context.Ratings
+                .Where(r => r.UserId == user.Id)
+                .CountAsync();
+            var dramaSeriesCount = completedSeries.Count(s => s.Genre.Contains("Drama", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var challenge in challenges)
+            {
+                var exists = await context.ChallengeProgresses
+                    .AnyAsync(cp => cp.UserId == user.Id && cp.ChallengeId == challenge.Id);
+                
+                if (!exists)
+                {
+                    int progressCount = 0;
+                    
+                    if (challenge.Name.Contains("Series", StringComparison.OrdinalIgnoreCase))
+                    {
+                        progressCount = completedSeriesIds.Count; // Watch (pregledao)
+                    }
+                    else if (challenge.Name.Contains("Episodes", StringComparison.OrdinalIgnoreCase))
+                    {
+                        progressCount = watchedEpisodesCount; // Watch (pregledao)
+                    }
+                    else if (challenge.Name.Contains("Drama", StringComparison.OrdinalIgnoreCase))
+                    {
+                        progressCount = dramaSeriesCount; // Genre Drama
+                    }
+                    else if (challenge.Name.Contains("Rate", StringComparison.OrdinalIgnoreCase) || challenge.Name.Contains("Review", StringComparison.OrdinalIgnoreCase))
+                    {
+                        progressCount = ratedSeriesCount; // Rate (ocenio)
+                    }
+
+                    if (progressCount > 0)
+                    {
+                        var isCompleted = progressCount >= challenge.TargetCount;
+                        context.ChallengeProgresses.Add(new ChallengeProgress
+                        {
+                            UserId = user.Id,
+                            ChallengeId = challenge.Id,
+                            ProgressCount = Math.Min(progressCount, challenge.TargetCount),
+                            Status = isCompleted ? ChallengeProgressStatus.Completed : ChallengeProgressStatus.InProgress,
+                            CompletedAt = isCompleted ? DateTime.UtcNow.AddDays(-Random.Next(1, 30)) : null
+                        });
+                        logger.LogInformation("Added challenge progress for user {UserName}: {ChallengeName} = {ProgressCount}/{TargetCount}", userName, challenge.Name, progressCount, challenge.TargetCount);
+                    }
+                }
+            }
+
+            // 6. Favorite Characters - Add favorite characters for completed series
+            var actors = await context.Actors.Take(2).ToListAsync();
+            if (actors.Count >= 1 && completedSeriesIds.Any())
+            {
+                var favoriteSeriesId = completedSeriesIds.First();
+                foreach (var actor in actors.Take(1))
+                {
+                    var exists = await context.FavoriteCharacters
+                        .AnyAsync(fc => fc.UserId == user.Id && fc.SeriesId == favoriteSeriesId && fc.ActorId == actor.Id);
+                    
+                    if (!exists)
+                    {
+                        context.FavoriteCharacters.Add(new FavoriteCharacter
+                        {
+                            UserId = user.Id,
+                            SeriesId = favoriteSeriesId,
+                            ActorId = actor.Id,
+                            CreatedAt = DateTime.UtcNow.AddDays(-Random.Next(1, 30))
+                        });
+                        logger.LogInformation("Added favorite character {ActorId} for user {UserName} on series {SeriesId}", actor.Id, userName, favoriteSeriesId);
+                    }
+                }
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds additional test users with various activities (for testing different scenarios)
+        /// </summary>
+        private static async Task SeedAdditionalTestUsersWithActivityAsync(
+            ApplicationDbContext context,
+            UserManager<ApplicationUser> userManager)
+        {
+            // Create 3-4 additional test users with different activities
+            var testUsers = new[]
+            {
+                new { Username = "testuser1", Email = "testuser1@test.com", Role = "User" },
+                new { Username = "testuser2", Email = "testuser2@test.com", Role = "User" },
+                new { Username = "testuser3", Email = "testuser3@test.com", Role = "User" },
+                new { Username = "testuser4", Email = "testuser4@test.com", Role = "User" }
+            };
+
+            var allSeries = await context.Series
+                .Include(s => s.Seasons!)
+                    .ThenInclude(season => season.Episodes)
+                .Take(6)
+                .ToListAsync();
+
+            var allChallenges = await context.Challenges.Take(4).ToListAsync();
+            var allActors = await context.Actors.Take(5).ToListAsync();
+
+            if (allSeries.Count == 0 || allChallenges.Count == 0)
+            {
+                return; // No series or challenges to seed
+            }
+
+            foreach (var testUserData in testUsers)
+            {
+                var user = await userManager.FindByNameAsync(testUserData.Username);
+                if (user == null)
+                {
+                    user = new ApplicationUser
+                    {
+                        UserName = testUserData.Username,
+                        Email = testUserData.Email,
+                        EmailConfirmed = true
+                    };
+                    var result = await userManager.CreateAsync(user, "Test123!");
+                if (result.Succeeded)
+                {
+                        user = await userManager.FindByNameAsync(testUserData.Username);
+                    if (user != null)
+                    {
+                            await userManager.AddToRoleAsync(user, testUserData.Role);
+                            // Add MobileUser role so they can access mobile app
+                            await userManager.AddToRoleAsync(user, "MobileUser");
+                    }
+                    }
+                    else
+                    {
+                        continue; // Skip this user if creation failed
+                    }
+                }
+
+                if (user == null) continue;
+
+                // Ensure user has MobileUser role (if not desktop user)
+                if (user.UserName != "desktop")
+                {
+                    var currentRoles = await userManager.GetRolesAsync(user);
+                    if (!currentRoles.Contains("MobileUser"))
+                    {
+                        await userManager.AddToRoleAsync(user, "MobileUser");
+                    }
+                }
+
+                // Seed activity for this user
+                await SeedUserRichActivityAsync(context, user, allSeries, allChallenges, allActors);
+            }
+
+            await context.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Seeds rich activity data for a user (watchlist, reviews, challenges, episode progress, favorites)
+        /// with various statuses (finished, in progress, to watch)
+        /// </summary>
+        private static async Task SeedUserRichActivityAsync(
+            ApplicationDbContext context,
+            ApplicationUser user,
+            List<Series> availableSeries,
+            List<Challenge> availableChallenges,
+            List<Actor> availableActors)
+        {
+            if (availableSeries.Count == 0) return;
+
+            var random = new Random(user.Id); // Use user ID as seed for consistency
+
+            // 1. Watchlist - Add 2-4 series to watchlist
+            var watchlistSeries = availableSeries
+                .OrderBy(x => random.Next())
+                .Take(random.Next(2, 5))
+                .ToList();
+
+            foreach (var series in watchlistSeries)
+            {
+                var exists = await context.Watchlists
+                    .AnyAsync(w => w.UserId == user.Id && w.SeriesId == series.Id);
+                
+                if (!exists)
+                {
+                    context.Watchlists.Add(new Watchlist
+                    {
+                        UserId = user.Id,
+                        SeriesId = series.Id,
+                        AddedAt = DateTime.UtcNow.AddDays(-random.Next(1, 90))
+                    });
+                }
+            }
+
+            // 2. Reviews - Add reviews for 2-3 series (to reach minimum 10 total reviews)
+            var reviewSeries = availableSeries
+                .OrderBy(x => random.Next())
+                .Take(random.Next(2, 4))
+                .ToList();
+
+            foreach (var series in reviewSeries)
+            {
+                var exists = await context.Ratings
+                    .AnyAsync(r => r.UserId == user.Id && r.SeriesId == series.Id);
+                
+                if (!exists)
+                {
+                    context.Ratings.Add(new Rating
+                    {
+                        UserId = user.Id,
+                        SeriesId = series.Id,
+                        Score = random.Next(1, 11), // Rating 1-10
+                        Comment = $"Great series! Really enjoyed watching {series.Title}.",
+                        CreatedAt = DateTime.UtcNow.AddDays(-random.Next(1, 60))
+                    });
+                }
+            }
+
+            // 3. Episode Progress - Create different scenarios:
+            //    - Some series fully watched (Finished)
+            //    - Some series partially watched (In Progress)
+            //    - Some series not watched (To Watch)
+
+            // Fully watched series (1-2 series)
+            var finishedSeries = availableSeries
+                .OrderBy(x => random.Next())
+                .Take(random.Next(1, 3))
+                .ToList();
+
+            foreach (var series in finishedSeries)
+            {
+                var allEpisodes = series.Seasons?
+                    .SelectMany(s => s.Episodes ?? new List<Episode>())
+                    .ToList() ?? new List<Episode>();
+
+                foreach (var episode in allEpisodes)
+                {
+                    var exists = await context.EpisodeProgresses
+                        .AnyAsync(ep => ep.UserId == user.Id && ep.EpisodeId == episode.Id);
+                    
+                    if (!exists)
+                    {
+                        context.EpisodeProgresses.Add(new EpisodeProgress
+                        {
+                            UserId = user.Id,
+                            EpisodeId = episode.Id,
+                            WatchedAt = DateTime.UtcNow.AddDays(-random.Next(1, 60)),
+                            IsCompleted = true
+                        });
+                    }
+                }
+            }
+
+            // Partially watched series (1-2 series)
+            var inProgressSeries = availableSeries
+                .Where(s => !finishedSeries.Contains(s))
+                .OrderBy(x => random.Next())
+                .Take(random.Next(1, 3))
+                .ToList();
+
+            foreach (var series in inProgressSeries)
+            {
+                var allEpisodes = series.Seasons?
+                    .SelectMany(s => s.Episodes ?? new List<Episode>())
+                    .ToList() ?? new List<Episode>();
+
+                // Watch only 30-70% of episodes
+                var episodesToWatch = allEpisodes
+                    .OrderBy(x => random.Next())
+                    .Take((int)(allEpisodes.Count * (0.3 + random.NextDouble() * 0.4)))
+                    .ToList();
+
+                foreach (var episode in episodesToWatch)
+                {
+                    var exists = await context.EpisodeProgresses
+                        .AnyAsync(ep => ep.UserId == user.Id && ep.EpisodeId == episode.Id);
+                    
+                    if (!exists)
+                    {
+                        context.EpisodeProgresses.Add(new EpisodeProgress
+                        {
+                            UserId = user.Id,
+                            EpisodeId = episode.Id,
+                            WatchedAt = DateTime.UtcNow.AddDays(-random.Next(1, 60)),
+                            IsCompleted = true
+                        });
+                    }
+                }
+            }
+
+            // 4. Challenge Progress - Mix of completed and in progress
+            var completedChallenges = availableChallenges
+                .OrderBy(x => random.Next())
+                .Take(random.Next(1, 3))
+                .ToList();
+
+            foreach (var challenge in completedChallenges)
+            {
+                var exists = await context.ChallengeProgresses
+                    .AnyAsync(cp => cp.UserId == user.Id && cp.ChallengeId == challenge.Id);
+                
+                if (!exists)
+                {
+                    context.ChallengeProgresses.Add(new ChallengeProgress
+                    {
+                        UserId = user.Id,
+                        ChallengeId = challenge.Id,
+                        ProgressCount = challenge.TargetCount, // Completed
+                        Status = ChallengeProgressStatus.Completed,
+                        CompletedAt = DateTime.UtcNow.AddDays(-random.Next(1, 30))
+                    });
+                }
+            }
+
+            // In progress challenges
+            var inProgressChallenges = availableChallenges
+                .Where(c => !completedChallenges.Contains(c))
+                .OrderBy(x => random.Next())
+                .Take(random.Next(1, 2))
+                .ToList();
+
+            foreach (var challenge in inProgressChallenges)
+            {
+                var exists = await context.ChallengeProgresses
+                    .AnyAsync(cp => cp.UserId == user.Id && cp.ChallengeId == challenge.Id);
+                
+                if (!exists)
+                {
+                    var progress = random.Next(1, challenge.TargetCount);
+                    context.ChallengeProgresses.Add(new ChallengeProgress
+                    {
+                        UserId = user.Id,
+                        ChallengeId = challenge.Id,
+                        ProgressCount = progress,
+                        Status = ChallengeProgressStatus.InProgress,
+                        CompletedAt = null
+                    });
+                }
+            }
+
+            // 5. Favorite Characters - Add 1-3 favorite characters
+            if (availableActors.Count > 0)
+            {
+                var favoriteActors = availableActors
+                    .OrderBy(x => random.Next())
+                    .Take(random.Next(1, 4))
+                    .ToList();
+
+                var seriesForFavorites = availableSeries
+                    .OrderBy(x => random.Next())
+                    .Take(favoriteActors.Count)
+                    .ToList();
+
+                for (int i = 0; i < favoriteActors.Count && i < seriesForFavorites.Count; i++)
+                {
+                    var actor = favoriteActors[i];
+                    var series = seriesForFavorites[i];
+
+                    var exists = await context.FavoriteCharacters
+                        .AnyAsync(fc => fc.UserId == user.Id && fc.SeriesId == series.Id && fc.ActorId == actor.Id);
+                    
+                    if (!exists)
+                    {
+                        context.FavoriteCharacters.Add(new FavoriteCharacter
+                        {
+                            UserId = user.Id,
+                            SeriesId = series.Id,
+                            ActorId = actor.Id,
+                            CreatedAt = DateTime.UtcNow.AddDays(-random.Next(1, 60))
+                        });
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Seeds additional test users for development environment only
+        /// </summary>
         private static async Task SeedTestUsersAsync(UserManager<ApplicationUser> userManager)
         {
+            // Only seed additional test users in development, not seminar users
             if (await userManager.FindByEmailAsync("admin@test.com") == null)
             {
                 var admin = new ApplicationUser { UserName = "admin@test.com", Email = "admin@test.com", EmailConfirmed = true };
@@ -804,87 +1735,51 @@ namespace SeriLovers.API.Data
                 }
             }
 
-            if (await userManager.FindByEmailAsync("user1@test.com") == null)
+            // Ensure user1@test.com exists and has MobileUser role
+            var user1 = await userManager.FindByEmailAsync("user1@test.com");
+            if (user1 == null)
             {
-                var user1 = new ApplicationUser { UserName = "user1@test.com", Email = "user1@test.com", EmailConfirmed = true };
+                user1 = new ApplicationUser { UserName = "user1@test.com", Email = "user1@test.com", EmailConfirmed = true };
                 var result = await userManager.CreateAsync(user1, "User123!");
                 if (result.Succeeded)
                 {
                     user1 = await userManager.FindByEmailAsync("user1@test.com");
-                    if (user1 != null)
-                    {
-                        await userManager.AddToRoleAsync(user1, "User");
-                    }
+                }
+            }
+            if (user1 != null)
+            {
+                var roles = await userManager.GetRolesAsync(user1);
+                if (!roles.Contains("User"))
+                {
+                    await userManager.AddToRoleAsync(user1, "User");
+                }
+                if (!roles.Contains("MobileUser"))
+                {
+                    await userManager.AddToRoleAsync(user1, "MobileUser");
                 }
             }
 
-            if (await userManager.FindByEmailAsync("user2@test.com") == null)
+            // Ensure user2@test.com exists and has MobileUser role
+            var user2 = await userManager.FindByEmailAsync("user2@test.com");
+            if (user2 == null)
             {
-                var user2 = new ApplicationUser { UserName = "user2@test.com", Email = "user2@test.com", EmailConfirmed = true };
+                user2 = new ApplicationUser { UserName = "user2@test.com", Email = "user2@test.com", EmailConfirmed = true };
                 var result = await userManager.CreateAsync(user2, "User123!");
                 if (result.Succeeded)
                 {
                     user2 = await userManager.FindByEmailAsync("user2@test.com");
-                    if (user2 != null)
-                    {
-                        await userManager.AddToRoleAsync(user2, "User");
-                    }
                 }
             }
-
-            if (await userManager.FindByNameAsync("desktop") == null)
+            if (user2 != null)
             {
-                var desktop = new ApplicationUser { UserName = "desktop", Email = "desktop@test.com", EmailConfirmed = true };
-                var result = await userManager.CreateAsync(desktop, "test");
-                if (result.Succeeded)
+                var roles = await userManager.GetRolesAsync(user2);
+                if (!roles.Contains("User"))
                 {
-                    desktop = await userManager.FindByNameAsync("desktop");
-                    if (desktop != null)
-                    {
-                        await userManager.AddToRoleAsync(desktop, "User");
-                    }
+                    await userManager.AddToRoleAsync(user2, "User");
                 }
-            }
-
-            if (await userManager.FindByNameAsync("mobile") == null)
-            {
-                var mobile = new ApplicationUser { UserName = "mobile", Email = "mobile@test.com", EmailConfirmed = true };
-                var result = await userManager.CreateAsync(mobile, "test");
-                if (result.Succeeded)
+                if (!roles.Contains("MobileUser"))
                 {
-                    mobile = await userManager.FindByNameAsync("mobile");
-                    if (mobile != null)
-                    {
-                        await userManager.AddToRoleAsync(mobile, "User");
-                    }
-                }
-            }
-
-            if (await userManager.FindByNameAsync("Admin") == null)
-            {
-                var adminUser = new ApplicationUser { UserName = "Admin", Email = "admin@serilovers.com", EmailConfirmed = true };
-                var adminResult = await userManager.CreateAsync(adminUser, "test");
-                if (adminResult.Succeeded)
-                {
-                    adminUser = await userManager.FindByNameAsync("Admin");
-                    if (adminUser != null)
-                    {
-                        await userManager.AddToRoleAsync(adminUser, "Admin");
-                    }
-                }
-            }
-
-            if (await userManager.FindByNameAsync("User") == null)
-            {
-                var user = new ApplicationUser { UserName = "User", Email = "user@serilovers.com", EmailConfirmed = true };
-                var result = await userManager.CreateAsync(user, "test");
-                if (result.Succeeded)
-                {
-                    user = await userManager.FindByNameAsync("User");
-                    if (user != null)
-                    {
-                        await userManager.AddToRoleAsync(user, "User");
-                    }
+                    await userManager.AddToRoleAsync(user2, "MobileUser");
                 }
             }
         }
@@ -1335,17 +2230,22 @@ namespace SeriLovers.API.Data
         /// </summary>
         private static async Task SeedSeriesImagesAsync(ApplicationDbContext context)
         {
-            // Get all series that don't have images yet
-            var seriesWithoutImages = await context.Series
-                .Where(s => string.IsNullOrEmpty(s.ImageUrl))
-                .ToListAsync();
-
-            if (seriesWithoutImages.Count == 0)
+            // Map series titles to their correct image URLs (based on user's uploaded images)
+            var seriesImageMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                return; // All series already have images
-            }
+                // Map main series to their correct images
+                { "Breaking Bad", "/uploads/series/0d325a7d-ce7c-4965-91e2-f47024f34045.jpg" },
+                { "The Office", "/uploads/series/4e2fb20f-e8fb-480f-aead-8d0b8b724ff1.jpg" },
+                { "The Crown", "/uploads/series/64de1f0e-242f-478a-9cae-18000b82d435.jpg" },
+                { "Stranger Things", "/uploads/series/97bb735a-7e10-461b-b39f-6dae5c41043c.jpg" },
+                { "Friends", "/uploads/series/564e8102-dddc-42d0-8ce9-993f060dd1a9.jpg" },
+                { "Game of Thrones", "/uploads/series/bcf3597c-f41c-4983-85d8-f00e8d105f7d.jpg" }
+            };
 
-            // Available images from wwwroot/uploads/series
+            // Get all series
+            var allSeries = await context.Series.ToListAsync();
+
+            // Available fallback images from wwwroot/uploads/series
             var availableImages = new[]
             {
                 "/uploads/series/ee6fcdda-6eb4-4d26-a52d-a7592b8c5064.jpg",
@@ -1374,14 +2274,59 @@ namespace SeriLovers.API.Data
             };
 
             var random = new Random();
-            foreach (var series in seriesWithoutImages)
+            var imageIndex = 0;
+            var hasChanges = false;
+            
+            foreach (var series in allSeries)
             {
-                // Assign a random image from available images
-                var randomImage = availableImages[random.Next(availableImages.Length)];
-                series.ImageUrl = randomImage;
+                // If series already has an image, check if it's correct
+                if (!string.IsNullOrEmpty(series.ImageUrl))
+            {
+                    // CRITICAL: Only update image if it's in our mapping AND the current image is from our seed data
+                    // This preserves user-uploaded images that are not in the map
+                    if (seriesImageMap.TryGetValue(series.Title, out var correctImage))
+                    {
+                        // Only update if the current image is different AND it's from our seed data (not user-uploaded)
+                        // User-uploaded images typically have GUID filenames, seed images have specific paths
+                        // If current image matches a seed image path, we can safely update it
+                        var isSeedImage = availableImages.Contains(series.ImageUrl) || 
+                                        seriesImageMap.Values.Contains(series.ImageUrl);
+                        
+                        if (series.ImageUrl != correctImage && isSeedImage)
+                        {
+                            series.ImageUrl = correctImage;
+                            hasChanges = true;
+                        }
+                        // If current image is NOT a seed image (user-uploaded), DO NOT update it
+                    }
+                    // If series already has an image and is NOT in the map, keep it unchanged
+                    // This preserves user-uploaded images (e.g., Squid Game)
+                    // DO NOT modify series.ImageUrl if it's not in the map
+                }
+                else
+                {
+                    // Series doesn't have an image - assign from map or fallback
+                    if (seriesImageMap.TryGetValue(series.Title, out var mappedImage))
+                    {
+                        series.ImageUrl = mappedImage;
+                        hasChanges = true;
+                    }
+                    else
+                    {
+                        // Use fallback images only if series doesn't have an image
+                        series.ImageUrl = availableImages[imageIndex % availableImages.Length];
+                        imageIndex++;
+                        hasChanges = true;
+            }
+                }
             }
 
+            // Only save changes if there were actual modifications
+            // This prevents overwriting user-uploaded images on every startup
+            if (hasChanges)
+            {
             await context.SaveChangesAsync();
+            }
         }
 
         /// <summary>
@@ -1389,31 +2334,30 @@ namespace SeriLovers.API.Data
         /// </summary>
         private static async Task SeedActorImagesAsync(ApplicationDbContext context)
         {
-            // Get all actors that don't have images yet
-            var actorsWithoutImages = await context.Actors
-                .Where(a => string.IsNullOrEmpty(a.ImageUrl))
-                .ToListAsync();
-
-            if (actorsWithoutImages.Count == 0)
+            // Map actor names to their correct image URLs (based on user's uploaded images)
+            var actorImageMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                return; // All actors already have images
-            }
+                // Map main actors to their correct images
+                { "Bryan Cranston", "/uploads/actors/f9a92e21-6483-4f42-b1d7-11b1f636cbd1.jpg" },
+                { "Aaron Paul", "/uploads/actors/69758db6-5e7f-4b2d-9b8c-4a0d36bb9b1c.jpg" },
+                { "Emilia Clarke", "/uploads/actors/037eb0a6-0a09-4d34-a011-967574692cfb.jpg" },
+                { "Kit Harington", "/uploads/actors/b4530d14-0ad5-4adb-b44f-adeaf564abfc.jpg" },
+                { "Steve Carell", "/uploads/actors/bfd5150b-e082-4f55-aeda-029cabad3b2b.jpg" },
+                { "John Krasinski", "/uploads/actors/aabf2625-3936-43d4-a69c-8fb119325d2b.jpg" },
+                { "Millie Bobby Brown", "/uploads/actors/60e32131-60ad-4c55-a5a9-a54e3ee1dd18.jpg" },
+                { "David Harbour", "/uploads/actors/a61c2180-03ee-4a66-b7da-80ccdc646c6d.jpg" },
+                { "Claire Foy", "/uploads/actors/12d4b96e-4de5-41d0-886f-378a04bb6e5d.webp" },
+                { "Matt Smith", "/uploads/actors/4023fc4a-ca9e-4398-bad1-ffcdae3fa46e.jpg" },
+                { "Jennifer Aniston", "/uploads/actors/9b96fc8b-c727-4114-9e9a-1b55dd2722a2.jpg" },
+                { "Matthew Perry", "/uploads/actors/29fda531-af37-4e1e-b7ca-2a52e74155d7.jpg" }
+            };
 
-            // Available images from wwwroot/uploads/actors
+            // Get all actors
+            var allActors = await context.Actors.ToListAsync();
+
+            // Available fallback images from wwwroot/uploads/actors
             var availableImages = new[]
             {
-                "/uploads/actors/037eb0a6-0a09-4d34-a011-967574692cfb.jpg",
-                "/uploads/actors/03b81a61-591c-43cd-a522-7d2e52fa3ac0.jpg",
-                "/uploads/actors/08ffe115-4839-4037-bd4c-0141dd9c6768.jpg",
-                "/uploads/actors/0cad9b28-6acb-4442-a300-97509ed31159.jpg",
-                "/uploads/actors/0e90ff3f-4b1e-467c-98b4-c61a49cd3531.jpg",
-                "/uploads/actors/100216cb-519f-44af-8d33-28ee0071ccb0.jpg",
-                "/uploads/actors/1891480c-99e8-470c-86cc-9e8085e76234.jpg",
-                "/uploads/actors/29fda531-af37-4e1e-b7ca-2a52e74155d7.jpg",
-                "/uploads/actors/39e92b2d-1f6e-41a2-bf2d-1928d369645e.jpg",
-                "/uploads/actors/3b89acbf-681f-48b9-b517-e90bbe461be5.jpg",
-                "/uploads/actors/3e1bdd72-bc7e-44fe-977a-14a19e7b9e44.jpg",
-                "/uploads/actors/4023fc4a-ca9e-4398-bad1-ffcdae3fa46e.jpg",
                 "/uploads/actors/54ec1775-0e11-4941-ba89-2a4d5075f09d.jpg",
                 "/uploads/actors/5503b5d9-9518-400c-be3a-8f1e2a555e33.jpg",
                 "/uploads/actors/5fe76032-636c-4b0f-93dd-6564f912c2c1.jpg",
@@ -1449,11 +2393,46 @@ namespace SeriLovers.API.Data
             };
 
             var random = new Random();
-            foreach (var actor in actorsWithoutImages)
+            var imageIndex = 0;
+            
+            foreach (var actor in allActors)
             {
-                // Assign a random image from available images
-                var randomImage = availableImages[random.Next(availableImages.Length)];
-                actor.ImageUrl = randomImage;
+                var actorFullName = $"{actor.FirstName} {actor.LastName}";
+                
+                // If actor already has an image, check if it's correct
+                if (!string.IsNullOrEmpty(actor.ImageUrl))
+            {
+                    // CRITICAL: Only update image if it's in our mapping AND the current image is from our seed data
+                    // This preserves user-uploaded images that are not in the map
+                    if (actorImageMap.TryGetValue(actorFullName, out var correctImage))
+                    {
+                        // Only update if the current image is different AND it's from our seed data (not user-uploaded)
+                        var isSeedImage = availableImages.Contains(actor.ImageUrl) || 
+                                        actorImageMap.Values.Contains(actor.ImageUrl);
+                        
+                        if (actor.ImageUrl != correctImage && isSeedImage)
+                        {
+                            actor.ImageUrl = correctImage;
+                        }
+                        // If current image is NOT a seed image (user-uploaded), DO NOT update it
+                    }
+                    // If actor already has an image and is NOT in the map, keep it unchanged
+                    // This preserves user-uploaded images
+                }
+                else
+                {
+                    // Actor doesn't have an image - assign from map or fallback
+                    if (actorImageMap.TryGetValue(actorFullName, out var mappedImage))
+                    {
+                        actor.ImageUrl = mappedImage;
+                    }
+                    else
+                    {
+                        // Use fallback images
+                        actor.ImageUrl = availableImages[imageIndex % availableImages.Length];
+                        imageIndex++;
+                    }
+                }
             }
 
             await context.SaveChangesAsync();

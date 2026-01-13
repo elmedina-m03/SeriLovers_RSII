@@ -4,10 +4,9 @@ namespace SeriLovers.API.Models.DTOs
 {
     public class LoginDto
     {
-        [Required(ErrorMessage = "Email is required.")]
-        [EmailAddress(ErrorMessage = "Email must be a valid email address.")]
-        [StringLength(256, ErrorMessage = "Email cannot exceed 256 characters.")]
-        [Display(Name = "Email Address")]
+        [Required(ErrorMessage = "Email or username is required.")]
+        [StringLength(256, ErrorMessage = "Email or username cannot exceed 256 characters.")]
+        [Display(Name = "Email or Username")]
         public string Email { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Password is required.")]
@@ -17,6 +16,9 @@ namespace SeriLovers.API.Models.DTOs
 
         [Display(Name = "Remember Me")]
         public bool RememberMe { get; set; } = false;
+
+        [Display(Name = "Platform")]
+        public string? Platform { get; set; } // "desktop" or "mobile"
     }
 }
 

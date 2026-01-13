@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -40,6 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final success = await authProvider.login(
         _emailController.text.trim(),
         _passwordController.text,
+        platform: 'desktop', // Desktop application
       );
 
       if (!mounted) return;
@@ -57,12 +59,79 @@ class _LoginScreenState extends State<LoginScreen> {
           if (token != null && token.isNotEmpty) {
             try {
               final decodedToken = JwtDecoder.decode(token);
-              final role = decodedToken['role'] as String? ?? 
-                           (decodedToken['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] as String?) ?? 
-                           'User';
+                  
+                  // Debug: Print all token claims
+                  print('🔑 All token claims: ${decodedToken.keys.toList()}');
+                  
+                  // Check for Admin role in token
+                  bool isAdmin = false;
+                  
+                  // Method 1: Check "roles" claim (JSON array string)
+                  final rolesJson = decodedToken['roles'];
+                  if (rolesJson != null && rolesJson is String) {
+                    print('🔍 Found roles JSON: $rolesJson');
+                    try {
+                      final rolesList = (jsonDecode(rolesJson) as List).map((e) => e.toString()).toList();
+                      print('🔍 Parsed roles list: $rolesList');
+                      if (rolesList.contains('Admin')) {
+                        isAdmin = true;
+                        print('✅ Found Admin in roles JSON array');
+                      }
+                    } catch (e) {
+                      print('❌ Error parsing roles JSON: $e');
+                    }
+                  }
+                  
+                  // Method 2: Check "role" claim (first role for backward compatibility)
+                  if (!isAdmin) {
+                    final roleClaim = decodedToken['role'];
+                    print('🔍 Standard role claim: $roleClaim');
+                    if (roleClaim is String && roleClaim == 'Admin') {
+                      isAdmin = true;
+                      print('✅ Found Admin in standard role claim');
+                    }
+                  }
+                  
+                  // Method 3: Check all keys that might contain role information
+                  if (!isAdmin) {
+                    for (var key in decodedToken.keys) {
+                      final keyStr = key.toString().toLowerCase();
+                      if (keyStr.contains('role') && keyStr != 'roles') {
+                        final roleValue = decodedToken[key];
+                        print('🔍 Found role key: $key = $roleValue');
+                        if (roleValue is String && roleValue == 'Admin') {
+                          isAdmin = true;
+                          print('✅ Found Admin role as String');
+                          break;
+                        } else if (roleValue is List && roleValue.contains('Admin')) {
+                          isAdmin = true;
+                          print('✅ Found Admin role in List');
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  
+                  // Method 4: Check all values in the token for "Admin" string
+                  if (!isAdmin) {
+                    for (var value in decodedToken.values) {
+                      if (value is String && value == 'Admin') {
+                        isAdmin = true;
+                        print('✅ Found Admin in token values');
+                        break;
+                      } else if (value is List && value.contains('Admin')) {
+                        isAdmin = true;
+                        print('✅ Found Admin in token list values');
+                        break;
+                      }
+                    }
+                  }
+                  
+                  print('👤 Final isAdmin check: $isAdmin');
               
-              if (role != 'Admin') {
+                  if (!isAdmin) {
                 // Non-admin user - deny access
+                    print('❌ User is not Admin, denying access');
                 await authProvider.logout();
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -77,16 +146,19 @@ class _LoginScreenState extends State<LoginScreen> {
               }
               
               // Admin user - navigate to admin panel
+                  print('✅ User is Admin, navigating to admin panel');
+                  if (mounted) {
               Navigator.pushReplacementNamed(context, '/admin');
+                  }
             } catch (e) {
               // Error decoding token - deny access
               await authProvider.logout();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Access Forbidden – Admins only'),
+                      SnackBar(
+                        content: Text('Error decoding token: $e'),
                     backgroundColor: Colors.red,
-                    duration: Duration(seconds: 5),
+                        duration: const Duration(seconds: 5),
                   ),
                 );
               }

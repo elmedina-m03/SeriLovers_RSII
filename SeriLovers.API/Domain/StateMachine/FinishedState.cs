@@ -25,27 +25,63 @@ namespace SeriLovers.API.Domain.StateMachine
 
         /// <summary>
         /// Updates state based on watched episode count
-        /// Finished can transition back to InProgress or ToWatch if user unwatches episodes
+        /// CRITICAL: Once a series is Finished, it cannot go back to InProgress or ToWatch
+        /// unless the user explicitly deletes episode progress (which should be rare).
+        /// This prevents finished series from reverting to InProgress after app restart.
         /// </summary>
         public override async Task<SeriesWatchingStatus> UpdateStateAsync(int userId, int seriesId, int totalEpisodes, int watchedEpisodes)
         {
             _logger.LogDebug("FinishedState.UpdateStateAsync: UserId={UserId}, SeriesId={SeriesId}, Watched={Watched}/{Total}",
                 userId, seriesId, watchedEpisodes, totalEpisodes);
 
-            // Determine target state based on watched episodes
-            var targetState = CalculateStateFromProgress(totalEpisodes, watchedEpisodes);
+            // CRITICAL: Check if user has a review for this series
+            // If they do, the series must remain Finished (cannot revert to InProgress)
+            var hasReview = await _context.Ratings
+                .AnyAsync(r => r.UserId == userId && r.SeriesId == seriesId);
 
-            if (targetState == SeriesWatchingStatus.InProgress)
+            // Determine target state based on watched episodes
+            var targetState = BaseSeriesWatchingState.CalculateState(totalEpisodes, watchedEpisodes);
+
+            // If series has a review, it MUST remain Finished (cannot revert)
+            if (hasReview)
             {
-                // User unwatched some episodes - go back to InProgress
-                await PersistStateAsync(userId, seriesId, SeriesWatchingStatus.InProgress, watchedEpisodes, totalEpisodes);
-                return SeriesWatchingStatus.InProgress;
+                _logger.LogInformation("Series {SeriesId} for User {UserId} has a review. Keeping status as Finished even if watchedEpisodes ({Watched}/{Total}) suggests otherwise.",
+                    seriesId, userId, watchedEpisodes, totalEpisodes);
+                
+                // Ensure all episodes are marked as watched to maintain consistency
+                if (watchedEpisodes < totalEpisodes)
+                {
+                    _logger.LogWarning("Series {SeriesId} for User {UserId} has review but watchedEpisodes ({Watched}/{Total}) is less than total. This may indicate data inconsistency.",
+                        seriesId, userId, watchedEpisodes, totalEpisodes);
+                }
+                
+                // Always persist as Finished if review exists
+                await PersistStateAsync(userId, seriesId, SeriesWatchingStatus.Finished, totalEpisodes, totalEpisodes);
+                return SeriesWatchingStatus.Finished;
             }
-            else if (targetState == SeriesWatchingStatus.ToWatch)
+
+            // No review exists - allow transition only if ALL episodes are unwatched
+            // This prevents accidental reversion due to data inconsistencies
+            if (targetState == SeriesWatchingStatus.ToWatch && watchedEpisodes == 0)
             {
-                // User unwatched all episodes - go back to ToWatch
-                await PersistStateAsync(userId, seriesId, SeriesWatchingStatus.ToWatch, watchedEpisodes, totalEpisodes);
+                // User explicitly unwatched ALL episodes - go back to ToWatch
+                _logger.LogInformation("Series {SeriesId} for User {UserId} - all episodes unwatched. Transitioning from Finished to ToWatch.",
+                    seriesId, userId);
+                await PersistStateAsync(userId, seriesId, SeriesWatchingStatus.ToWatch, 0, totalEpisodes);
                 return SeriesWatchingStatus.ToWatch;
+            }
+            else if (targetState == SeriesWatchingStatus.InProgress)
+            {
+                // User unwatched some episodes but not all
+                // CRITICAL: If series was previously Finished, do NOT revert to InProgress
+                // This prevents finished series from reverting after app restart due to data inconsistencies
+                _logger.LogWarning("Series {SeriesId} for User {UserId} was Finished but watchedEpisodes ({Watched}/{Total}) suggests InProgress. " +
+                    "Keeping as Finished to prevent accidental reversion. If user truly unwatched episodes, they should explicitly remove progress.",
+                    seriesId, userId, watchedEpisodes, totalEpisodes);
+                
+                // Keep as Finished to prevent accidental reversion
+                await PersistStateAsync(userId, seriesId, SeriesWatchingStatus.Finished, totalEpisodes, totalEpisodes);
+                return SeriesWatchingStatus.Finished;
             }
             else
             {

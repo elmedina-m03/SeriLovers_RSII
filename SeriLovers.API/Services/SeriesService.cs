@@ -46,7 +46,7 @@ namespace SeriLovers.API.Services
             return query;
         }
 
-        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null, int? year = null, string? sortBy = null, string? sortOrder = null)
+        public async Task<PagedResult<Series>> GetAllAsync(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null, int? year = null, string? sortBy = null, string? sortOrder = null)
         {
             _logger.LogDebug("Retrieving paged series list. Page: {Page}, PageSize: {PageSize}, GenreId: {GenreId}, MinRating: {MinRating}, Search: {Search}, Year: {Year}", page, pageSize, genreId, minRating, search, year);
 
@@ -143,7 +143,7 @@ namespace SeriLovers.API.Services
                 HydrateSeries(series);
             }
 
-            PopulateFeedbackCounts(items);
+            await PopulateFeedbackCountsAsync(items);
 
             return new PagedResult<Series>
             {
@@ -155,7 +155,13 @@ namespace SeriLovers.API.Services
             };
         }
 
-        public Series? GetById(int id)
+        // Keep synchronous version for backward compatibility
+        public PagedResult<Series> GetAll(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null, int? year = null, string? sortBy = null, string? sortOrder = null)
+        {
+            return GetAllAsync(page, pageSize, genreId, minRating, search, year, sortBy, sortOrder).GetAwaiter().GetResult();
+        }
+
+        public async Task<Series?> GetByIdAsync(int id)
         {
             _logger.LogDebug("Fetching series with id {SeriesId}", id);
             var series = QuerySeriesWithRelationships(includeFeedback: true)
@@ -165,33 +171,81 @@ namespace SeriLovers.API.Services
             {
                 HydrateSeries(series);
                 
-                // Filter out test users when counting
+                // Filter ratings - include mobile and desktop users (seminar test users), exclude other test users
                 var realRatings = series.Ratings?
                     .Where(r => r.User != null
-                        && r.User.Email != null
+                        && (
+                            // Include mobile and desktop users (seminar test users) - check username first
+                            (r.User.UserName != null && (r.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                                || r.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                            ||
+                            // Include other users that don't match test patterns
+                            (r.User.Email != null
                         && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
                         && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
                         && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
                         && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                        ))
                     .ToList() ?? new List<Rating>();
                 
                 var realWatchlists = series.Watchlists?
                     .Where(w => w.User != null
-                        && w.User.Email != null
+                        && (
+                            // Include mobile and desktop users (seminar test users) - check username first
+                            (w.User.UserName != null && (w.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                                || w.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                            ||
+                            // Include other users that don't match test patterns
+                            (w.User.Email != null
                         && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
                         && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
                         && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
                         && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                        ))
                     .ToList() ?? new List<Watchlist>();
                 
                 series.RatingsCount = realRatings.Count;
                 series.WatchlistsCount = realWatchlists.Count;
+                
+                // CRITICAL: Always use Series.Rating from database (already calculated and updated by PopulateFeedbackCountsAsync)
+                // If ratings exist, ensure Series.Rating matches the calculated average
+                // If no ratings, Series.Rating contains the manually entered fallback value
+                if (realRatings.Any())
+                {
+                    var averageRating = Math.Round(realRatings.Average(r => r.Score), 2);
+                    
+                    // Update in-memory object for current response
+                    series.Rating = averageRating;
+                    
+                    // Update in database if different (ensures consistency)
+                    if (Math.Abs(series.Rating - averageRating) > 0.01)
+                    {
+                        _logger.LogDebug("Updating Series {SeriesId} rating from {OldRating} to {NewRating} based on {Count} user ratings",
+                            series.Id, series.Rating, averageRating, realRatings.Count);
+                        
+                        var seriesInDb = await _context.Series.FindAsync(id);
+                        if (seriesInDb != null)
+                        {
+                            seriesInDb.Rating = averageRating;
+                            await _context.SaveChangesAsync();
+                            _logger.LogInformation("Updated Series {SeriesId} rating in database from {OldRating} to {NewRating}",
+                                id, series.Rating, averageRating);
+                        }
+                    }
+                }
+                // If no ratings, series.Rating already contains the manually entered fallback value - use it as-is
             }
 
             return series;
         }
 
-        public List<Series> Search(string keyword)
+        // Keep synchronous version for backward compatibility (but it won't update database)
+        public Series? GetById(int id)
+        {
+            return GetByIdAsync(id).GetAwaiter().GetResult();
+        }
+
+        public async Task<List<Series>> SearchAsync(string keyword)
         {
             if (string.IsNullOrWhiteSpace(keyword))
             {
@@ -205,7 +259,7 @@ namespace SeriLovers.API.Services
                     HydrateSeries(series);
                 }
 
-                PopulateFeedbackCounts(allSeries);
+                await PopulateFeedbackCountsAsync(allSeries);
 
                 return allSeries;
             }
@@ -228,9 +282,15 @@ namespace SeriLovers.API.Services
                 HydrateSeries(series);
             }
 
-            PopulateFeedbackCounts(results);
+            await PopulateFeedbackCountsAsync(results);
 
             return results;
+        }
+        
+        // Keep synchronous version for backward compatibility
+        public List<Series> Search(string keyword)
+        {
+            return SearchAsync(keyword).GetAwaiter().GetResult();
         }
 
         public void Add(Series series)
@@ -325,7 +385,11 @@ namespace SeriLovers.API.Services
             existing.ReleaseDate = series.ReleaseDate;
             existing.Genre = series.Genre;
             existing.Rating = series.Rating;
+            // Only update ImageUrl if a new value is provided (preserve existing image if not specified)
+            if (!string.IsNullOrWhiteSpace(series.ImageUrl))
+            {
             existing.ImageUrl = series.ImageUrl;
+            }
 
             var incomingGenreIds = ExtractGenreIds(series);
             var incomingActorLinks = ExtractActorLinks(series);
@@ -452,32 +516,82 @@ namespace SeriLovers.API.Services
                 return new List<SeriesRecommendationDto>();
             }
 
-            var recommendationData = await _context.Series
+            // Get series with their ratings and users for filtering
+            var candidateSeries = await _context.Series
                 .AsNoTracking()
+                .Include(s => s.Ratings)
+                    .ThenInclude(r => r.User)
+                .Include(s => s.SeriesGenres)
+                    .ThenInclude(sg => sg.Genre)
                 .Where(s =>
                     s.SeriesGenres.Any(sg => favoriteGenreIds.Contains(sg.GenreId)) &&
                     !ratedSeriesIds.Contains(s.Id))
-                .Select(s => new
+                .ToListAsync();
+
+            // Filter ratings using the same logic as GetByIdAsync and PopulateFeedbackCountsAsync
+            // Include mobile and desktop users (seminar test users), exclude other test users
+            var recommendationData = candidateSeries
+                .Select(s =>
                 {
+                    // Filter ratings - same logic as GetByIdAsync
+                    var realRatings = s.Ratings?
+                        .Where(r => r.User != null
+                            && (
+                                // Include mobile and desktop users (seminar test users) - check username first
+                                (r.User.UserName != null && (r.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                                    || r.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                                ||
+                                // Include other users that don't match test patterns
+                                (r.User.Email != null
+                                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                                    && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                            ))
+                        .ToList() ?? new List<Rating>();
+
+                    // Use Series.Rating from database (which should be updated by GetByIdAsync/PopulateFeedbackCountsAsync)
+                    // If not available, calculate from filtered ratings
+                    var averageRating = s.Rating > 0 ? s.Rating : 
+                        (realRatings.Any() ? Math.Round(realRatings.Average(r => r.Score), 2) : 0.0);
+
+                    return new
+                {
+                        s.Id,
                     s.Title,
-                    Genres = s.SeriesGenres.Select(sg => sg.Genre != null ? sg.Genre.Name : null),
-                    AverageRating = s.Ratings.Select(r => (double?)r.Score).Average()
+                        Genres = s.SeriesGenres
+                            .Where(sg => sg.Genre != null)
+                            .Select(sg => sg.Genre!.Name)
+                            .Where(name => !string.IsNullOrWhiteSpace(name))
+                            .Distinct()
+                            .ToList(),
+                        AverageRating = averageRating
+                    };
                 })
-                .OrderByDescending(s => s.AverageRating ?? 0)
+                .OrderByDescending(s => s.AverageRating)
                 .ThenBy(s => s.Title)
                 .Take(maxResults)
-                .ToListAsync();
+                .ToList();
+
+            // Get series details for Id and ImageUrl
+            var seriesDetails = await _context.Series
+                .AsNoTracking()
+                .Where(s => recommendationData.Select(r => r.Id).Contains(s.Id))
+                .Select(s => new { s.Id, s.ImageUrl })
+                .ToDictionaryAsync(s => s.Id, s => s.ImageUrl);
 
             var recommendations = recommendationData
                 .Select(s => new SeriesRecommendationDto
                 {
+                    Id = s.Id,
                     Title = s.Title,
+                    ImageUrl = seriesDetails.TryGetValue(s.Id, out var imageUrl) ? imageUrl : null,
                     Genres = s.Genres
                         .Where(name => !string.IsNullOrWhiteSpace(name))
                         .Select(name => name!)
                         .Distinct()
                         .ToList(),
-                    AverageRating = Math.Round(s.AverageRating ?? 0, 2)
+                    AverageRating = Math.Round(s.AverageRating, 2)
                 })
                 .ToList();
 
@@ -627,7 +741,7 @@ namespace SeriLovers.API.Services
             series.Watchlists ??= new List<Watchlist>();
         }
 
-        private void PopulateFeedbackCounts(List<Series> seriesList)
+        private async Task PopulateFeedbackCountsAsync(List<Series> seriesList)
         {
             if (seriesList == null || seriesList.Count == 0)
             {
@@ -636,22 +750,42 @@ namespace SeriLovers.API.Services
 
             var seriesIds = seriesList.Select(s => s.Id).ToList();
 
-            // Filter out test/dummy user ratings when counting
-            // Materialize first, then filter in memory since EF Core can't translate EndsWith with StringComparison
+            // Get ALL ratings for these series (we'll filter later for display, but count all for ratingsCount)
             var allRatings = _context.Ratings
                 .AsNoTracking()
                 .Include(r => r.User)
                 .Where(r => seriesIds.Contains(r.SeriesId))
                 .ToList();
             
+            _logger.LogDebug("PopulateFeedbackCountsAsync: Found {Count} total ratings for {SeriesCount} series",
+                allRatings.Count, seriesIds.Count);
+            
+            // For ratingsCount, count ALL ratings (including test users) - this is what users see
+            // The filtering is only for calculating average rating, not for count
             var ratingCounts = allRatings
-                .Where(r => r.User != null
-                    && r.User.Email != null
-                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase))
                 .GroupBy(r => r.SeriesId)
                 .ToDictionary(g => g.Key, g => g.Count());
+            
+            _logger.LogDebug("PopulateFeedbackCountsAsync: Rating counts for {SeriesCount} series",
+                ratingCounts.Count);
+            
+            // Calculate average ratings for each series and update Series.Rating property
+            var seriesRatings = allRatings
+                .Where(r => r.User != null
+                    && (
+                        // Include mobile and desktop users (seminar test users) - check username first
+                        (r.User.UserName != null && (r.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                            || r.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                        ||
+                        // Include other users that don't match test patterns
+                        (r.User.Email != null
+                            && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    ))
+                .GroupBy(r => r.SeriesId)
+                .ToDictionary(g => g.Key, g => Math.Round(g.Average(r => r.Score), 2));
 
             // Get watchlist counts, filtering out test users
             // Materialize first, then filter in memory since EF Core can't translate EndsWith with StringComparison
@@ -663,18 +797,72 @@ namespace SeriLovers.API.Services
 
             var watchlistCounts = allWatchlists
                 .Where(w => w.User != null
-                    && w.User.Email != null
+                    && (
+                        // Include mobile and desktop users (seminar test users) - check username first
+                        (w.User.UserName != null && (w.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                            || w.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                        ||
+                        // Include other users that don't match test patterns
+                        (w.User.Email != null
                     && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
                     && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
                     && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
                     && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    ))
                 .GroupBy(w => w.SeriesId)
                 .ToDictionary(g => g.Key, g => g.Count());
+
+            // Update ratings in database for all series that have ratings
+            var seriesToUpdate = new List<(int SeriesId, double NewRating)>();
 
             foreach (var series in seriesList)
             {
                 series.RatingsCount = ratingCounts.TryGetValue(series.Id, out var ratingCount) ? ratingCount : 0;
                 series.WatchlistsCount = watchlistCounts.TryGetValue(series.Id, out var watchlistCount) ? watchlistCount : 0;
+                
+                // Update Series.Rating to reflect current average from user ratings if available
+                // Always use the calculated average for display to ensure consistency
+                if (seriesRatings.TryGetValue(series.Id, out var averageRating))
+                {
+                    // Check if rating needs to be updated in database
+                    if (Math.Abs(series.Rating - averageRating) > 0.01)
+                    {
+                        seriesToUpdate.Add((series.Id, averageRating));
+                        _logger.LogDebug("Series {SeriesId} rating needs update: {OldRating} -> {NewRating}",
+                            series.Id, series.Rating, averageRating);
+                    }
+                    
+                    // Update in-memory object for current response
+                    series.Rating = averageRating;
+                }
+                // If no ratings, keep the manually entered fallback value (series.Rating already set)
+            }
+            
+            // CRITICAL: Always update Series.Rating in database to ensure consistency
+            // This ensures desktop, mobile, and recommendations all use the same rating
+            if (seriesToUpdate.Any())
+            {
+                try
+                {
+                    // Use a separate context or detach entities to avoid conflicts
+                    foreach (var (seriesId, newRating) in seriesToUpdate)
+                    {
+                        var seriesInDb = await _context.Series.FindAsync(seriesId);
+                        if (seriesInDb != null)
+                        {
+                            seriesInDb.Rating = newRating;
+                        }
+                    }
+                    
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation("Updated {Count} series ratings in database from PopulateFeedbackCountsAsync",
+                        seriesToUpdate.Count);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error updating series ratings in database from PopulateFeedbackCountsAsync. Continuing with in-memory updates.");
+                    // Don't throw - continue with in-memory updates
+                }
             }
         }
     }

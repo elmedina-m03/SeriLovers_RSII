@@ -42,11 +42,23 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<int>>(options =>
 {
-    options.Password.RequireDigit = true;
-    options.Password.RequireLowercase = true;
-    options.Password.RequireUppercase = true;
-    options.Password.RequireNonAlphanumeric = true;
-    options.Password.RequiredLength = 8;
+    // Relaxed password requirements for Development to allow "test" password
+    if (builder.Environment.IsDevelopment())
+    {
+        options.Password.RequireDigit = false;
+        options.Password.RequireLowercase = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredLength = 4;
+    }
+    else
+    {
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = true;
+        options.Password.RequiredLength = 8;
+    }
     options.User.RequireUniqueEmail = true;
     options.SignIn.RequireConfirmedEmail = false;
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
@@ -308,6 +320,69 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+// Apply database migrations automatically with retry logic
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var context = services.GetRequiredService<ApplicationDbContext>();
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    
+    var maxRetries = 10;
+    var delay = TimeSpan.FromSeconds(5);
+    
+    for (int i = 0; i < maxRetries; i++)
+    {
+        try
+        {
+            logger.LogInformation("Applying database migrations... (Attempt {Attempt}/{MaxRetries})", i + 1, maxRetries);
+            await context.Database.MigrateAsync();
+            logger.LogInformation("Database migrations applied successfully.");
+            break;
+        }
+        catch (Exception ex)
+        {
+            if (i == maxRetries - 1)
+            {
+                logger.LogError(ex, "Failed to apply database migrations after {MaxRetries} attempts.", maxRetries);
+                throw;
+            }
+            
+            logger.LogWarning(ex, "Database not ready yet. Retrying in {Delay} seconds...", delay.TotalSeconds);
+            await Task.Delay(delay);
+        }
+    }    
+    // CRITICAL: Fix all EpisodeProgress records with NULL IsCompleted before seeding
+    try
+    {
+        logger.LogInformation("Starting EpisodeProgress cleanup: fixing all NULL IsCompleted records.");
+        
+        // Use raw SQL to update NULL values to true (bypassing EF Core tracking issues)
+        var nullCount = await context.Database.ExecuteSqlRawAsync(
+            "UPDATE EpisodeProgresses SET IsCompleted = 1 WHERE IsCompleted IS NULL");
+        
+        logger.LogInformation("Fixed {Count} EpisodeProgress records with NULL IsCompleted.", nullCount);
+        
+        // Also remove any records with IsCompleted = false
+        var incompleteRecords = await context.EpisodeProgresses
+            .Where(ep => !ep.IsCompleted)
+            .ToListAsync();
+        
+        if (incompleteRecords.Any())
+        {
+            var count = incompleteRecords.Count;
+            logger.LogWarning("Found {Count} incomplete EpisodeProgress records. Removing them to prevent data inconsistencies.", count);
+            context.EpisodeProgresses.RemoveRange(incompleteRecords);
+            await context.SaveChangesAsync();
+            logger.LogInformation("Successfully removed {Count} incomplete EpisodeProgress records.", count);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error cleaning up incomplete EpisodeProgress records. Continuing anyway.");
+        // Don't throw - continue with startup
+    }
+}
 
 using (var scope = app.Services.CreateScope())
 {

@@ -1,0 +1,17 @@
+<svg width="200" height="48" viewBox="0 0 200 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon: TV with Heart -->
+  <g>
+    <!-- TV Screen -->
+    <rect x="4" y="8" width="32" height="24" rx="2" fill="#5B3DF5" opacity="0.2"/>
+    <rect x="6" y="10" width="28" height="20" rx="1" fill="#5B3DF5" opacity="0.3"/>
+    <!-- Heart inside TV -->
+    <text x="20" y="24" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#5B3DF5" text-anchor="middle" dominant-baseline="middle">♥</text>
+    <!-- TV Stand/Base -->
+    <rect x="16" y="32" width="8" height="2" rx="1" fill="#5B3DF5" opacity="0.8"/>
+  </g>
+  <!-- Text: SeriLovers -->
+  <text x="52" y="28" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="600" fill="#5B3DF5" letter-spacing="-0.5">
+    SeriLovers
+  </text>
+</svg>
+

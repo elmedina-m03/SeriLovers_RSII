@@ -128,7 +128,7 @@ namespace SeriLovers.API.Services
                 .Include(s => s.SeriesGenres)
                     .ThenInclude(sg => sg.Genre)
                 .Include(s => s.Ratings)
-                .Where(s => !excludeSeriesIds.Contains(s.Id))
+                .Where(s => !excludeSeriesIds.Contains(s.Id) && s.Ratings.Any()) // Only include series that have at least one rating
                 .ToListAsync();
         }
 
@@ -489,9 +489,9 @@ namespace SeriLovers.API.Services
                         .Where(name => !string.IsNullOrEmpty(name))
                         .Distinct()
                         .ToList(),
-                    AverageRating = s.Series.Ratings.Any()
-                        ? Math.Round(s.Series.Ratings.Average(r => r.Score), 2)
-                        : 0.0,
+                    // Use Series.Rating from database (already filtered and updated by SeriesService)
+                    // This ensures consistency with desktop and mobile displays
+                    AverageRating = Math.Round(s.Series.Rating, 2),
                     SimilarityScore = Math.Round(s.FinalScore, 3),
                     Reason = GenerateRecommendationReason(s)
                 })
@@ -554,11 +554,14 @@ namespace SeriLovers.API.Services
             }
 
             var popularSeries = await query
+                .Where(s => s.Ratings.Any()) // Only include series that have at least one rating
                 .Select(s => new
                 {
                     Series = s,
                     PopularityScore = s.Ratings.Count() + s.Watchlists.Count(),
-                    AverageRating = s.Ratings.Any() ? s.Ratings.Average(r => r.Score) : 0.0
+                    // Use Series.Rating from database (already filtered and updated by SeriesService)
+                    // This ensures consistency with desktop and mobile displays
+                    AverageRating = s.Rating
                 })
                 .OrderByDescending(s => s.AverageRating)
                 .ThenByDescending(s => s.PopularityScore)

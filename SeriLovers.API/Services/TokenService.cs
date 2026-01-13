@@ -51,11 +51,21 @@ namespace SeriLovers.API.Services
             var displayName = user.Name ?? user.UserName ?? user.Email ?? "User";
             claims.Add(new Claim("name", displayName));
 
-            // Add roles using both standard JWT claim name and ASP.NET Core claim type
+            // Add roles - add each role as a separate claim for ASP.NET Core compatibility
+            // Also add roles as a JSON array string for easier parsing in Flutter
             foreach (var role in roles)
             {
-                claims.Add(new Claim("role", role)); // Standard JWT claim name
                 claims.Add(new Claim(ClaimTypes.Role, role)); // ASP.NET Core claim type
+            }
+            
+            // Add roles as a JSON array string for Flutter to easily parse
+            if (roles.Count > 0)
+            {
+                var rolesJson = System.Text.Json.JsonSerializer.Serialize(roles);
+                claims.Add(new Claim("roles", rolesJson)); // JSON array of roles
+                
+                // Also add first role as "role" for backward compatibility
+                claims.Add(new Claim("role", roles[0]));
             }
 
             var token = new JwtSecurityToken(

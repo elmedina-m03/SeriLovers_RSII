@@ -36,14 +36,78 @@ namespace SeriLovers.API.Services
         /// <inheritdoc />
         public async Task<SeriesWatchingStatus> GetStatusAsync(int userId, int seriesId)
         {
-            var stateEntity = await _context.SeriesWatchingStates
+            // CRITICAL: First check if user has a review for this series
+            // If they do, the series MUST be Finished (cannot revert to InProgress)
+            var hasReview = await _context.Ratings
+                .AnyAsync(r => r.UserId == userId && r.SeriesId == seriesId);
+            
+            if (hasReview)
+            {
+                _logger.LogDebug("Series {SeriesId} for User {UserId} has a review. Ensuring status is Finished.",
+                    seriesId, userId);
+                
+                // Get or create state entity
+                var stateEntity = await _context.SeriesWatchingStates
+                    .FirstOrDefaultAsync(s => s.UserId == userId && s.SeriesId == seriesId);
+                
+                if (stateEntity == null || stateEntity.Status != SeriesWatchingStatus.Finished)
+                {
+                    // Get series to calculate total episodes
+                    var series = await _context.Series
+                        .Include(s => s.Seasons)
+                            .ThenInclude(season => season.Episodes)
+                        .FirstOrDefaultAsync(s => s.Id == seriesId);
+                    
+                    if (series != null)
+                    {
+                        var totalEpisodes = (series.Seasons ?? Enumerable.Empty<Season>())
+                            .SelectMany(season => season.Episodes ?? Enumerable.Empty<Episode>())
+                            .Count();
+                        
+                        // Create or update state as Finished
+                        if (stateEntity == null)
+                        {
+                            stateEntity = new SeriesWatchingState
+                            {
+                                UserId = userId,
+                                SeriesId = seriesId,
+                                Status = SeriesWatchingStatus.Finished,
+                                WatchedEpisodesCount = totalEpisodes,
+                                TotalEpisodesCount = totalEpisodes,
+                                CreatedAt = DateTime.UtcNow,
+                                LastUpdated = DateTime.UtcNow
+                            };
+                            _context.SeriesWatchingStates.Add(stateEntity);
+                        }
+                        else
+                        {
+                            stateEntity.Status = SeriesWatchingStatus.Finished;
+                            stateEntity.WatchedEpisodesCount = totalEpisodes;
+                            stateEntity.TotalEpisodesCount = totalEpisodes;
+                            stateEntity.LastUpdated = DateTime.UtcNow;
+                        }
+                        
+                        await _context.SaveChangesAsync();
+                        _logger.LogInformation("Set Series {SeriesId} for User {UserId} to Finished status because review exists.",
+                            seriesId, userId);
+                    }
+                }
+                
+                return SeriesWatchingStatus.Finished;
+            }
+            
+            // No review - check existing state or calculate
+            var existingState = await _context.SeriesWatchingStates
+                .AsNoTracking()
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.SeriesId == seriesId);
 
-            if (stateEntity != null)
+            if (existingState != null)
             {
-                return stateEntity.Status;
+                // For non-Finished statuses, return the stored status
+                return existingState.Status;
             }
 
+            // No state entity exists - calculate and persist
             return await CalculateAndPersistStatusAsync(userId, seriesId);
         }
 
@@ -138,38 +202,60 @@ namespace SeriLovers.API.Services
                 .Select(episode => episode.Id)
                 .ToList();
 
-            // Get all episode progress records for this series (including non-completed ones for debugging)
-            var allProgress = await _context.EpisodeProgresses
+            // Get ONLY completed episode progress records for this series (filter at database level)
+            var watchedEpisodeIds = await _context.EpisodeProgresses
                 .Where(ep => ep.UserId == userId
+                          && ep.IsCompleted
                           && seriesEpisodeIds.Contains(ep.EpisodeId))
-                .ToListAsync();
-            
-            // Log any records with IsCompleted = false for debugging
-            var incompleteRecords = allProgress.Where(ep => !ep.IsCompleted).ToList();
-            if (incompleteRecords.Any())
-            {
-                _logger.LogWarning("SeriesWatchingStateService: Found {Count} incomplete episode progress records for UserId={UserId}, SeriesId={SeriesId}. EpisodeIds: {EpisodeIds}",
-                    incompleteRecords.Count, userId, seriesId, 
-                    string.Join(", ", incompleteRecords.Select(ep => ep.EpisodeId)));
-            }
-            
-            // Only count completed episodes
-            var watchedEpisodeIds = allProgress
-                .Where(ep => ep.IsCompleted)
                 .Select(ep => ep.EpisodeId)
                 .Distinct()
-                .ToList();
+                .ToListAsync();
             
             var watchedEpisodes = watchedEpisodeIds.Count;
+            
+            // Log any incomplete records for debugging (but don't use them in calculations)
+            var incompleteRecords = await _context.EpisodeProgresses
+                .Where(ep => ep.UserId == userId
+                          && !ep.IsCompleted
+                          && seriesEpisodeIds.Contains(ep.EpisodeId))
+                .Select(ep => ep.EpisodeId)
+                .ToListAsync();
+            
+            if (incompleteRecords.Any())
+            {
+                _logger.LogWarning("SeriesWatchingStateService: Found {Count} incomplete episode progress records for UserId={UserId}, SeriesId={SeriesId}. EpisodeIds: {EpisodeIds}. These will be ignored.",
+                    incompleteRecords.Count, userId, seriesId, 
+                    string.Join(", ", incompleteRecords.Distinct()));
+            }
 
             var currentStateEntity = await _context.SeriesWatchingStates
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.SeriesId == seriesId);
 
             var currentStatus = currentStateEntity?.Status ?? SeriesWatchingStatus.ToWatch;
+            
+            // CRITICAL: If current status is Finished, check if user has a review
+            // If they do, the series must remain Finished (cannot revert to InProgress)
+            if (currentStatus == SeriesWatchingStatus.Finished)
+            {
+                var hasReview = await _context.Ratings
+                    .AnyAsync(r => r.UserId == userId && r.SeriesId == seriesId);
+                
+                if (hasReview)
+                {
+                    _logger.LogInformation("Series {SeriesId} for User {UserId} is Finished and has a review. Keeping status as Finished even if EpisodeProgress suggests otherwise.",
+                        seriesId, userId);
+                    
+                    // Ensure status remains Finished
+                    var finishedState = BaseSeriesWatchingState.GetState(SeriesWatchingStatus.Finished, _serviceProvider);
+                    var newStatus = await finishedState.UpdateStateAsync(userId, seriesId, totalEpisodes, watchedEpisodes);
+                    return newStatus;
+                }
+            }
+            
             var currentState = BaseSeriesWatchingState.GetState(currentStatus, _serviceProvider);
-            var newStatus = await currentState.UpdateStateAsync(userId, seriesId, totalEpisodes, watchedEpisodes);
+            var newStatusResult = await currentState.UpdateStateAsync(userId, seriesId, totalEpisodes, watchedEpisodes);
 
-            return newStatus;
+            return newStatusResult;
         }
     }
 }

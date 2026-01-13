@@ -63,7 +63,7 @@ namespace SeriLovers.API.Controllers.Admin
         [HttpGet("progress")]
         [SwaggerOperation(
             Summary = "Get all user challenge progress",
-            Description = "Retrieves all user challenge progress with user details. Admin only.")]
+            Description = "Retrieves all user challenge progress with user details. Admin only. Uses real-time data from user activity.")]
         public async Task<IActionResult> GetAllProgress()
         {
             // Get total series count to validate ProgressCount
@@ -72,7 +72,30 @@ namespace SeriLovers.API.Controllers.Admin
             var progressList = await _context.ChallengeProgresses
                 .Include(cp => cp.User)
                 .Include(cp => cp.Challenge)
-                .Select(cp => new
+                .ToListAsync();
+            
+            var result = new List<object>();
+            
+            foreach (var cp in progressList)
+            {
+                // Use real-time data from user activity instead of stored ProgressCount
+                // This ensures the data is always up-to-date
+                var watchedSeriesCount = await _challengeService.GetCompletedSeriesCountAsync(cp.UserId);
+                
+                // Cap watchedSeriesCount at total series count (data integrity fix)
+                var watchedSeries = watchedSeriesCount > totalSeriesCount ? totalSeriesCount : watchedSeriesCount;
+                
+                var goal = cp.Challenge?.TargetCount ?? 0;
+                
+                // Cap progress percentage at 100% (max is 100%)
+                var progress = goal > 0
+                    ? Math.Min(100, (int)(watchedSeries * 100.0 / goal))
+                    : 0;
+                
+                // Determine status based on real-time data
+                var status = watchedSeries >= goal ? "Completed" : "Processing";
+                
+                result.Add(new
                 {
                     id = cp.Id,
                     userId = cp.UserId,
@@ -80,19 +103,17 @@ namespace SeriLovers.API.Controllers.Admin
                     userEmail = cp.User != null ? (cp.User.Email ?? "Unknown") : "Unknown",
                     challengeId = cp.ChallengeId,
                     challengeName = cp.Challenge != null ? cp.Challenge.Name : "Unknown",
-                    // Cap ProgressCount at total series count (data integrity fix)
-                    watchedSeries = cp.ProgressCount > totalSeriesCount ? totalSeriesCount : cp.ProgressCount,
-                    goal = cp.Challenge != null ? cp.Challenge.TargetCount : 0,
-                    // Cap progress percentage at 100% (max is 100%)
-                    progress = cp.Challenge != null && cp.Challenge.TargetCount > 0
-                        ? Math.Min(100, (int)((cp.ProgressCount > totalSeriesCount ? totalSeriesCount : cp.ProgressCount) * 100.0 / cp.Challenge.TargetCount))
-                        : 0,
-                    status = cp.Status == ChallengeProgressStatus.Completed ? "Completed" : "Processing"
-                })
-                .OrderByDescending(p => p.watchedSeries)
-                .ToListAsync();
+                    watchedSeries = watchedSeries,
+                    goal = goal,
+                    progress = progress,
+                    status = status
+                });
+            }
+            
+            // Sort by watchedSeries descending
+            result = result.OrderByDescending(p => ((dynamic)p).watchedSeries).ToList();
 
-            return Ok(progressList);
+            return Ok(result);
         }
 
         /// <summary>
@@ -246,22 +267,27 @@ namespace SeriLovers.API.Controllers.Admin
                 .Include(w => w.User)
                 .ToListAsync();
             
+            // Include desktop and mobile users (seminar test users) but exclude other test users
             var realRatings = allRatings
                 .Where(r => r.User != null
                     && r.User.Email != null
-                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    && (r.User.UserName == "desktop" || r.User.UserName == "mobile" // Include seminar test users
+                        || (!r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.UserName.StartsWith("testuser", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.UserName.StartsWith("dummyuser", StringComparison.OrdinalIgnoreCase))))
                 .ToList();
             
             var realWatchlists = allWatchlists
                 .Where(w => w.User != null
                     && w.User.Email != null
-                    && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                    && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                    && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                    && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    && (w.User.UserName == "desktop" || w.User.UserName == "mobile" // Include seminar test users
+                        || (!w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.UserName.StartsWith("testuser", StringComparison.OrdinalIgnoreCase)
+                            && !w.User.UserName.StartsWith("dummyuser", StringComparison.OrdinalIgnoreCase))))
                 .ToList();
             
             var ratingsByUser = realRatings
@@ -282,16 +308,21 @@ namespace SeriLovers.API.Controllers.Admin
                 {
                     id = user.Id,
                     email = user.Email ?? "Unknown",
-                    userName = user.UserName ?? "Unknown"
+                    userName = user.UserName ?? "Unknown",
+                    avatarUrl = user.AvatarUrl,
+                    name = user.Name
                 })
                 .ToListAsync();
             
+            // Include desktop and mobile users (seminar test users) but exclude other test users
             var realUsers = allUsers
                 .Where(u => u.email != "Unknown"
-                    && !u.email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                    && !u.email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                    && !u.email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                    && !u.email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    && (u.userName == "desktop" || u.userName == "mobile" // Include seminar test users
+                        || (!u.email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !u.email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !u.email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !u.userName.StartsWith("testuser", StringComparison.OrdinalIgnoreCase)
+                            && !u.userName.StartsWith("dummyuser", StringComparison.OrdinalIgnoreCase))))
                 .ToList();
             
             var topWatchersList = new List<object>();
@@ -306,6 +337,8 @@ namespace SeriLovers.API.Controllers.Admin
                     id = user.id,
                     email = user.email,
                     userName = user.userName,
+                    name = user.name,
+                    avatarUrl = user.avatarUrl,
                     watchedSeriesCount = watchedSeriesCount,
                     ratingsCount = ratingsCount,
                     watchlistCount = watchlistCount,

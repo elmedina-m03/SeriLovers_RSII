@@ -266,6 +266,10 @@ namespace SeriLovers.API.Controllers
                     }
                 });
 
+                // Assign default roles: User and MobileUser (so they can access mobile app)
+                await _userManager.AddToRoleAsync(user, "User");
+                await _userManager.AddToRoleAsync(user, "MobileUser");
+
                 // Create default "Favorites" list for the new user
                 await EnsureDefaultFavoritesListAsync(user.Id);
             }
@@ -283,12 +287,23 @@ namespace SeriLovers.API.Controllers
                 }
             }
 
+            // Ensure user has User and MobileUser roles
             if (!await _userManager.IsInRoleAsync(user, "User"))
             {
                 var roleResult = await _userManager.AddToRoleAsync(user, "User");
                 if (!roleResult.Succeeded)
                 {
                     _logger.LogWarning("Failed to assign default role to Google user {Email}: {Errors}",
+                        user.Email,
+                        string.Join(", ", roleResult.Errors.Select(e => e.Description)));
+                }
+            }
+            if (!await _userManager.IsInRoleAsync(user, "MobileUser"))
+            {
+                var roleResult = await _userManager.AddToRoleAsync(user, "MobileUser");
+                if (!roleResult.Succeeded)
+                {
+                    _logger.LogWarning("Failed to assign MobileUser role to Google user {Email}: {Errors}",
                         user.Email,
                         string.Join(", ", roleResult.Errors.Select(e => e.Description)));
                 }
@@ -381,6 +396,10 @@ namespace SeriLovers.API.Controllers
             {
                 _logger.LogInformation("User created a new account with password.");
 
+                // Assign default roles: User and MobileUser (so they can access mobile app)
+                await _userManager.AddToRoleAsync(user, "User");
+                await _userManager.AddToRoleAsync(user, "MobileUser");
+
                 // Create default "Favorites" list for the new user
                 await EnsureDefaultFavoritesListAsync(user.Id);
 
@@ -462,11 +481,17 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
+            // Try to find user by email first, then by username
             var user = await _userManager.FindByEmailAsync(loginDto.Email);
+            if (user == null)
+            {
+                // If not found by email, try to find by username
+                user = await _userManager.FindByNameAsync(loginDto.Email);
+            }
 
             if (user == null)
             {
-                _logger.LogWarning("Login attempt failed: User not found for email {Email}", loginDto.Email);
+                _logger.LogWarning("Login attempt failed: User not found for email/username {Email}", loginDto.Email);
                 return Unauthorized(new AuthResponseDto
                 {
                     Success = false,
@@ -515,10 +540,49 @@ namespace SeriLovers.API.Controllers
                 });
             }
 
-            _logger.LogInformation("User logged in successfully for email {Email}", loginDto.Email);
-
             // Get user roles
             var roles = await _userManager.GetRolesAsync(user);
+
+            // Check platform access if platform is specified
+            if (!string.IsNullOrWhiteSpace(loginDto.Platform))
+            {
+                var platform = loginDto.Platform.ToLower();
+                if (platform == "desktop")
+                {
+                    // Desktop application is restricted – user MUST have DesktopUser role
+                    if (!roles.Contains("DesktopUser"))
+                    {
+                        _logger.LogWarning("User {Email} attempted to access desktop platform but doesn't have DesktopUser role", loginDto.Email);
+                        return Unauthorized(new AuthResponseDto
+                        {
+                            Success = false,
+                            Message = "You don't have permission to access the desktop application. Please use the mobile application."
+                        });
+                    }
+                }
+                else if (platform == "mobile")
+                {
+                    // Mobile application:
+                    // - Normal korisnici: moraju imati MobileUser
+                    // - Admin / DesktopUser korisnici: smiju pristupiti mobilnoj aplikaciji radi testiranja
+                    var canAccessMobile =
+                        roles.Contains("MobileUser") ||
+                        roles.Contains("DesktopUser") ||
+                        roles.Contains("Admin");
+
+                    if (!canAccessMobile)
+                    {
+                        _logger.LogWarning("User {Email} attempted to access mobile platform without required role (User/MobileUser/Admin/DesktopUser)", loginDto.Email);
+                        return Unauthorized(new AuthResponseDto
+                        {
+                            Success = false,
+                            Message = "You don't have permission to access the mobile application."
+                        });
+                    }
+                }
+            }
+
+            _logger.LogInformation("User logged in successfully for email {Email}", loginDto.Email);
 
             // Generate JWT token
             var token = _tokenService.GenerateToken(user, roles);

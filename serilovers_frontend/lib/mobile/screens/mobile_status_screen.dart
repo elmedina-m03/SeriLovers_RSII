@@ -106,6 +106,9 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
     final watchlistProvider = Provider.of<WatchlistProvider>(context, listen: false);
     final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
     
+    // Always clear episode progress cache when (re)loading this screen
+    // kako bi se izbjegli stari podaci (npr. serija ostane 9/9 umjesto "Not started")
+    progressProvider.clearAllCache();
     final userId = _extractUserId(auth.token);
     if (userId == null) {
       // If no user ID, set loading to false and return
@@ -120,11 +123,9 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
       return;
     }
     
-    // If user ID changed (e.g., different user logged in), clear progress cache
-    // This ensures fresh data is loaded after login
+    // If user ID changed (e.g., different user logged in), clear local cache as well
     if (_lastKnownUserId != null && _lastKnownUserId != userId) {
-      progressProvider.clearAllCache();
-      _seriesProgressCache.clear(); // Clear local cache too
+      _seriesProgressCache.clear();
       _lastLoadTime = null; // Force reload
     }
     

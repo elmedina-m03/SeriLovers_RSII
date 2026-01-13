@@ -54,12 +54,13 @@ class AuthProvider extends ChangeNotifier {
   /// 
   /// [email] - User's email address
   /// [password] - User's password
+  /// [platform] - Platform type: "desktop" or "mobile" (optional)
   /// 
   /// Returns true if login successful, false otherwise
   /// Updates [token] and [isAuthenticated] on success and notifies listeners
-  Future<bool> login(String email, String password) async {
+  Future<bool> login(String email, String password, {String? platform}) async {
     try {
-      await _authService.login(email, password);
+      await _authService.login(email, password, platform: platform);
       
       // Reload token from storage (AuthService saves it automatically)
       token = await _authService.getToken();

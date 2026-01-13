@@ -1,15 +1,26 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.Extensions.Logging;
 using SeriLovers.API.Models;
+using System.Linq;
 
 namespace SeriLovers.API.Data
 {
     public class ApplicationDbContext : IdentityDbContext<ApplicationUser, IdentityRole<int>, int>
     {
+        private readonly ILogger<ApplicationDbContext>? _logger;
+
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
         {
+        }
+
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, ILogger<ApplicationDbContext> logger)
+            : base(options)
+        {
+            _logger = logger;
         }
 
         public DbSet<Series> Series { get; set; }
@@ -260,6 +271,13 @@ namespace SeriLovers.API.Data
                 entity.HasKey(ep => ep.Id);
                 entity.Property(ep => ep.WatchedAt).IsRequired().HasDefaultValueSql("GETUTCDATE()");
                 
+                // IsCompleted should always be true - incomplete records should not exist
+                // This is enforced at application level, but we set default to true
+                entity.Property(ep => ep.IsCompleted)
+                    .IsRequired()
+                    .HasDefaultValue(true)
+                    .ValueGeneratedNever(); // Don't let database generate values - we control it
+                
                 // One user can only have one progress record per episode
                 entity.HasIndex(ep => new { ep.UserId, ep.EpisodeId }).IsUnique();
 
@@ -337,6 +355,44 @@ namespace SeriLovers.API.Data
                     .HasForeignKey(usr => usr.SeriesId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            // Prevent creating or updating EpisodeProgress records with IsCompleted = false
+            var episodeProgressEntries = ChangeTracker.Entries<EpisodeProgress>()
+                .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified)
+                .ToList();
+
+            foreach (var entry in episodeProgressEntries)
+            {
+                // Ensure IsCompleted is always true - incomplete records should not exist
+                if (!entry.Entity.IsCompleted)
+                {
+                    _logger?.LogWarning("Attempted to save EpisodeProgress with IsCompleted=false. EpisodeId={EpisodeId}, UserId={UserId}, State={State}. Setting to true or removing.",
+                        entry.Entity.EpisodeId, entry.Entity.UserId, entry.State);
+
+                    if (entry.State == EntityState.Added)
+                    {
+                        // Don't create incomplete records - mark as complete instead
+                        entry.Entity.IsCompleted = true;
+                    }
+                    else if (entry.State == EntityState.Modified)
+                    {
+                        // If trying to update to incomplete, delete the record instead
+                        entry.State = EntityState.Deleted;
+                        _logger?.LogInformation("Deleting EpisodeProgress record instead of setting IsCompleted=false. EpisodeId={EpisodeId}, UserId={UserId}",
+                            entry.Entity.EpisodeId, entry.Entity.UserId);
+                    }
+                }
+                else
+                {
+                    // Ensure IsCompleted is explicitly set to true (in case it's default/uninitialized)
+                    entry.Entity.IsCompleted = true;
+                }
+            }
+
+            return await base.SaveChangesAsync(cancellationToken);
         }
     }
 }

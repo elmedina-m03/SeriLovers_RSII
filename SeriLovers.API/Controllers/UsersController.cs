@@ -199,13 +199,41 @@ namespace SeriLovers.API.Controllers
         [HttpDelete("{id}")]
         [SwaggerOperation(
             Summary = "Delete user",
-            Description = "Permanently deletes a user from the system. This action cannot be undone. Admin only.")]
+            Description = "Permanently deletes a user from the system. This action cannot be undone. Admin only. Cannot delete admin users, desktop users, or yourself.")]
         public async Task<IActionResult> Delete(int id)
         {
+            // Get current user
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null)
+            {
+                return Unauthorized(new { message = "Unable to identify current user." });
+            }
+
+            // Prevent deleting yourself
+            if (currentUser.Id == id)
+            {
+                return BadRequest(new { message = "You cannot delete your own account." });
+            }
+
             var user = await _userManager.FindByIdAsync(id.ToString());
             if (user == null)
             {
                 return NotFound(new { message = $"User with ID {id} not found." });
+            }
+
+            // Get user roles
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            // Prevent deleting admin users
+            if (userRoles.Contains("Admin"))
+            {
+                return BadRequest(new { message = "Cannot delete users with Admin role. Please remove Admin role first." });
+            }
+
+            // Prevent deleting desktop users (they have DesktopUser role)
+            if (userRoles.Contains("DesktopUser"))
+            {
+                return BadRequest(new { message = "Cannot delete users with DesktopUser role. Desktop users are protected." });
             }
 
             // Delete the user

@@ -145,18 +145,40 @@ namespace SeriLovers.API.Controllers
             EpisodeProgress savedProgress;
             if (existingProgress != null)
             {
+                // If marking as not completed, delete the record instead of setting IsCompleted = false
+                // This prevents incomplete records from interfering with progress calculations
+                if (!dto.IsCompleted)
+                {
+                    _logger.LogWarning("Removing EpisodeProgress record: EpisodeId={EpisodeId}, UserId={UserId}, SeriesId={SeriesId} (unmarked as watched). This should not happen for completed series.", 
+                        dto.EpisodeId, currentUserId.Value, seriesId);
+                    _context.EpisodeProgresses.Remove(existingProgress);
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation("Successfully removed EpisodeProgress record: EpisodeId={EpisodeId}, UserId={UserId}", 
+                        dto.EpisodeId, currentUserId.Value);
+                    return Ok(new { message = "Episode progress removed successfully." });
+                }
+                
+                // Update existing record to mark as completed
                 existingProgress.WatchedAt = DateTime.UtcNow;
-                existingProgress.IsCompleted = dto.IsCompleted;
+                existingProgress.IsCompleted = true; // Always set to true when marking as watched
                 savedProgress = existingProgress;
             }
             else
             {
+                // Only create new record if marking as completed
+                if (!dto.IsCompleted)
+                {
+                    _logger.LogWarning("Attempted to create incomplete episode progress for EpisodeId={EpisodeId}, UserId={UserId}. Ignoring.", 
+                        dto.EpisodeId, currentUserId.Value);
+                    return Ok(new { message = "Episode progress not created (incomplete)." });
+                }
+                
                 var progress = new EpisodeProgress
                 {
                     UserId = currentUserId.Value,
                     EpisodeId = dto.EpisodeId,
                     WatchedAt = DateTime.UtcNow,
-                    IsCompleted = dto.IsCompleted
+                    IsCompleted = true // Always true for new records
                 };
                 _context.EpisodeProgresses.Add(progress);
                 savedProgress = progress;
@@ -165,10 +187,13 @@ namespace SeriLovers.API.Controllers
             try
             {
                 await _context.SaveChangesAsync();
+                _logger.LogInformation("EpisodeProgress saved successfully: EpisodeId={EpisodeId}, UserId={UserId}, IsCompleted={IsCompleted}, SeriesId={SeriesId}", 
+                    dto.EpisodeId, currentUserId.Value, savedProgress.IsCompleted, seriesId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save EpisodeProgress: EpisodeId={EpisodeId}, UserId={UserId}", dto.EpisodeId, currentUserId);
+                _logger.LogError(ex, "Failed to save EpisodeProgress: EpisodeId={EpisodeId}, UserId={UserId}, IsCompleted={IsCompleted}", 
+                    dto.EpisodeId, currentUserId, dto.IsCompleted);
                 throw;
             }
 
@@ -285,29 +310,32 @@ namespace SeriLovers.API.Controllers
                 .Select(e => e.Id)
                 .ToList();
 
-            // Get all episode progress records for this series (including non-completed ones for debugging)
-            var allProgress = await _context.EpisodeProgresses
-                .Where(ep => ep.UserId == currentUserId.Value && 
-                            seriesEpisodeIds.Contains(ep.EpisodeId))
-                .ToListAsync();
-            
-            // Log any records with IsCompleted = false for debugging
-            var incompleteRecords = allProgress.Where(ep => !ep.IsCompleted).ToList();
-            if (incompleteRecords.Any())
-            {
-                _logger.LogWarning("Found {Count} incomplete episode progress records for UserId={UserId}, SeriesId={SeriesId}. EpisodeIds: {EpisodeIds}",
-                    incompleteRecords.Count, currentUserId.Value, seriesId, 
-                    string.Join(", ", incompleteRecords.Select(ep => ep.EpisodeId)));
-            }
-            
-            // Only count completed episodes
-            var watchedEpisodeIds = allProgress
-                .Where(ep => ep.IsCompleted)
+            // Get ONLY completed episode progress records for this series
+            // Filter at database level to avoid loading incomplete records
+            var watchedEpisodeIds = await _context.EpisodeProgresses
+                .Where(ep => ep.UserId == currentUserId.Value 
+                            && ep.IsCompleted 
+                            && seriesEpisodeIds.Contains(ep.EpisodeId))
                 .Select(ep => ep.EpisodeId)
                 .Distinct()
-                .ToList();
+                .ToListAsync();
             
-            var watchedEpisodes = watchedEpisodeIds.Distinct().Count();
+            var watchedEpisodes = watchedEpisodeIds.Count;
+            
+            // Log any incomplete records for debugging (but don't use them in calculations)
+            var incompleteRecords = await _context.EpisodeProgresses
+                .Where(ep => ep.UserId == currentUserId.Value 
+                            && !ep.IsCompleted 
+                            && seriesEpisodeIds.Contains(ep.EpisodeId))
+                .Select(ep => ep.EpisodeId)
+                .ToListAsync();
+            
+            if (incompleteRecords.Any())
+            {
+                _logger.LogWarning("Found {Count} incomplete episode progress records for UserId={UserId}, SeriesId={SeriesId}. EpisodeIds: {EpisodeIds}. These will be ignored.",
+                    incompleteRecords.Count, currentUserId.Value, seriesId, 
+                    string.Join(", ", incompleteRecords.Distinct()));
+            }
 
             var lastWatched = await _context.EpisodeProgresses
                 .Include(ep => ep.Episode)
@@ -423,21 +451,20 @@ namespace SeriLovers.API.Controllers
                 return Unauthorized(new { message = "Unable to identify current user." });
             }
 
-            var allProgress = await _context.EpisodeProgresses
+            // Filter at database level: Only get IsCompleted=true records
+            // This prevents any IsCompleted=false records from interfering with progress calculations
+            var validProgress = await _context.EpisodeProgresses
                 .Include(ep => ep.User)
                 .Include(ep => ep.Episode)
                     .ThenInclude(e => e.Season)
                         .ThenInclude(s => s.Series)
-                .Where(ep => ep.UserId == currentUserId.Value)
-                .OrderByDescending(ep => ep.WatchedAt)
-                .ToListAsync();
-
-            var validProgress = allProgress
+                .Where(ep => ep.UserId == currentUserId.Value 
+                    && ep.IsCompleted) // Filter at database level
                 .Where(ep => ep.Episode != null 
                     && ep.Episode.Season != null 
-                    && ep.Episode.Season.Series != null
-                    && ep.IsCompleted)
-                .ToList();
+                    && ep.Episode.Season.Series != null)
+                .OrderByDescending(ep => ep.WatchedAt)
+                .ToListAsync();
 
             var result = _mapper.Map<IEnumerable<EpisodeProgressDto>>(validProgress);
             return Ok(result);
@@ -673,6 +700,9 @@ namespace SeriLovers.API.Controllers
             }
 
             var progress = await _context.EpisodeProgresses
+                .Include(ep => ep.Episode)
+                    .ThenInclude(e => e.Season)
+                        .ThenInclude(s => s.Series)
                 .FirstOrDefaultAsync(ep => ep.UserId == currentUserId.Value && ep.EpisodeId == episodeId);
 
             if (progress == null)
@@ -680,8 +710,29 @@ namespace SeriLovers.API.Controllers
                 return NotFound(new { message = "Episode progress not found." });
             }
 
+            var seriesId = progress.Episode?.Season?.SeriesId ?? 0;
+            
+            _logger.LogWarning("Removing EpisodeProgress: EpisodeId={EpisodeId}, UserId={UserId}, SeriesId={SeriesId}, IsCompleted={IsCompleted}. This will update series status.", 
+                episodeId, currentUserId.Value, seriesId, progress.IsCompleted);
+
             _context.EpisodeProgresses.Remove(progress);
             await _context.SaveChangesAsync();
+
+            // Update series watching state after removing progress
+            if (seriesId > 0)
+            {
+                try
+                {
+                    await _seriesWatchingStateService.UpdateStatusAsync(currentUserId.Value, seriesId);
+                    _logger.LogInformation("Updated series watching state after removing progress: UserId={UserId}, SeriesId={SeriesId}", 
+                        currentUserId.Value, seriesId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error updating series watching state after removing progress: UserId={UserId}, SeriesId={SeriesId}", 
+                        currentUserId.Value, seriesId);
+                }
+            }
 
             return Ok(new { message = "Episode progress removed." });
         }

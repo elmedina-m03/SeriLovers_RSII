@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SeriLovers.API.Data;
+using SeriLovers.API.Domain;
 using SeriLovers.API.Events;
 using SeriLovers.API.Interfaces;
 using SeriLovers.API.Models;
@@ -32,6 +33,7 @@ namespace SeriLovers.API.Controllers
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMessageBusService _messageBusService;
         private readonly ChallengeService _challengeService;
+        private readonly ISeriesWatchingStateService _seriesWatchingStateService;
         private readonly ILogger<RatingController> _logger;
 
         public RatingController(
@@ -40,6 +42,7 @@ namespace SeriLovers.API.Controllers
             UserManager<ApplicationUser> userManager,
             IMessageBusService messageBusService,
             ChallengeService challengeService,
+            ISeriesWatchingStateService seriesWatchingStateService,
             ILogger<RatingController> logger)
         {
             _context = context;
@@ -47,6 +50,7 @@ namespace SeriLovers.API.Controllers
             _userManager = userManager;
             _messageBusService = messageBusService;
             _challengeService = challengeService;
+            _seriesWatchingStateService = seriesWatchingStateService;
             _logger = logger;
         }
 
@@ -75,14 +79,22 @@ namespace SeriLovers.API.Controllers
                 return;
             }
 
-            // Filter out test/dummy user ratings - only use real user reviews for calculation
+            // Filter ratings - include mobile and desktop users (seminar test users), exclude other test users
+            // This ensures seminar test users' ratings are included in the average calculation
             var realRatings = series.Ratings?
                 .Where(r => r.User != null
-                    && r.User.Email != null
-                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                    && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    && (
+                        // Include mobile and desktop users (seminar test users) - check username first
+                        (r.User.UserName != null && (r.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                            || r.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                        ||
+                        // Include other users that don't match test patterns
+                        (r.User.Email != null
+                            && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                            && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                    ))
                 .ToList() ?? new List<Rating>();
 
             if (realRatings.Any())
@@ -287,6 +299,20 @@ namespace SeriLovers.API.Controllers
 
                 await _context.SaveChangesAsync();
 
+                // CRITICAL: Ensure series status is set to Finished when review is updated
+                // This prevents finished series from reverting to InProgress
+                try
+                {
+                    await _seriesWatchingStateService.UpdateStatusAsync(currentUserId.Value, ratingDto.SeriesId);
+                    _logger.LogInformation("Updated series watching state to Finished for UserId={UserId}, SeriesId={SeriesId} after review update",
+                        currentUserId.Value, ratingDto.SeriesId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error updating series watching state after review update for UserId={UserId}, SeriesId={SeriesId}",
+                        currentUserId.Value, ratingDto.SeriesId);
+                }
+
                 // Recalculate series average rating
                 await RecalculateSeriesAverageRating(ratingDto.SeriesId);
 
@@ -313,6 +339,20 @@ namespace SeriLovers.API.Controllers
 
             _context.Ratings.Add(rating);
             await _context.SaveChangesAsync();
+
+            // CRITICAL: Ensure series status is set to Finished when review is created
+            // This prevents finished series from reverting to InProgress
+            try
+            {
+                await _seriesWatchingStateService.UpdateStatusAsync(currentUserId.Value, ratingDto.SeriesId);
+                _logger.LogInformation("Updated series watching state to Finished for UserId={UserId}, SeriesId={SeriesId} after review creation",
+                    currentUserId.Value, ratingDto.SeriesId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error updating series watching state after review creation for UserId={UserId}, SeriesId={SeriesId}",
+                    currentUserId.Value, ratingDto.SeriesId);
+            }
 
             // Recalculate series average rating
             await RecalculateSeriesAverageRating(ratingDto.SeriesId);

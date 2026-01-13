@@ -44,19 +44,9 @@ namespace SeriLovers.API.Services
                 var totalSeries = await _context.Series.CountAsync();
                 var totalActors = await _context.Actors.CountAsync();
                 
-                // Count watchlist items, filtering out test users (only real user data)
-                var allWatchlistsForCount = await _context.Watchlists
-                    .Include(w => w.User)
-                    .ToListAsync();
-                
-                var totalWatchlistItems = allWatchlistsForCount
-                    .Where(w => w.User != null
-                        && w.User.Email != null
-                        && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                        && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                        && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                        && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
-                    .Count();
+                // Count ALL watchlist items (including test users like mobile/desktop for seminar testing)
+                var totalWatchlistItems = await _context.Watchlists
+                    .CountAsync();
 
                 result.Totals = new TotalsDto
                 {
@@ -83,23 +73,38 @@ namespace SeriLovers.API.Services
                         .Include(w => w.User)
                         .ToListAsync();
                     
-                    // Filter out test/dummy users (same filtering as reviews endpoint)
+                    // Include ALL ratings and watchlists (including test users like mobile/desktop for seminar testing)
+                    // Filter only excludes testuser1-4, but includes mobile and desktop users
                     var realRatings = allRatings
                         .Where(r => r.User != null
-                            && r.User.Email != null
-                            && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                            && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                            && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                            && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                            && (
+                                // Include mobile and desktop users (seminar test users) - check username first
+                                (r.User.UserName != null && (r.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                                    || r.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                                ||
+                                // Include other users that don't match test patterns
+                                (r.User.Email != null
+                                    && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                                    && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                                    && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                                    && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                            ))
                         .ToList();
                     
                     var realWatchlists = allWatchlists
                         .Where(w => w.User != null
-                            && w.User.Email != null
-                            && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
-                            && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
-                            && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
-                            && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                            && (
+                                // Include mobile and desktop users (seminar test users) - check username first
+                                (w.User.UserName != null && (w.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                                    || w.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                                ||
+                                // Include other users that don't match test patterns
+                                (w.User.Email != null
+                                    && !w.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                                    && !w.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                                    && !w.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                                    && !w.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                            ))
                         .ToList();
                     
                     // Group by series and calculate views (real ratings + real watchlists)
@@ -111,35 +116,70 @@ namespace SeriLovers.API.Services
                         .GroupBy(w => w.SeriesId)
                         .ToDictionary(g => g.Key, g => g.Count());
                     
-                    var seriesRatings = realRatings
-                        .GroupBy(r => r.SeriesId)
-                        .ToDictionary(g => g.Key, g => g.Average(r => r.Score));
-                    
                     // Get all series IDs that have ratings or watchlists (materialize to avoid EF Core translation issues)
                     var seriesIdsWithActivity = seriesViews.Keys
                         .Union(seriesWatchlistCounts.Keys)
                         .Distinct()
                         .ToList();
                     
-                    // Get all series and calculate TopSeries with real data
-                    var allSeries = await _context.Series
-                        .Where(s => seriesIdsWithActivity.Contains(s.Id))
-                        .ToListAsync();
-                    
-                    result.TopSeries = allSeries
-                        .Select(s => new TopSeriesDto
+                    if (seriesIdsWithActivity.Any())
+                    {
+                        // Calculate average ratings for each series from ALL ratings in database
+                        // This ensures we show correct ratings from all users, not just filtered ones
+                        // Use direct query to Ratings table to ensure we get all ratings
+                        var seriesRatingsFromDb = await _context.Ratings
+                            .Where(r => seriesIdsWithActivity.Contains(r.SeriesId))
+                            .GroupBy(r => r.SeriesId)
+                            .Select(g => new
+                            {
+                                SeriesId = g.Key,
+                                // Calculate average from ALL ratings in database for this series
+                                // This includes ratings from all users (mobile, desktop, test users, etc.)
+                                AvgRating = g.Average(r => r.Score)
+                            })
+                            .ToListAsync();
+                        
+                        var seriesRatingsDict = seriesRatingsFromDb
+                            .ToDictionary(s => s.SeriesId, s => s.AvgRating);
+                        
+                        _logger.LogDebug("Calculated average ratings for {Count} series from database", seriesRatingsDict.Count);
+                        foreach (var kvp in seriesRatingsDict.Take(5))
                         {
-                            Id = s.Id,
-                            Title = s.Title ?? "Unknown",
-                            AvgRating = seriesRatings.ContainsKey(s.Id) ? seriesRatings[s.Id] : 0.0,
-                            Views = (seriesViews.ContainsKey(s.Id) ? seriesViews[s.Id] : 0) + 
-                                    (seriesWatchlistCounts.ContainsKey(s.Id) ? seriesWatchlistCounts[s.Id] : 0),
-                            ImageUrl = s.ImageUrl
-                        })
-                        .OrderByDescending(s => s.AvgRating)
-                        .ThenByDescending(s => s.Views)
-                        .Take(5)
-                        .ToList();
+                            _logger.LogDebug("Series {SeriesId}: AvgRating = {AvgRating}", kvp.Key, kvp.Value);
+                        }
+                        
+                        // Get all series and calculate TopSeries with real data
+                        var allSeries = await _context.Series
+                            .Where(s => seriesIdsWithActivity.Contains(s.Id))
+                            .ToListAsync();
+                        
+                        result.TopSeries = allSeries
+                            .Select(s => new TopSeriesDto
+                            {
+                                Id = s.Id,
+                                Title = s.Title ?? "Unknown",
+                                // Use average from ALL ratings in database for this series
+                                AvgRating = seriesRatingsDict.ContainsKey(s.Id) ? seriesRatingsDict[s.Id] : 0.0,
+                                Views = (seriesViews.ContainsKey(s.Id) ? seriesViews[s.Id] : 0) + 
+                                        (seriesWatchlistCounts.ContainsKey(s.Id) ? seriesWatchlistCounts[s.Id] : 0),
+                                ImageUrl = s.ImageUrl
+                            })
+                            .OrderByDescending(s => s.AvgRating)
+                            .ThenByDescending(s => s.Views)
+                            .Take(5)
+                            .ToList();
+                        
+                        _logger.LogDebug("Top series calculated: {Count} series with ratings", result.TopSeries.Count);
+                        foreach (var topSeries in result.TopSeries)
+                        {
+                            _logger.LogDebug("Top Series: {Title} - AvgRating: {AvgRating}, Views: {Views}", 
+                                topSeries.Title, topSeries.AvgRating, topSeries.Views);
+                        }
+                    }
+                    else
+                    {
+                        result.TopSeries = new List<TopSeriesDto>();
+                    }
                 }
                 // Fallback: empty list if no series
 

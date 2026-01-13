@@ -11,9 +11,13 @@ services:
       JwtSettings__Issuer: "SeriLovers.API"
       JwtSettings__Audience: "SeriLovers.API"
       RabbitMq__Connection: "host=rabbitmq;username=guest;password=guest"
+    volumes:
+      - serilovers-uploads:/app/wwwroot/uploads
     depends_on:
-      - serilovers.db
-      - rabbitmq
+      serilovers.db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
   serilovers.db:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -25,6 +29,12 @@ services:
       - "1433:1433"
     volumes:
       - serilovers-data:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourStrong!Pass -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
 
   serilovers.worker:
     build:
@@ -36,8 +46,10 @@ services:
       ConnectionStrings__DefaultConnection: "Server=serilovers.db;Database=IB220036;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;"
       RabbitMq__Connection: "host=rabbitmq;username=guest;password=guest"
     depends_on:
-      - serilovers.db
-      - rabbitmq
+      serilovers.db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -54,3 +66,4 @@ services:
 volumes:
   serilovers-data:
   rabbitmq-data:
+  serilovers-uploads:

@@ -7,26 +7,39 @@ SeriLovers je platforma za otkrivanje i upravljanje TV serijama.
 - ASP.NET Core Web API (.NET 8)
 - Flutter (Mobile & Desktop)
 - SQL Server
-- RabbitMQ
+- RabbitMQ (EasyNetQ)
 - Docker & Docker Compose
 
 ## Pokretanje aplikacije
 
 ### Preko Docker-a (Preporučeno)
 
-1. Navigirajte do `SeriLovers.API` direktorijuma
-2. Pokrenite servise:
+1. Navigirajte do `SeriLovers.API` direktorijuma:
+   ```bash
+   cd SeriLovers.API
+   ```
+
+2. Pokrenite sve servise:
    ```bash
    docker-compose up -d --build
    ```
-3. Pokrenite migracije:
+
+3. Sačekajte da se svi servisi pokrenu (oko 30-60 sekundi). Migracije se primenjuju automatski prilikom pokretanja API servisa.
+
+4. Proverite status servisa:
    ```bash
-   docker exec -it serilovers.api dotnet ef database update
+   docker-compose ps
    ```
 
 Aplikacija će biti dostupna na:
 - **API Swagger:** http://localhost:5149/swagger
 - **RabbitMQ Management:** http://localhost:15672 (guest/guest)
+- **SQL Server:** localhost:1433 (sa/YourStrong!Pass)
+
+**Napomena:** Prilikom prvog pokretanja, migracije se primenjuju automatski. Ako dođe do greške, sačekajte nekoliko sekundi i pokrenite ponovo:
+```bash
+docker-compose restart serilovers.api
+```
 
 ### Bez Docker-a
 
@@ -37,31 +50,56 @@ Aplikacija će biti dostupna na:
    dotnet run
    ```
 
-2. **Flutter:**
+2. **Flutter Desktop:**
    ```bash
    cd serilovers_frontend
    flutter pub get
-   # Kopirajte env.template u .env i ažurirajte API_BASE_URL
-   flutter run
+   # Kopirajte env.template u .env i ažurirajte API_BASE_URL na localhost
+   flutter run -d windows
    ```
 
-## Test korisnički podaci
+3. **Flutter Mobile:**
+   ```bash
+   cd serilovers_frontend
+   flutter pub get
+   # Kopirajte env.template u .env i ažurirajte API_BASE_URL na 10.0.2.2 (za Android emulator)
+   flutter run -d android
+   ```
 
-### Admin
-- **Email/Korisničko ime:** `admin@test.com`
-- **Lozinka:** `Admin123!`
+## Korisnički podaci za pristup aplikaciji
 
-### User
-- **Email/Korisničko ime:** `user1@test.com`
-- **Lozinka:** `User123!`
+**Obavezno:** Koristite sledeće podatke za pristup aplikaciji seminarskog rada:
+
+### Desktop verzija
+- **Korisničko ime:** `desktop`
+- **Lozinka:** `test`
+
+### Mobilna verzija
+- **Korisničko ime:** `mobile`
+- **Lozinka:** `test`
 
 ## Docker servisi
 
 Docker Compose pokreće 4 servisa:
-- **serilovers.api** - Glavni REST API (port 5149)
-- **serilovers.worker** - Pomoćni servis za obradu RabbitMQ poruka
-- **serilovers.db** - SQL Server baza podataka (port 1433, baza: IB220036)
-- **rabbitmq** - Message broker (portovi 5672, 15672)
+
+- **serilovers.api** - Glavni REST API servis (port 5149)
+  - Automatski primenjuje migracije prilikom pokretanja
+  - Seeding podataka se izvršava automatski
+  
+- **serilovers.worker** - Pomoćni mikroservis za obradu RabbitMQ poruka
+  - Prima poruke sa RabbitMQ
+  - Izvršava asinhrone zadatke (slanje emaila, logiranje, notifikacije)
+  
+- **serilovers.db** - SQL Server baza podataka
+  - Port: 1433
+  - Baza: IB220036
+  - Korisničko ime: sa
+  - Lozinka: YourStrong!Pass
+  
+- **rabbitmq** - Message broker
+  - Portovi: 5672 (AMQP), 15672 (Management UI)
+  - Korisničko ime: guest
+  - Lozinka: guest
 
 ## Sistem preporuke
 

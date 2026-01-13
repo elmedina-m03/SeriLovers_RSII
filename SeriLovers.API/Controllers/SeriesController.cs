@@ -39,7 +39,7 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(
             Summary = "List series",
             Description = "Retrieves a paginated list of series with optional filtering by genre ID or name, rating, and keyword.")]
-        public IActionResult GetAll(
+        public async Task<IActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] int? genreId = null,
@@ -61,7 +61,7 @@ namespace SeriLovers.API.Controllers
                 }
             }
 
-            var pagedSeries = _seriesService.GetAll(page, pageSize, genreId, minRating, search, year, sortBy, sortOrder);
+            var pagedSeries = await _seriesService.GetAllAsync(page, pageSize, genreId, minRating, search, year, sortBy, sortOrder);
             var items = _mapper.Map<IEnumerable<SeriesDto>>(pagedSeries.Items);
 
             var response = new PagedResponseDto<SeriesDto>
@@ -80,9 +80,9 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(
             Summary = "Get series detail",
             Description = "Returns full details for a single series, including seasons, ratings, actors, and genres.")]
-        public IActionResult GetById(int id)
+        public async Task<IActionResult> GetById(int id)
         {
-            var series = _seriesService.GetById(id);
+            var series = await _seriesService.GetByIdAsync(id);
             if (series == null)
                 return NotFound();
             var result = _mapper.Map<SeriesDetailDto>(series);
@@ -93,9 +93,9 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(
             Summary = "Search series",
             Description = "Performs a keyword search against series titles and descriptions.")]
-        public IActionResult Search([FromQuery] string keyword)
+        public async Task<IActionResult> Search([FromQuery] string keyword)
         {
-            var series = _seriesService.Search(keyword);
+            var series = await _seriesService.SearchAsync(keyword);
             var result = _mapper.Map<IEnumerable<SeriesDto>>(series);
             return Ok(result);
         }
@@ -185,7 +185,7 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(
             Summary = "Create a series",
             Description = "Admin only. Adds a new series to the catalogue.")]
-        public IActionResult Add([FromBody] SeriesUpsertDto seriesDto)
+        public async Task<IActionResult> Add([FromBody] SeriesUpsertDto seriesDto)
         {
             if (!ModelState.IsValid)
             {
@@ -205,7 +205,7 @@ namespace SeriLovers.API.Controllers
             var series = _mapper.Map<Series>(seriesDto);
             _seriesService.Add(series);
 
-            var created = _seriesService.GetById(series.Id);
+            var created = await _seriesService.GetByIdAsync(series.Id);
             var result = _mapper.Map<SeriesDetailDto>(created);
 
             return CreatedAtAction(nameof(GetById), new { id = series.Id }, result);
@@ -216,14 +216,14 @@ namespace SeriLovers.API.Controllers
         [SwaggerOperation(
             Summary = "Update series",
             Description = "Admin only. Updates an existing series.")]
-        public IActionResult Update(int id, [FromBody] SeriesUpsertDto seriesDto)
+        public async Task<IActionResult> Update(int id, [FromBody] SeriesUpsertDto seriesDto)
         {
             if (!ModelState.IsValid)
             {
                 return ValidationProblem(ModelState);
             }
 
-            var existing = _seriesService.GetById(id);
+            var existing = await _seriesService.GetByIdAsync(id);
             if (existing == null)
             {
                 return NotFound();
@@ -244,7 +244,7 @@ namespace SeriLovers.API.Controllers
 
             _seriesService.Update(series);
 
-            var updated = _seriesService.GetById(id);
+            var updated = await _seriesService.GetByIdAsync(id);
             var result = _mapper.Map<SeriesDetailDto>(updated);
 
             return Ok(result);

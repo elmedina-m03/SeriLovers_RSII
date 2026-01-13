@@ -28,12 +28,50 @@ class AdminSidebar extends StatelessWidget {
     
     try {
       final decodedToken = JwtDecoder.decode(token);
-      final email = decodedToken['email'] as String? ?? decodedToken['sub'] as String? ?? 'Unknown';
-      final role = decodedToken['role'] as String? ?? 
-                   (decodedToken['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] as String?) ?? 
-                   'User';
+      
+      // Get user display name - try multiple claim names
+      // Priority: name (username) > email > sub (user ID)
+      String? displayName = decodedToken['name'] as String?;
+      if (displayName == null || displayName.isEmpty) {
+        displayName = decodedToken['email'] as String?;
+      }
+      if (displayName == null || displayName.isEmpty) {
+        // Try sub (user ID) as last resort
+        final sub = decodedToken['sub'] as String?;
+        if (sub != null) {
+          displayName = 'User $sub';
+        }
+      }
+      displayName ??= 'Unknown';
+      
+      // Get role - handle both string and list
+      String role = 'User';
+      dynamic roleClaim = decodedToken['role'];
+      if (roleClaim is String) {
+        role = roleClaim;
+      } else if (roleClaim is List && roleClaim.isNotEmpty) {
+        // Get first role or Admin if available
+        if (roleClaim.contains('Admin')) {
+          role = 'Admin';
+        } else {
+          role = roleClaim[0].toString();
+        }
+      } else {
+        // Try alternative claim name
+        final altRoleClaim = decodedToken['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'];
+        if (altRoleClaim is String) {
+          role = altRoleClaim;
+        } else if (altRoleClaim is List && altRoleClaim.isNotEmpty) {
+          if (altRoleClaim.contains('Admin')) {
+            role = 'Admin';
+          } else {
+            role = altRoleClaim[0].toString();
+          }
+        }
+      }
+      
       final avatarUrl = decodedToken['avatarUrl'] as String?;
-      return {'email': email, 'role': role, 'avatarUrl': avatarUrl};
+      return {'email': displayName, 'role': role, 'avatarUrl': avatarUrl};
     } catch (e) {
       return {'email': 'Unknown', 'role': 'Unknown', 'avatarUrl': null};
     }

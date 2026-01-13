@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
@@ -7,6 +8,7 @@ import '../../core/widgets/admin_data_table_config.dart';
 import '../../providers/admin_user_provider.dart';
 import '../../models/user.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 
 /// Admin users management screen with DataTable
 class AdminUsersScreen extends StatefulWidget {
@@ -37,6 +39,18 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
     // Fetch users when screen loads
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadUsers();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Refresh users list when navigating back to this screen
+    // This ensures new registrations from mobile app are visible
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadUsers();
+      }
     });
   }
 
@@ -140,14 +154,87 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> {
         await _loadUsers();
       } catch (e) {
         if (mounted) {
+          final errorMessage = _getFriendlyErrorMessage(e);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error deleting user: $e'),
+              content: Text(errorMessage),
               backgroundColor: AppColors.dangerColor,
+              duration: const Duration(seconds: 5),
             ),
           );
         }
       }
+    }
+  }
+
+  /// Extracts a user-friendly error message from an exception
+  String _getFriendlyErrorMessage(dynamic error) {
+    try {
+      // Check if it's an ApiException
+      if (error is ApiException) {
+        final message = error.message;
+        
+        // Try to parse JSON message from API response
+        if (message.contains('{') && message.contains('}')) {
+          try {
+            // Extract JSON part from "Request failed: {...}"
+            final jsonStart = message.indexOf('{');
+            final jsonEnd = message.lastIndexOf('}') + 1;
+            if (jsonStart >= 0 && jsonEnd > jsonStart) {
+              final jsonStr = message.substring(jsonStart, jsonEnd);
+              final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
+              
+              // Extract message field from JSON
+              if (jsonData.containsKey('message')) {
+                final apiMessage = jsonData['message'] as String;
+                
+                // Map common API error messages to user-friendly messages
+                if (apiMessage.contains('cannot delete your own account') || 
+                    apiMessage.contains('You cannot delete your own account')) {
+                  return 'You cannot delete your own account.';
+                }
+                if (apiMessage.contains('Cannot delete an Admin user') || 
+                    apiMessage.contains('cannot delete an Admin')) {
+                  return 'Cannot delete an Admin user.';
+                }
+                if (apiMessage.contains('Cannot delete a Desktop user') || 
+                    apiMessage.contains('cannot delete a Desktop')) {
+                  return 'Cannot delete a Desktop user.';
+                }
+                if (apiMessage.contains('not found')) {
+                  return 'User not found.';
+                }
+                
+                // Return the API message as-is if no mapping found
+                return apiMessage;
+              }
+            }
+          } catch (e) {
+            // If JSON parsing fails, fall through to default handling
+          }
+        }
+        
+        // If no JSON found, try to extract meaningful message
+        if (message.contains('cannot delete')) {
+          return 'This user cannot be deleted.';
+        }
+        if (message.contains('not found')) {
+          return 'User not found.';
+        }
+      }
+      
+      // For other exceptions, return a generic message
+      final errorStr = error.toString();
+      if (errorStr.contains('cannot delete')) {
+        return 'This user cannot be deleted.';
+      }
+      if (errorStr.contains('not found')) {
+        return 'User not found.';
+      }
+      
+      return 'Failed to delete user. Please try again.';
+    } catch (e) {
+      return 'An error occurred while deleting the user.';
     }
   }
 

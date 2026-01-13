@@ -1,0 +1,35 @@
+# Build outputs (keep organized folders for submission)
+serilovers_frontend/build/
+!folder-mobilne-app/
+!folder-desktop-app/
+
+# Environment files
+.env
+*.env
+!env.template
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# Build scripts (optional - can be committed)
+# build-and-prepare.ps1
+# finalize-submission.ps1
+

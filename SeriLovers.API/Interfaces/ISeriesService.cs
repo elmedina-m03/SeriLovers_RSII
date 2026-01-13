@@ -7,8 +7,10 @@ namespace SeriLovers.API.Interfaces
 {
     public interface ISeriesService
     {
+        Task<PagedResult<Series>> GetAllAsync(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null, int? year = null, string? sortBy = null, string? sortOrder = null);
         PagedResult<Series> GetAll(int page = 1, int pageSize = 10, int? genreId = null, double? minRating = null, string? search = null, int? year = null, string? sortBy = null, string? sortOrder = null);
-        Series? GetById(int id);
+        Task<Series?> GetByIdAsync(int id);
+        Task<List<Series>> SearchAsync(string keyword);
         List<Series> Search(string keyword);
         void Add(Series series);
         void Update(Series series);
