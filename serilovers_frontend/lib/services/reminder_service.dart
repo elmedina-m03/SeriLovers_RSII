@@ -28,7 +28,6 @@ class ReminderService {
         token: token,
       );
 
-      // Note: Backend will handle tracking episode counts
       // Frontend notification service is still used for local notifications
       // when backend sends notification triggers (to be implemented)
     } catch (e) {

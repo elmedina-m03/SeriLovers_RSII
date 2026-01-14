@@ -24,7 +24,7 @@ class AuthProvider extends ChangeNotifier {
   /// 
   /// [authService] - Service for authentication operations
   /// 
-  /// Note: Call [initialize] after construction to load the stored token,
+  /// Call [initialize] after construction to load the stored token,
   /// or use [create] factory method for automatic initialization
   AuthProvider({required AuthService authService}) : _authService = authService;
 
@@ -45,7 +45,6 @@ class AuthProvider extends ChangeNotifier {
   Future<void> initialize() async {
     token = await _authService.getToken();
     isAuthenticated = token != null && token!.isNotEmpty;
-    // Note: we don't attempt to decode the token here to populate [currentUser].
     // User-specific fields will be populated from backend responses (e.g. profile update).
     notifyListeners();
   }
@@ -69,7 +68,6 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      // Login failed, ensure state is cleared
       token = null;
       isAuthenticated = false;
       notifyListeners();
@@ -94,7 +92,6 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      // Login failed, ensure state is cleared
       token = null;
       isAuthenticated = false;
       notifyListeners();
@@ -109,13 +106,12 @@ class AuthProvider extends ChangeNotifier {
   /// [confirmPassword] - Password confirmation
   /// 
   /// Returns true if registration successful, false otherwise
-  /// Note: Registration doesn't automatically log in the user
+  /// Registration doesn't automatically log in the user
   Future<bool> register(String email, String password, String confirmPassword) async {
     try {
       await _authService.register(email, password, confirmPassword);
       return true;
     } catch (e) {
-      print('Registration failed: $e');
       return false;
     }
   }
@@ -155,19 +151,12 @@ class AuthProvider extends ChangeNotifier {
       
       // Check if response contains a new token and save it
       if (response is Map<String, dynamic>) {
-        print('📥 Profile update response: $response');
-        
         // Cache updated user info FIRST if backend returns it
         // This is the single source of truth for name/email/avatar after updates.
         final userData = response['user'];
         if (userData is Map<String, dynamic>) {
-          print('✅ User data in response: $userData');
-          print('✅ Name in response: ${userData['name']}');
           currentUser = Map<String, dynamic>.from(userData);
-          print('✅ Updated currentUser: $currentUser');
-          print('✅ currentUser name: ${currentUser?['name']}');
         } else {
-          print('⚠️ No user data in response, will try token decode');
         }
 
         // Try multiple possible token field names
@@ -192,9 +181,7 @@ class AuthProvider extends ChangeNotifier {
                 'name': decoded['name'] ?? '',
                 'avatarUrl': decoded['avatarUrl'],
               };
-              print('✅ Decoded user from token: $currentUser');
             } catch (e) {
-              print('❌ Token decode failed: $e');
             }
           }
         } else {
@@ -202,8 +189,6 @@ class AuthProvider extends ChangeNotifier {
           token = await _authService.getToken();
           isAuthenticated = token != null && token!.isNotEmpty;
         }
-        
-        print('🔄 Notifying listeners with currentUser: $currentUser');
         // Force notify listeners to update all UI components
         notifyListeners();
         return true;
@@ -213,7 +198,6 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       // Update failed - don't notify listeners to avoid showing stale data
-      print('❌ Error updating user: $e');
       rethrow;
     }
   }

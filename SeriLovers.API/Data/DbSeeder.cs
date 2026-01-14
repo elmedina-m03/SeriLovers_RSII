@@ -1843,10 +1843,6 @@ namespace SeriLovers.API.Data
             }
         }
 
-        /// <summary>
-        /// [REMOVED] Ratings should only be created via real user actions.
-        /// This method is kept for reference but no longer called.
-        /// </summary>
         [Obsolete("Ratings should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedTestRatingsAsync(ApplicationDbContext context)
         {
@@ -1874,10 +1870,6 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
-        /// <summary>
-        /// [REMOVED] Watchlists should only be created via real user actions.
-        /// This method is kept for reference but no longer called.
-        /// </summary>
         [Obsolete("Watchlists should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedTestWatchlistsAsync(ApplicationDbContext context)
         {
@@ -1905,10 +1897,6 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
-        /// <summary>
-        /// [REMOVED] Episode reviews should only be created via real user actions.
-        /// This method is kept for reference but no longer called.
-        /// </summary>
         [Obsolete("Episode reviews should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedEpisodeReviewsAsync(ApplicationDbContext context)
         {
@@ -2037,10 +2025,6 @@ namespace SeriLovers.API.Data
             }
         }
 
-        /// <summary>
-        /// [REMOVED] Ratings should only be created via real user actions.
-        /// This method is kept for reference but no longer called.
-        /// </summary>
         [Obsolete("Ratings should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedRatingsAndWatchlistsAsync(ApplicationDbContext context)
         {
@@ -2111,10 +2095,6 @@ namespace SeriLovers.API.Data
             await context.SaveChangesAsync();
         }
 
-        /// <summary>
-        /// [REMOVED] Viewing events should only be created via real user actions.
-        /// This method is kept for reference but no longer called.
-        /// </summary>
         [Obsolete("Viewing events should only be created via real user actions. This method is no longer used.")]
         private static async Task SeedViewingEventsAsync(ApplicationDbContext context)
         {
@@ -2517,7 +2497,6 @@ namespace SeriLovers.API.Data
                 return; // No users to seed activity for
             }
 
-            // Note: We don't check for existing activity here because we check individually
             // for each episode/rating within the loops to avoid duplicates
 
             // Get all series with episodes

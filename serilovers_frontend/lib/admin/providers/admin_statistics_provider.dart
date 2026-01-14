@@ -65,12 +65,7 @@ class AdminStatisticsProvider extends ChangeNotifier {
       if (token == null || token.isEmpty) {
         throw Exception('No authentication token available');
       }
-
-      print('📡 AdminStatisticsProvider: Fetching statistics from /Admin/Statistics');
       final json = await _apiService.get('/Admin/Statistics', token: token);
-      print('📥 AdminStatisticsProvider: Received response: ${json.runtimeType}');
-      print('📥 AdminStatisticsProvider: Response data: $json');
-
       if (json == null) {
         throw Exception('Response is null');
       }
@@ -81,14 +76,7 @@ class AdminStatisticsProvider extends ChangeNotifier {
 
       stats = AdminStatistics.fromJson(json);
       error = null;
-      print('✅ AdminStatisticsProvider: Statistics loaded successfully');
-      print('   Totals - Users: ${stats?.totals.users}, Series: ${stats?.totals.series}, Actors: ${stats?.totals.actors}, WatchlistItems: ${stats?.totals.watchlistItems}');
-      print('   GenreDistribution: ${stats?.genreDistribution.length} items');
-      print('   MonthlyWatching: ${stats?.monthlyWatching.length} items');
-      print('   TopSeries: ${stats?.topSeries.length} items');
     } catch (e, stackTrace) {
-      print('❌ AdminStatisticsProvider: Error fetching statistics: $e');
-      print('Stack trace: $stackTrace');
       error = e.toString();
       stats = null;
     } finally {
@@ -101,7 +89,6 @@ class AdminStatisticsProvider extends ChangeNotifier {
   /// 
   /// Convenience method that calls fetchStats()
   Future<void> refresh() async {
-    print('🔄 AdminStatisticsProvider: Refreshing statistics...');
     await fetchStats();
   }
 

@@ -130,7 +130,6 @@ class _ChallengeFormDialogState extends State<ChallengeFormDialog> {
         Navigator.of(context).pop(true); // Return true to indicate success
       }
     } catch (e) {
-      print('Error saving challenge: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

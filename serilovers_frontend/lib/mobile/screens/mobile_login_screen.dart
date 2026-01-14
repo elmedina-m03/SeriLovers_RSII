@@ -97,7 +97,6 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                 // Spacer for top padding
                 SizedBox(height: MediaQuery.of(context).size.height * 0.1),
                 
-                // Logo Placeholder
                 Center(
                   child: Container(
                     width: 120,
@@ -256,7 +255,6 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
                 
                 const SizedBox(height: AppDim.paddingLarge),
                 
-                // Login Button
                 ElevatedButton(
                   onPressed: _isLoading ? null : _handleLogin,
                   style: ElevatedButton.styleFrom(

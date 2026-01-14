@@ -113,7 +113,6 @@ class _MobileRegisterScreenState extends State<MobileRegisterScreen> {
                 // Spacer for top padding
                 SizedBox(height: MediaQuery.of(context).size.height * 0.05),
                 
-                // Logo Placeholder
                 Center(
                   child: Container(
                     width: 120,
@@ -370,7 +369,6 @@ class _MobileRegisterScreenState extends State<MobileRegisterScreen> {
                 
                 const SizedBox(height: AppDim.paddingMedium),
                 
-                // Login Text Button
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context);

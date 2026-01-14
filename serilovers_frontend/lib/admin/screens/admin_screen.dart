@@ -29,7 +29,6 @@ class AdminScreenState extends State<AdminScreen> {
 
   void _handleMenuItemSelected(int index) {
     if (index == 7) {
-      // Logout (index 7)
       _handleLogout();
     } else {
       setState(() {
@@ -70,7 +69,6 @@ class AdminScreenState extends State<AdminScreen> {
       case 6:
         return const AdminReviewsScreen();
       case 7:
-        // Logout - should not show content, handled by callback
         return AdminHomeScreen(
           onNavigateToScreen: navigateToScreen,
         );
@@ -195,7 +193,6 @@ class AdminScreenState extends State<AdminScreen> {
             // Left side: Logo + Sidebar
             Column(
               children: [
-                // Logo in absolute top-left corner
                 Container(
                   width: AppDim.sidebarWidth,
                   height: 80,

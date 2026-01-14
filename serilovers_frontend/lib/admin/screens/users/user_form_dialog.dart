@@ -85,7 +85,6 @@ class _UserFormDialogState extends State<UserFormDialog> {
 
       if (widget.user == null) {
         // Create new user
-        print('🔄 UserFormDialog: Creating new user...');
         await adminUserProvider.createUser(
           email: _emailController.text.trim(),
           password: _passwordController.text,
@@ -106,11 +105,6 @@ class _UserFormDialogState extends State<UserFormDialog> {
         }
       } else {
         // Update existing user
-        print('🔄 UserFormDialog: Saving user changes...');
-        print('User ID: ${widget.user!.id}');
-        print('New Role: $_selectedRole');
-        print('New Active Status: $_isActive');
-
         await adminUserProvider.updateUser(
           widget.user!.id,
           role: _selectedRole,
@@ -128,7 +122,6 @@ class _UserFormDialogState extends State<UserFormDialog> {
         }
       }
     } catch (e) {
-      print('❌ UserFormDialog: Error saving user: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

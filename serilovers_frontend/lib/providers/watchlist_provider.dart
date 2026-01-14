@@ -157,15 +157,12 @@ class WatchlistProvider extends ChangeNotifier {
     if (favoritesLists.length > 1) {
       // Keep the first one (oldest or first in list)
       final keepList = favoritesLists.first;
-      
-      // Delete all others
       for (var duplicate in favoritesLists.skip(1)) {
         try {
           await service!.deleteWatchlistCollection(duplicate.id, token: token);
           lists.removeWhere((list) => list.id == duplicate.id);
         } catch (e) {
-          // Log error but continue with other deletions
-          print('Error deleting duplicate Favorites folder: $e');
+          // Continue with other deletions
         }
       }
       
@@ -956,8 +953,6 @@ class WatchlistProvider extends ChangeNotifier {
     
     try {
       await _apiService!.delete('/Watchlist/$seriesId', token: token);
-      
-      // Remove from local list immediately
       items.removeWhere((series) => series.id == seriesId);
       notifyListeners();
       

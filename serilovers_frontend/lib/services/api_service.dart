@@ -41,14 +41,12 @@ class ApiService {
     if (trimmedUrl.startsWith('file://')) {
       // Extract the path from file:// URL
       var path = trimmedUrl.replaceFirst('file://', '');
-      // Remove leading slashes if present (file:///uploads -> /uploads)
       if (path.startsWith('//')) {
         path = path.substring(1);
       }
       
       // Convert to HTTP URL using base URL
       if (baseUrl.isNotEmpty) {
-        // Remove /api from the end of base URL if present
         if (baseUrl.endsWith('/api')) {
           baseUrl = baseUrl.substring(0, baseUrl.length - 4);
         } else if (baseUrl.endsWith('/api/')) {
@@ -71,7 +69,6 @@ class ApiService {
     // If it's a relative path (starts with /), prepend base URL
     else if (trimmedUrl.startsWith('/')) {
       if (baseUrl.isNotEmpty) {
-        // Remove /api from the end of base URL if present
         if (baseUrl.endsWith('/api')) {
           baseUrl = baseUrl.substring(0, baseUrl.length - 4);
         } else if (baseUrl.endsWith('/api/')) {
@@ -128,20 +125,11 @@ class ApiService {
   Future<dynamic> get(String path, {String? token}) async {
     final fullUrl = '$baseUrl$path';
     final uri = Uri.parse(fullUrl);
-    print('📡 API GET Request:');
-    print('   Base URL: $baseUrl');
-    print('   Path: $path');
-    print('   Full URL: $fullUrl');
-    print('   Has Token: ${token != null && token.isNotEmpty}');
-    
     final response = await http.get(
       uri,
       headers: _buildHeaders(token: token),
     );
-
-    print('📥 API Response Status: ${response.statusCode}');
     if (response.statusCode != 200) {
-      print('   Response Body: ${response.body}');
     }
 
     return _handleResponse(response);
@@ -155,25 +143,11 @@ class ApiService {
   Future<dynamic> post(String path, Map<String, dynamic> body, {String? token}) async {
     final fullUrl = '$baseUrl$path';
     final uri = Uri.parse(fullUrl);
-    print('📤 API POST Request:');
-    print('   Base URL: $baseUrl');
-    print('   Path: $path');
-    print('   Full URL: $fullUrl');
-    print('   Body: ${jsonEncode(body)}');
-    print('   Has Token: ${token != null && token.isNotEmpty}');
-    
     final response = await http.post(
       uri,
       headers: _buildHeaders(token: token),
       body: jsonEncode(body),
     );
-
-    print('📥 API POST Response Status: ${response.statusCode}');
-    if (response.statusCode != 200) {
-      print('   Response Body: ${response.body}');
-    } else {
-      print('   Response Body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}...');
-    }
 
     return _handleResponse(response);
   }
@@ -219,11 +193,6 @@ class ApiService {
     // Normalize and validate folder name against backend-allowed values
     final normalizedFolder = _normalizeFolder(folder);
     final uri = Uri.parse('$baseUrl$path?folder=$normalizedFolder');
-    print('📤 Uploading file from disk');
-    print('   Endpoint: $path');
-    print('   Requested folder: $folder');
-    print('   Normalized folder: $normalizedFolder');
-    
     // Build multipart request
     final request = http.MultipartRequest('POST', uri);
     
@@ -253,10 +222,7 @@ class ApiService {
     // Send request
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
-    
-    print('📤 Image Upload Response Status: ${response.statusCode}');
     if (response.statusCode != 200) {
-      print('   Response Body: ${response.body}');
     }
     
     return _handleResponse(response);
@@ -279,11 +245,6 @@ class ApiService {
     // Normalize and validate folder name against backend-allowed values
     final normalizedFolder = _normalizeFolder(folder);
     final uri = Uri.parse('$baseUrl$path?folder=$normalizedFolder');
-    print('📤 Uploading file from bytes');
-    print('   Endpoint: $path');
-    print('   Requested folder: $folder');
-    print('   Normalized folder: $normalizedFolder');
-    
     // Build multipart request
     final request = http.MultipartRequest('POST', uri);
     
@@ -309,10 +270,7 @@ class ApiService {
     // Send request
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
-    
-    print('📤 Image Upload Response Status: ${response.statusCode}');
     if (response.statusCode != 200) {
-      print('   Response Body: ${response.body}');
     }
     
     return _handleResponse(response);
@@ -327,7 +285,6 @@ class ApiService {
     if (allowed.contains(raw)) {
       return raw;
     }
-    print('⚠️ ApiService: Invalid upload folder "$folder", falling back to "general".');
     return 'general';
   }
 

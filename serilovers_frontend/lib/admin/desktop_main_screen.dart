@@ -23,7 +23,6 @@ class _DesktopMainScreenState extends State<DesktopMainScreen> {
 
   void _handleItemSelected(int index) {
     if (index == 6) {
-      // Logout
       _handleLogout();
     } else {
       setState(() {
@@ -55,7 +54,6 @@ class _DesktopMainScreenState extends State<DesktopMainScreen> {
       case 5:
         return const StatisticsScreen();
       case 6:
-        // Logout - should not show content, handled by callback
         return const AdminHomeScreen();
       default:
         return const AdminHomeScreen();

@@ -69,7 +69,6 @@ class ActorProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ Error fetching actors: $e');
       rethrow;
     }
   }
@@ -86,7 +85,6 @@ class ActorProvider extends ChangeNotifier {
       items.removeWhere((actor) => actor.id == actorId);
       notifyListeners();
     } catch (e) {
-      print('❌ Error deleting actor: $e');
       rethrow;
     }
   }

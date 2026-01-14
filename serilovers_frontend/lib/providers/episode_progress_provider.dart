@@ -23,7 +23,6 @@ class EpisodeProgressProvider extends ChangeNotifier {
       // Clear all cache to force fresh data load from backend
       // This ensures we don't use stale data after login
       clearAllCache();
-      // Note: We don't automatically reload data here because we don't know which series
       // the user wants to view. Screens that display progress should reload their data
       // when they detect authentication state changes or when they are opened.
       // The cache is now empty, so any call to getSeriesProgress will return null

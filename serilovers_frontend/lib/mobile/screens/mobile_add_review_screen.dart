@@ -122,7 +122,6 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
           return;
         }
       } catch (e) {
-        print('Error decoding token: $e');
       }
 
       // Check if series has seasons
@@ -214,7 +213,6 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
         }
       } catch (e) {
         // Don't fail if progress refresh fails
-        print('Error refreshing progress: $e');
       }
 
       // Refresh challenge progress since rating a series counts towards challenges
@@ -223,7 +221,6 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
         await challengesProvider.fetchMyProgress();
       } catch (e) {
         // Don't fail if challenge refresh fails
-        print('Error refreshing challenges: $e');
       }
 
       if (mounted) {
@@ -308,7 +305,6 @@ class _MobileAddReviewScreenState extends State<MobileAddReviewScreen> {
         foregroundColor: AppColors.textLight,
         elevation: 0,
         actions: [
-          // Delete button (only if editing existing review)
           if (_existingRating != null && !_isLoading)
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.white),

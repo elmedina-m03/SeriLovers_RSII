@@ -75,7 +75,6 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       _uploadedImageUrl = series.imageUrl;
       
       // Set genre IDs from series genres
-      // Note: series.genres is List<String>, we need to find matching Genre IDs
       if (series.genres.isNotEmpty && _availableGenres.isNotEmpty) {
         _selectedGenreIds = _availableGenres
             .where((genre) => series.genres.contains(genre.name))
@@ -430,7 +429,6 @@ class _SeriesFormDialogState extends State<SeriesFormDialog> {
       
       if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
         final imageUrl = uploadResponse['imageUrl'] as String;
-        print('✅ Image uploaded successfully: $imageUrl');
         setState(() {
           _uploadedImageUrl = imageUrl;
           _isUploadingImage = false;

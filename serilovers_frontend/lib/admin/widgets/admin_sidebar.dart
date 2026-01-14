@@ -180,7 +180,6 @@ class AdminSidebar extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Logout button (index 7)
                 _buildMenuItem(7, Icons.logout, 'Logout', isDestructive: true),
               ],
             ),

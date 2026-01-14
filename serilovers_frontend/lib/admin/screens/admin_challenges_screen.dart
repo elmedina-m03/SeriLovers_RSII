@@ -97,7 +97,6 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
       }
     } catch (e) {
       // Silently fail - user can create manually
-      print('Could not create default challenge: $e');
     }
   }
 

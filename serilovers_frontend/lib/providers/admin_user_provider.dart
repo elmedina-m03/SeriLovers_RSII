@@ -68,45 +68,28 @@ class AdminUserProvider extends ChangeNotifier {
 
     try {
       final token = _authProvider.token;
-      print('🔑 AdminUserProvider: Token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminUserProvider: No authentication token available');
         throw Exception('Authentication required');
       }
-
-      print('📡 AdminUserProvider: Fetching users from /Users endpoint...');
       final response = await _apiService.get('/Users', token: token);
-      
-      print('📥 AdminUserProvider: Users API response received');
-      print('Response type: ${response.runtimeType}');
-      print('Response data: $response');
-      
       if (response is List) {
         users = response.map((item) {
-          print('📝 AdminUserProvider: Parsing user item: $item');
           try {
             return ApplicationUser.fromJson(item as Map<String, dynamic>);
           } catch (e) {
-            print('❌ AdminUserProvider: Error parsing user item: $e');
             rethrow;
           }
         }).toList();
-        print('✅ AdminUserProvider: Successfully loaded ${users.length} users');
       } else if (response is Map && response.containsKey('items')) {
         final itemsList = response['items'] as List<dynamic>? ?? [];
-        print('📝 AdminUserProvider: Found ${itemsList.length} users in items array');
         users = itemsList.map((item) {
           try {
             return ApplicationUser.fromJson(item as Map<String, dynamic>);
           } catch (e) {
-            print('❌ AdminUserProvider: Error parsing user from items: $e');
             rethrow;
           }
         }).toList();
-        print('✅ AdminUserProvider: Successfully loaded ${users.length} users from items array');
       } else {
-        print('⚠️ AdminUserProvider: Unexpected response format: ${response.runtimeType}');
         users = [];
       }
       
@@ -115,7 +98,6 @@ class AdminUserProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminUserProvider: Error fetching users: $e');
       rethrow;
     }
   }
@@ -141,10 +123,7 @@ class AdminUserProvider extends ChangeNotifier {
 
     try {
       final token = _authProvider.token;
-      print('🔑 AdminUserProvider: Token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminUserProvider: No authentication token available for fetchFiltered');
         throw Exception('Authentication required');
       }
 
@@ -172,22 +151,14 @@ class AdminUserProvider extends ChangeNotifier {
       // Build URL with query parameters
       final uri = Uri.parse('/Users').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final apiPath = uri.toString();
-      
-      print('🌐 AdminUserProvider: Fetching filtered users from: $apiPath');
-      
       final response = await _apiService.get(apiPath, token: token);
-      print('📥 AdminUserProvider: Filtered API response: $response');
-
       // Parse response
       if (response is Map<String, dynamic>) {
         final itemsList = response['items'] as List<dynamic>? ?? [];
-        print('📝 AdminUserProvider: Items list length: ${itemsList.length}');
-        
         users = itemsList.map((item) {
           try {
             return ApplicationUser.fromJson(item as Map<String, dynamic>);
           } catch (e) {
-            print('❌ AdminUserProvider: Error parsing filtered user item: $e');
             rethrow;
           }
         }).toList();
@@ -197,17 +168,12 @@ class AdminUserProvider extends ChangeNotifier {
         totalPages = response['totalPages'] as int? ?? 1;
         currentPage = response['currentPage'] as int? ?? currentPage;
         pageSize = response['pageSize'] as int? ?? pageSize;
-
-        print('✅ AdminUserProvider: Parsed ${users.length} filtered users');
-        print('   Page: $currentPage/$totalPages, Total: $totalItems');
       } else if (response is List) {
         // Fallback: client-side pagination if backend doesn't support it
         final allUsers = response.map((item) {
-          print('📝 AdminUserProvider: Parsing filtered user item: $item');
           try {
             return ApplicationUser.fromJson(item as Map<String, dynamic>);
           } catch (e) {
-            print('❌ AdminUserProvider: Error parsing filtered user item: $e');
             rethrow;
           }
         }).toList();
@@ -223,11 +189,7 @@ class AdminUserProvider extends ChangeNotifier {
           startIndex.clamp(0, allUsers.length),
           endIndex.clamp(0, allUsers.length),
         );
-        
-        print('✅ AdminUserProvider: Successfully loaded ${users.length} filtered users (client-side pagination)');
-        print('   Page: $currentPage/$totalPages, Total: $totalItems');
       } else {
-        print('⚠️ AdminUserProvider: Invalid response format. Expected Map or List, got: ${response.runtimeType}');
         users = [];
         totalItems = 0;
         totalPages = 1;
@@ -238,7 +200,6 @@ class AdminUserProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminUserProvider: Error fetching filtered users: $e');
       rethrow;
     }
   }
@@ -257,10 +218,7 @@ class AdminUserProvider extends ChangeNotifier {
   }) async {
     try {
       final token = _authProvider.token;
-      print('🔑 AdminUserProvider: Updating user $userId with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminUserProvider: No authentication token available for update');
         throw Exception('Authentication required');
       }
 
@@ -269,18 +227,11 @@ class AdminUserProvider extends ChangeNotifier {
       if (email != null) updateData['email'] = email;
       if (role != null) updateData['role'] = role;
       if (isActive != null) updateData['isActive'] = isActive;
-      
-      print('📡 AdminUserProvider: Updating user $userId with data: $updateData');
-      
       final response = await _apiService.put(
         '/Users/$userId',
         updateData,
         token: token,
       );
-
-      print('📥 AdminUserProvider: Update user response received');
-      print('Response: $response');
-      
       // Parse the updated user
       final updatedUser = ApplicationUser.fromJson(response as Map<String, dynamic>);
       
@@ -289,15 +240,10 @@ class AdminUserProvider extends ChangeNotifier {
       if (index != -1) {
         users[index] = updatedUser;
         notifyListeners();
-        print('✅ AdminUserProvider: User updated successfully in local list');
       } else {
-        print('⚠️ AdminUserProvider: User $userId not found in local list');
       }
-      
-      print('✅ AdminUserProvider: User updated successfully with ID: ${updatedUser.id}');
       return updatedUser;
     } catch (e) {
-      print('❌ AdminUserProvider: Error updating user $userId: $e');
       rethrow;
     }
   }
@@ -308,29 +254,16 @@ class AdminUserProvider extends ChangeNotifier {
   Future<void> deleteUser(int userId) async {
     try {
       final token = _authProvider.token;
-      print('🔑 AdminUserProvider: Deleting user $userId with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminUserProvider: No authentication token available for delete');
         throw Exception('Authentication required');
       }
-
-      print('📡 AdminUserProvider: Deleting user at: /Users/$userId');
-      
       await _apiService.delete(
         '/Users/$userId',
         token: token,
       );
-
-      print('📥 AdminUserProvider: Delete user response received');
-      
-      // Remove from local list
       users.removeWhere((user) => user.id == userId);
       notifyListeners();
-      
-      print('✅ AdminUserProvider: User deleted successfully with ID: $userId');
     } catch (e) {
-      print('❌ AdminUserProvider: Error deleting user $userId: $e');
       rethrow;
     }
   }
@@ -338,16 +271,11 @@ class AdminUserProvider extends ChangeNotifier {
   /// Disables/enables a user (legacy method for backward compatibility)
   Future<void> toggleUserStatus(ApplicationUser user) async {
     try {
-      print('🔄 AdminUserProvider: Toggling status for user ${user.id} (current: ${user.isActive})');
-      
       await updateUser(
         user.id,
         isActive: !user.isActive,
       );
-      
-      print('✅ AdminUserProvider: User status toggled successfully');
     } catch (e) {
-      print('❌ AdminUserProvider: Error toggling user status: $e');
       rethrow;
     }
   }
@@ -370,10 +298,7 @@ class AdminUserProvider extends ChangeNotifier {
   }) async {
     try {
       final token = _authProvider.token;
-      print('🔑 AdminUserProvider: Creating user with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminUserProvider: No authentication token available for create');
         throw Exception('Authentication required');
       }
 
@@ -396,19 +321,12 @@ class AdminUserProvider extends ChangeNotifier {
       if (role != null && role.isNotEmpty) {
         createData['role'] = role;
       }
-      
-      print('📡 AdminUserProvider: Creating user with data: $createData');
-      
       // Use register endpoint (may need admin-specific endpoint for role assignment)
       final response = await _apiService.post(
         '/Auth/register',
         createData,
         token: token,
       );
-
-      print('📥 AdminUserProvider: Create user response received');
-      print('Response: $response');
-      
       // After creation, fetch the user list to get the new user
       await fetchFiltered();
       
@@ -424,14 +342,10 @@ class AdminUserProvider extends ChangeNotifier {
           await updateUser(newUser.id, role: role);
           return getUserById(newUser.id) ?? newUser;
         } catch (e) {
-          print('⚠️ AdminUserProvider: Could not set role, user created with default role: $e');
         }
       }
-      
-      print('✅ AdminUserProvider: User created successfully with ID: ${newUser.id}');
       return newUser;
     } catch (e) {
-      print('❌ AdminUserProvider: Error creating user: $e');
       rethrow;
     }
   }
@@ -445,7 +359,6 @@ class AdminUserProvider extends ChangeNotifier {
     try {
       return users.firstWhere((user) => user.id == userId);
     } catch (e) {
-      print('⚠️ AdminUserProvider: User with ID $userId not found');
       return null;
     }
   }

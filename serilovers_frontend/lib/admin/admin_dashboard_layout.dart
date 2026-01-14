@@ -110,7 +110,6 @@ class _AdminDashboardLayoutState extends State<AdminDashboardLayout> {
       color: Colors.white,
       child: Column(
         children: [
-          // Logo/Header Section
           Container(
             height: 80,
             padding: const EdgeInsets.all(16),
@@ -231,7 +230,6 @@ class _AdminDashboardLayoutState extends State<AdminDashboardLayout> {
       case 5:
         return const StatisticsScreen();
       case 6:
-        // Logout - should not show content, handled by callback
         return const AdminHomeScreen();
       default:
         return const AdminHomeScreen();

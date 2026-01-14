@@ -473,7 +473,6 @@ class _CreateWatchlistScreenState extends State<CreateWatchlistScreen> {
                 }).toList(),
               ),
               const SizedBox(height: 24),
-              // Notes section
               Text(
                 'Notes',
                 style: TextStyle(

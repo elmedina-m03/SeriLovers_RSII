@@ -686,8 +686,6 @@ namespace SeriLovers.API.Services
                     {
                         if (s.Episodes != null)
                         {
-                            // Order episodes and ensure all are included (no filtering)
-                            // Log if episode 1 is missing for debugging
                             var episodes = s.Episodes
                                 .OrderBy(e => e.EpisodeNumber)
                                 .ToList();

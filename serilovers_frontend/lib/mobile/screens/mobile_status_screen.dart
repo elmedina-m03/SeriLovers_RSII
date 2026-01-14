@@ -205,7 +205,6 @@ class _MobileStatusScreenState extends State<MobileStatusScreen> with SingleTick
             currentSeasonNumber: 0, // We don't have this from getUserSeriesWithStatus
             progressPercentage: totalEpisodes > 0 ? (watchedEpisodes * 100.0 / totalEpisodes) : 0.0,
           );
-          // Note: We can't directly set cache, but we can trigger a load
           // Actually, let's just use our local cache in _buildSeriesCard
         }
         

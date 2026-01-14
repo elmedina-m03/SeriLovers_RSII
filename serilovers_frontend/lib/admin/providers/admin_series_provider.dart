@@ -74,46 +74,30 @@ class AdminSeriesProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminSeriesProvider: Token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminSeriesProvider: No authentication token available');
         throw Exception('Authentication required');
       }
 
       // Make API request to get all series (admin endpoint might have different pagination)
       final apiPath = '/Series?pageSize=1000'; // Large page size to get all series
-      print('🌐 AdminSeriesProvider: Making API request to: $apiPath');
-      
       final response = await _apiService.get(
         apiPath,
         token: token,
       );
-
-      print('AdminSeriesProvider: API Response received');
-      print('Response type: ${response.runtimeType}');
-
       // Parse response
       if (response is Map<String, dynamic>) {
         // Parse items
         final itemsList = response['items'] as List<dynamic>? ?? [];
-        print('AdminSeriesProvider: Items list length: ${itemsList.length}');
-        
         items = itemsList
             .map((item) {
               try {
                 return Series.fromJson(item as Map<String, dynamic>);
               } catch (e) {
-                print('AdminSeriesProvider: Error parsing series item: $e');
-                print('Item data: $item');
                 rethrow;
               }
             })
             .toList();
-
-        print('AdminSeriesProvider: Parsed ${items.length} series');
       } else {
-        print('AdminSeriesProvider: Invalid response format. Expected Map, got: ${response.runtimeType}');
         throw Exception('Invalid response format from server');
       }
 
@@ -122,7 +106,6 @@ class AdminSeriesProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminSeriesProvider: Error fetching series: $e');
       rethrow;
     }
   }
@@ -150,10 +133,7 @@ class AdminSeriesProvider extends ChangeNotifier {
 
     try {
       final token = _authProvider.token;
-      print('🔑 AdminSeriesProvider: Token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminSeriesProvider: No authentication token available for fetchFiltered');
         throw Exception('Authentication required');
       }
 
@@ -184,24 +164,15 @@ class AdminSeriesProvider extends ChangeNotifier {
       // Build URL with query parameters
       final uri = Uri.parse('/Series').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final apiPath = uri.toString();
-      
-      print('🌐 AdminSeriesProvider: Fetching filtered series from: $apiPath');
-      
       final response = await _apiService.get(apiPath, token: token);
-      print('📥 AdminSeriesProvider: Filtered API response: $response');
-
       // Parse response
       if (response is Map<String, dynamic>) {
         final itemsList = response['items'] as List<dynamic>? ?? [];
-        print('📝 AdminSeriesProvider: Items list length: ${itemsList.length}');
-        
         items = itemsList
             .map((item) {
               try {
                 return Series.fromJson(item as Map<String, dynamic>);
               } catch (e) {
-                print('AdminSeriesProvider: Error parsing series item: $e');
-                print('Item data: $item');
                 rethrow;
               }
             })
@@ -212,18 +183,13 @@ class AdminSeriesProvider extends ChangeNotifier {
         totalPages = response['totalPages'] as int? ?? 1;
         currentPage = response['currentPage'] as int? ?? currentPage;
         pageSize = response['pageSize'] as int? ?? pageSize;
-
-        print('✅ AdminSeriesProvider: Parsed ${items.length} filtered series');
-        print('   Page: $currentPage/$totalPages, Total: $totalItems');
       } else if (response is List) {
         items = response
             .map((item) => Series.fromJson(item as Map<String, dynamic>))
             .toList();
         totalItems = items.length;
         totalPages = 1;
-        print('✅ AdminSeriesProvider: Parsed ${items.length} filtered series from list');
       } else {
-        print('⚠️ AdminSeriesProvider: Invalid response format. Expected Map or List, got: ${response.runtimeType}');
         throw Exception('Invalid response format from server');
       }
 
@@ -232,7 +198,6 @@ class AdminSeriesProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminSeriesProvider: Error fetching filtered series: $e');
       rethrow;
     }
   }
@@ -247,37 +212,25 @@ class AdminSeriesProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminSeriesProvider: Creating series with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminSeriesProvider: No authentication token available for create');
         throw Exception('Authentication required');
       }
 
       // Make API request to create series
       final apiPath = '/Series';
-      print('🌐 AdminSeriesProvider: Creating series at: $apiPath');
-      print('Data: $data');
-      
       final response = await _apiService.post(
         apiPath,
         data,
         token: token,
       );
-
-      print('AdminSeriesProvider: Create series response received');
-      
       // Parse the created series
       final createdSeries = Series.fromJson(response as Map<String, dynamic>);
       
       // Add to local list
       items.add(createdSeries);
       notifyListeners();
-      
-      print('AdminSeriesProvider: Series created successfully with ID: ${createdSeries.id}');
       return createdSeries;
     } catch (e) {
-      print('❌ AdminSeriesProvider: Error creating series: $e');
       rethrow;
     }
   }
@@ -293,22 +246,13 @@ class AdminSeriesProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminSeriesProvider: Updating series $id with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminSeriesProvider: No authentication token available for update');
         throw Exception('Authentication required');
       }
 
       // Make API request to update series
       final apiPath = '/Series/$id';
-      print('🌐 AdminSeriesProvider: Updating series at: $apiPath');
-      print('Data: $data');
-      
       final response = await _apiService.put('/Series/$id', data, token: _authProvider.token);
-
-      print('AdminSeriesProvider: Update series response received');
-      
       // Parse the updated series
       final updatedSeries = Series.fromJson(response as Map<String, dynamic>);
       
@@ -321,13 +265,9 @@ class AdminSeriesProvider extends ChangeNotifier {
       }
       notifyListeners();
       
-      // Note: The screen will call _loadSeries() after edit to refresh with latest data
       // This ensures episodes count is accurate after editing
-      
-      print('AdminSeriesProvider: Series updated successfully with ID: ${updatedSeries.id}');
       return updatedSeries;
     } catch (e) {
-      print('❌ AdminSeriesProvider: Error updating series $id: $e');
       rethrow;
     }
   }
@@ -342,31 +282,19 @@ class AdminSeriesProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminSeriesProvider: Deleting series $id with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminSeriesProvider: No authentication token available for delete');
         throw Exception('Authentication required');
       }
 
       // Make API request to delete series
       final apiPath = '/Series/$id';
-      print('🌐 AdminSeriesProvider: Deleting series at: $apiPath');
-      
       await _apiService.delete(
         apiPath,
         token: token,
       );
-
-      print('AdminSeriesProvider: Delete series response received');
-      
-      // Remove from local list
       items.removeWhere((series) => series.id == id);
       notifyListeners();
-      
-      print('AdminSeriesProvider: Series deleted successfully with ID: $id');
     } catch (e) {
-      print('❌ AdminSeriesProvider: Error deleting series $id: $e');
       rethrow;
     }
   }

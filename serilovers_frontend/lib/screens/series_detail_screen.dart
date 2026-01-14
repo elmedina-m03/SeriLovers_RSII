@@ -893,7 +893,6 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
       }
     } catch (e) {
       // Silently fail - watched indicators just won't show
-      print('Error loading watched episodes: $e');
     }
   }
 

@@ -98,7 +98,6 @@ class AdminStatsProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ Error fetching admin stats: $e');
       rethrow;
     }
   }

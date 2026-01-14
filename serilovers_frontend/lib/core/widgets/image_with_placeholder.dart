@@ -63,7 +63,6 @@ class ImageWithPlaceholder extends StatelessWidget {
     if (trimmedUrl.startsWith('file://')) {
       // Extract the path from file:// URL (e.g., file:///uploads/avatars/... -> /uploads/avatars/...)
       var path = trimmedUrl.replaceFirst('file://', '');
-      // Remove leading slashes if present (file:///uploads -> /uploads, but we want /uploads)
       if (path.startsWith('//')) {
         path = path.substring(1);
       }
@@ -71,7 +70,6 @@ class ImageWithPlaceholder extends StatelessWidget {
       // Convert to HTTP URL using base URL
       var baseUrl = ApiService().baseUrl;
       if (baseUrl.isNotEmpty) {
-        // Remove /api from the end of base URL if present (static files are at root, not /api)
         if (baseUrl.endsWith('/api')) {
           baseUrl = baseUrl.substring(0, baseUrl.length - 4);
         } else if (baseUrl.endsWith('/api/')) {
@@ -92,10 +90,8 @@ class ImageWithPlaceholder extends StatelessWidget {
       finalUrl = trimmedUrl;
     } else if (trimmedUrl.startsWith('/')) {
       // If it's a relative path (starts with /), prepend base URL
-      // Note: Static files are served from root, not from /api, so we need to remove /api from base URL
       var baseUrl = ApiService().baseUrl;
       if (baseUrl.isNotEmpty) {
-        // Remove /api from the end of base URL if present (static files are at root, not /api)
         if (baseUrl.endsWith('/api')) {
           baseUrl = baseUrl.substring(0, baseUrl.length - 4);
         } else if (baseUrl.endsWith('/api/')) {

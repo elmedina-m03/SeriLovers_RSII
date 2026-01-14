@@ -130,10 +130,6 @@ class SeriesProvider extends ChangeNotifier {
         token: token,
       );
 
-      // Debug: Print response
-      print('Series API Response: $response');
-      print('Response type: ${response.runtimeType}');
-
       // Parse response
       if (response is Map<String, dynamic>) {
         // Parse items
@@ -170,10 +166,7 @@ class SeriesProvider extends ChangeNotifier {
         _currentPageSize = pageSize;
         _currentSearch = search;
         _currentGenreId = genreId;
-        print('Total count: $totalCount');
-        print('Parsed ${items.length} series');
       } else {
-        print('Invalid response format. Expected Map, got: ${response.runtimeType}');
         throw ApiException('Invalid response format from server');
       }
 

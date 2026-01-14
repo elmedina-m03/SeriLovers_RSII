@@ -15,7 +15,6 @@ class FilePickerHelper {
       );
       return result;
     } catch (e) {
-      print('Error picking file: $e');
       return null;
     }
   }

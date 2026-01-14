@@ -143,7 +143,6 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
 
     try {
       if (isInWatchlist) {
-        // Remove from watchlist
         await watchlistProvider.removeFromWatchlist(widget.series.id, token);
         // Refresh watchlist to ensure UI updates
         try {
@@ -1638,7 +1637,6 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
           }
         } catch (e) {
           // If refresh fails, continue with current state
-          print('Error refreshing watched episodes: $e');
         }
       }
 
@@ -1725,8 +1723,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
             newlyMarkedIds.add(episode.id);
             markedCount++;
           } catch (e) {
-            // Log error but continue with other episodes
-            print('Error marking episode ${episode.id}: $e');
+            // Continue with other episodes
           }
         }
         

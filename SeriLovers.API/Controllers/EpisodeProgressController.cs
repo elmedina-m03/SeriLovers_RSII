@@ -322,7 +322,6 @@ namespace SeriLovers.API.Controllers
             
             var watchedEpisodes = watchedEpisodeIds.Count;
             
-            // Log any incomplete records for debugging (but don't use them in calculations)
             var incompleteRecords = await _context.EpisodeProgresses
                 .Where(ep => ep.UserId == currentUserId.Value 
                             && !ep.IsCompleted 

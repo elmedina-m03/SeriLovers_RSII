@@ -60,35 +60,27 @@ class _LoginScreenState extends State<LoginScreen> {
             try {
               final decodedToken = JwtDecoder.decode(token);
                   
-                  // Debug: Print all token claims
-                  print('🔑 All token claims: ${decodedToken.keys.toList()}');
-                  
                   // Check for Admin role in token
                   bool isAdmin = false;
                   
                   // Method 1: Check "roles" claim (JSON array string)
                   final rolesJson = decodedToken['roles'];
                   if (rolesJson != null && rolesJson is String) {
-                    print('🔍 Found roles JSON: $rolesJson');
                     try {
                       final rolesList = (jsonDecode(rolesJson) as List).map((e) => e.toString()).toList();
-                      print('🔍 Parsed roles list: $rolesList');
                       if (rolesList.contains('Admin')) {
                         isAdmin = true;
-                        print('✅ Found Admin in roles JSON array');
                       }
                     } catch (e) {
-                      print('❌ Error parsing roles JSON: $e');
+                      // Error parsing roles JSON
                     }
                   }
                   
                   // Method 2: Check "role" claim (first role for backward compatibility)
                   if (!isAdmin) {
                     final roleClaim = decodedToken['role'];
-                    print('🔍 Standard role claim: $roleClaim');
                     if (roleClaim is String && roleClaim == 'Admin') {
                       isAdmin = true;
-                      print('✅ Found Admin in standard role claim');
                     }
                   }
                   
@@ -98,14 +90,11 @@ class _LoginScreenState extends State<LoginScreen> {
                       final keyStr = key.toString().toLowerCase();
                       if (keyStr.contains('role') && keyStr != 'roles') {
                         final roleValue = decodedToken[key];
-                        print('🔍 Found role key: $key = $roleValue');
                         if (roleValue is String && roleValue == 'Admin') {
                           isAdmin = true;
-                          print('✅ Found Admin role as String');
                           break;
                         } else if (roleValue is List && roleValue.contains('Admin')) {
                           isAdmin = true;
-                          print('✅ Found Admin role in List');
                           break;
                         }
                       }
@@ -117,21 +106,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     for (var value in decodedToken.values) {
                       if (value is String && value == 'Admin') {
                         isAdmin = true;
-                        print('✅ Found Admin in token values');
                         break;
                       } else if (value is List && value.contains('Admin')) {
                         isAdmin = true;
-                        print('✅ Found Admin in token list values');
                         break;
                       }
                     }
                   }
-                  
-                  print('👤 Final isAdmin check: $isAdmin');
               
                   if (!isAdmin) {
                 // Non-admin user - deny access
-                    print('❌ User is not Admin, denying access');
                 await authProvider.logout();
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -146,7 +130,6 @@ class _LoginScreenState extends State<LoginScreen> {
               }
               
               // Admin user - navigate to admin panel
-                  print('✅ User is Admin, navigating to admin panel');
                   if (mounted) {
               Navigator.pushReplacementNamed(context, '/admin');
                   }

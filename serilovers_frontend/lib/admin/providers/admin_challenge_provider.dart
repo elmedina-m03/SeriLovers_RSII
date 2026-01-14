@@ -92,7 +92,6 @@ class AdminChallengeProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminChallengeProvider: Error fetching challenges: $e');
       rethrow;
     }
   }
@@ -123,7 +122,6 @@ class AdminChallengeProvider extends ChangeNotifier {
       
       return createdChallenge;
     } catch (e) {
-      print('❌ AdminChallengeProvider: Error creating challenge: $e');
       rethrow;
     }
   }
@@ -161,7 +159,6 @@ class AdminChallengeProvider extends ChangeNotifier {
       
       return updatedChallenge;
     } catch (e) {
-      print('❌ AdminChallengeProvider: Error updating challenge: $e');
       rethrow;
     }
   }
@@ -187,7 +184,6 @@ class AdminChallengeProvider extends ChangeNotifier {
       items.removeWhere((challenge) => challenge.id == id);
       notifyListeners();
     } catch (e) {
-      print('❌ AdminChallengeProvider: Error deleting challenge: $e');
       rethrow;
     }
   }
@@ -219,7 +215,6 @@ class AdminChallengeProvider extends ChangeNotifier {
     } catch (e) {
       isLoadingSummary = false;
       notifyListeners();
-      print('❌ AdminChallengeProvider: Error fetching summary: $e');
       rethrow;
     }
   }
@@ -253,7 +248,6 @@ class AdminChallengeProvider extends ChangeNotifier {
     } catch (e) {
       isLoadingProgress = false;
       notifyListeners();
-      print('❌ AdminChallengeProvider: Error fetching user progress: $e');
       rethrow;
     }
   }

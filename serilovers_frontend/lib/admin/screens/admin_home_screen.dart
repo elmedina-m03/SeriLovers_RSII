@@ -94,7 +94,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       // Update last refresh time
       _lastRefreshTime = DateTime.now();
     } catch (e) {
-      print('Error loading admin home data: $e');
     }
   }
 
@@ -128,7 +127,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         });
       }
     } catch (e) {
-      print('Error loading recent reviews: $e');
       setState(() {
         _isLoadingReviews = false;
       });

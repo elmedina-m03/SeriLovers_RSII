@@ -56,7 +56,6 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
   void dispose() {
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
-    // Remove listener when screen is disposed
     try {
       final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
       ratingProvider.removeListener(_onRatingChanged);
@@ -445,7 +444,6 @@ class _AdminStatisticsScreenState extends State<AdminStatisticsScreen> {
         padding: const EdgeInsets.all(AppDim.paddingLarge),
         child: Consumer<AdminStatisticsProvider>(
         builder: (context, statsProvider, child) {
-          // Note: Error handling is done in the UI below, not via SnackBar in builder
           // This prevents multiple snackbars from appearing
 
           if (statsProvider.isLoading) {

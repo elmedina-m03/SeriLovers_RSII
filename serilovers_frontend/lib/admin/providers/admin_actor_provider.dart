@@ -74,63 +74,41 @@ class AdminActorProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminActorProvider: Token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminActorProvider: No authentication token available');
         throw Exception('Authentication required');
       }
 
       // Make API request to get all actors
       final apiPath = '/Actor';
-      print('🌐 AdminActorProvider: Making API request to: $apiPath');
-      
       final response = await _apiService.get(
         apiPath,
         token: token,
       );
-
-      print('AdminActorProvider: API Response received');
-      print('Response type: ${response.runtimeType}');
-
       // Parse response
       if (response is List) {
         // Direct array response
-        print('AdminActorProvider: Processing direct array response with ${response.length} items');
-        
         items = response
             .map((item) {
               try {
                 return Actor.fromJson(item as Map<String, dynamic>);
               } catch (e) {
-                print('AdminActorProvider: Error parsing actor item: $e');
-                print('Item data: $item');
                 rethrow;
               }
             })
             .toList();
-
-        print('AdminActorProvider: Parsed ${items.length} actors');
       } else if (response is Map<String, dynamic>) {
         // Wrapped response with items array
         final itemsList = response['items'] as List<dynamic>? ?? [];
-        print('AdminActorProvider: Processing wrapped response with ${itemsList.length} items');
-        
         items = itemsList
             .map((item) {
               try {
                 return Actor.fromJson(item as Map<String, dynamic>);
               } catch (e) {
-                print('AdminActorProvider: Error parsing actor item: $e');
-                print('Item data: $item');
                 rethrow;
               }
             })
             .toList();
-
-        print('AdminActorProvider: Parsed ${items.length} actors from wrapped response');
       } else {
-        print('AdminActorProvider: Invalid response format. Expected List or Map, got: ${response.runtimeType}');
         throw Exception('Invalid response format from server');
       }
 
@@ -139,7 +117,6 @@ class AdminActorProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminActorProvider: Error fetching actors: $e');
       rethrow;
     }
   }
@@ -167,10 +144,7 @@ class AdminActorProvider extends ChangeNotifier {
 
     try {
       final token = _authProvider.token;
-      print('🔑 AdminActorProvider: Token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminActorProvider: No authentication token available for fetchFiltered');
         throw Exception('Authentication required');
       }
 
@@ -202,21 +176,14 @@ class AdminActorProvider extends ChangeNotifier {
       // Build URL with query parameters
       final uri = Uri.parse('/Actor').replace(queryParameters: queryParams.isNotEmpty ? queryParams : null);
       final apiPath = uri.toString();
-      
-      print('🌐 AdminActorProvider: Fetching filtered actors from: $apiPath');
-      
       final response = await _apiService.get(apiPath, token: token);
-      print('📥 AdminActorProvider: Filtered API response: $response');
-
       // Parse response
       if (response is Map<String, dynamic>) {
         final itemsList = response['items'] as List<dynamic>? ?? [];
-        print('📝 AdminActorProvider: Found ${itemsList.length} filtered actors in items array');
         items = itemsList.map((item) {
           try {
             return Actor.fromJson(item as Map<String, dynamic>);
           } catch (e) {
-            print('❌ AdminActorProvider: Error parsing filtered actor from items: $e');
             rethrow;
           }
         }).toList();
@@ -226,17 +193,12 @@ class AdminActorProvider extends ChangeNotifier {
         totalPages = response['totalPages'] as int? ?? 1;
         currentPage = response['currentPage'] as int? ?? currentPage;
         this.pageSize = response['pageSize'] as int? ?? this.pageSize;
-
-        print('✅ AdminActorProvider: Successfully loaded ${items.length} filtered actors from items array');
-        print('   Page: $currentPage/$totalPages, Total: $totalItems');
       } else if (response is List) {
         // Fallback for non-paginated API response
         items = response.map((item) {
-          print('📝 AdminActorProvider: Parsing filtered actor item (non-paginated): $item');
           try {
             return Actor.fromJson(item as Map<String, dynamic>);
           } catch (e) {
-            print('❌ AdminActorProvider: Error parsing filtered actor item (non-paginated): $e');
             rethrow;
           }
         }).toList();
@@ -247,11 +209,7 @@ class AdminActorProvider extends ChangeNotifier {
         final startIndex = (currentPage - 1) * this.pageSize;
         final endIndex = (startIndex + this.pageSize < totalItems) ? startIndex + this.pageSize : totalItems;
         items = items.sublist(startIndex, endIndex);
-
-        print('✅ AdminActorProvider: Successfully loaded ${items.length} filtered actors (client-side paginated)');
-        print('   Page: $currentPage/$totalPages, Total: $totalItems');
       } else {
-        print('⚠️ AdminActorProvider: Invalid response format. Expected List or Map, got: ${response.runtimeType}');
         items = [];
       }
       
@@ -260,7 +218,6 @@ class AdminActorProvider extends ChangeNotifier {
     } catch (e) {
       isLoading = false;
       notifyListeners();
-      print('❌ AdminActorProvider: Error fetching filtered actors: $e');
       rethrow;
     }
   }
@@ -275,37 +232,25 @@ class AdminActorProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminActorProvider: Creating actor with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminActorProvider: No authentication token available for create');
         throw Exception('Authentication required');
       }
 
       // Make API request to create actor
       final apiPath = '/Actor';
-      print('🌐 AdminActorProvider: Creating actor at: $apiPath');
-      print('Data: $data');
-      
       final response = await _apiService.post(
         apiPath,
         data,
         token: token,
       );
-
-      print('AdminActorProvider: Create actor response received');
-      
       // Parse the created actor
       final createdActor = Actor.fromJson(response as Map<String, dynamic>);
       
       // Add to local list
       items.add(createdActor);
       notifyListeners();
-      
-      print('AdminActorProvider: Actor created successfully with ID: ${createdActor.id}');
       return createdActor;
     } catch (e) {
-      print('❌ AdminActorProvider: Error creating actor: $e');
       rethrow;
     }
   }
@@ -321,47 +266,30 @@ class AdminActorProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminActorProvider: Updating actor $id with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminActorProvider: No authentication token available for update');
         throw Exception('Authentication required');
       }
 
       // Make API request to update actor
       final apiPath = '/Actor/$id';
-      print('🌐 AdminActorProvider: Updating actor at: $apiPath');
-      print('Data: $data');
-      
       final response = await _apiService.put(
         apiPath,
         data,
         token: token,
       );
-
-      print('AdminActorProvider: Update actor response received');
-      print('📸 Update response: $response');
-      
       // Parse the updated actor
       final updatedActor = Actor.fromJson(response as Map<String, dynamic>);
-      print('📸 Updated actor imageUrl: ${updatedActor.imageUrl}');
-      
       // Update the actor in the local list
       final index = items.indexWhere((actor) => actor.id == id);
       if (index != -1) {
         items[index] = updatedActor;
-        print('✅ Updated actor in local list at index $index');
       } else {
-        print('⚠️ Actor not found in local list, adding it');
         items.add(updatedActor);
       }
       
       notifyListeners();
-      
-      print('AdminActorProvider: Actor updated successfully with ID: ${updatedActor.id}');
       return updatedActor;
     } catch (e) {
-      print('❌ AdminActorProvider: Error updating actor $id: $e');
       rethrow;
     }
   }
@@ -376,31 +304,19 @@ class AdminActorProvider extends ChangeNotifier {
     try {
       // Get authentication token
       final token = _authProvider.token;
-      print('🔑 AdminActorProvider: Deleting actor $id with token available: ${token != null && token.isNotEmpty}');
-      
       if (token == null || token.isEmpty) {
-        print('⚠️ AdminActorProvider: No authentication token available for delete');
         throw Exception('Authentication required');
       }
 
       // Make API request to delete actor
       final apiPath = '/Actor/$id';
-      print('🌐 AdminActorProvider: Deleting actor at: $apiPath');
-      
       await _apiService.delete(
         apiPath,
         token: token,
       );
-
-      print('AdminActorProvider: Delete actor response received');
-      
-      // Remove from local list
       items.removeWhere((actor) => actor.id == id);
       notifyListeners();
-      
-      print('AdminActorProvider: Actor deleted successfully with ID: $id');
     } catch (e) {
-      print('❌ AdminActorProvider: Error deleting actor $id: $e');
       rethrow;
     }
   }

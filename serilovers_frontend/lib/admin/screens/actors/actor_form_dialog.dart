@@ -79,14 +79,10 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
   /// Pick and upload image file
   Future<void> _pickAndUploadImage() async {
     try {
-      print('📸 Starting image pick...');
       final result = await FilePickerHelper.pickImage();
       if (result == null) {
-        print('❌ User cancelled file picker');
         return; // User cancelled
       }
-
-      print('✅ File picked successfully');
       setState(() {
         _isUploadingImage = true;
       });
@@ -98,15 +94,12 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
       if (token == null || token.isEmpty) {
         throw Exception('Authentication required. Please log in again.');
       }
-
-      print('🔐 Token available, starting upload...');
       dynamic uploadResponse;
 
       if (FilePickerHelper.isWeb) {
         // Web: use bytes
         final bytes = FilePickerHelper.getBytes(result);
         final fileName = FilePickerHelper.getFileName(result);
-        print('🌐 Web platform - bytes: ${bytes?.length ?? 0}, fileName: $fileName');
         if (bytes == null || fileName == null) {
           throw Exception('Failed to read file. Please try again.');
         }
@@ -120,7 +113,6 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
       } else {
         // Desktop/Mobile: use File
         final file = FilePickerHelper.getFile(result);
-        print('💻 Desktop/Mobile platform - file: ${file?.path ?? "null"}');
         if (file == null) {
           throw Exception('Failed to read file. Please try selecting the file again.');
         }
@@ -131,8 +123,6 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
         }
         
         final fileSize = await file.length();
-        print('📁 File size: $fileSize bytes');
-        
         uploadResponse = await apiService.uploadFile(
           '/ImageUpload/upload',
           file,
@@ -140,12 +130,8 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
           token: token,
         );
       }
-
-      print('📥 Upload response: $uploadResponse');
-      
       if (uploadResponse != null && uploadResponse['imageUrl'] != null) {
         final imageUrl = uploadResponse['imageUrl'] as String;
-        print('✅ Image uploaded successfully: $imageUrl');
         setState(() {
           _uploadedImageUrl = imageUrl;
           _isUploadingImage = false;
@@ -160,15 +146,9 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
           );
         }
       } else {
-        print('❌ Invalid response: $uploadResponse');
         throw Exception('Invalid response from server. Response: ${uploadResponse?.toString() ?? "null"}');
       }
     } catch (e) {
-      print('❌ Error uploading image: $e');
-      print('   Error type: ${e.runtimeType}');
-      if (e is Exception) {
-        print('   Exception message: ${e.toString()}');
-      }
       if (mounted) {
         setState(() {
           _isUploadingImage = false;
@@ -261,7 +241,6 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
         Navigator.of(context).pop(true); // Return true to indicate success
       }
     } catch (e) {
-      print('Error saving actor: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -527,7 +506,6 @@ class _ActorFormDialogState extends State<ActorFormDialog> {
                                       borderRadius: AppDim.radiusSmall,
                                       placeholderIcon: Icons.person,
                                     ),
-                                    // Remove button overlay
                                     Positioned(
                                       top: 8,
                                       right: 8,
