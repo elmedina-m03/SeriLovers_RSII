@@ -130,12 +130,29 @@ builder.Services.AddAuthentication(options =>
 {
     options.SignInScheme = ExternalCookieScheme;
     var googleAuthSection = builder.Configuration.GetSection("Authentication:Google");
-    options.ClientId = googleAuthSection["ClientId"] ?? string.Empty;
-    options.ClientSecret = googleAuthSection["ClientSecret"] ?? string.Empty;
-    options.SaveTokens = true;
-    options.Scope.Add("email");
-    options.Scope.Add("profile");
-    options.CallbackPath = "/signin-google";
+    var clientId = googleAuthSection["ClientId"] ?? string.Empty;
+    var clientSecret = googleAuthSection["ClientSecret"] ?? string.Empty;
+    
+    // Only configure Google OAuth if credentials are provided
+    if (!string.IsNullOrWhiteSpace(clientId) && !string.IsNullOrWhiteSpace(clientSecret))
+    {
+        options.ClientId = clientId;
+        options.ClientSecret = clientSecret;
+        options.SaveTokens = true;
+        options.Scope.Add("email");
+        options.Scope.Add("profile");
+        options.CallbackPath = "/signin-google";
+    }
+    else
+    {
+        // Use dummy values to pass validation, but Google login won't work
+        options.ClientId = "dummy-client-id";
+        options.ClientSecret = "dummy-client-secret";
+        options.SaveTokens = true;
+        options.Scope.Add("email");
+        options.Scope.Add("profile");
+        options.CallbackPath = "/signin-google";
+    }
 })
 .AddScheme<AuthenticationSchemeOptions, BasicAuthHandler>("Basic", options => { });
 
@@ -190,6 +207,11 @@ builder.Services.AddHostedService<MessageBusSubscriberHostedService>();
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add<GlobalExceptionFilter>();
+})
+.AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
 });
 builder.Services.AddHttpClient();
 

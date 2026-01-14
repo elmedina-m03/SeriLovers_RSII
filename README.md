@@ -12,6 +12,29 @@ SeriLovers je platforma za otkrivanje i upravljanje TV serijama.
 
 ## Pokretanje aplikacije
 
+### Pokretanje buildanih aplikacija (Za evaluaciju)
+
+**Važno:** Buildane aplikacije već imaju ispravno konfigurisane `.env` fajlove:
+- **Windows aplikacija** koristi `http://localhost:5149/api`
+- **Android APK** koristi `http://10.0.2.2:5149/api` (za Android emulator)
+
+#### Windows aplikacija
+
+1. Pokrenite backend servise (vidi "Preko Docker-a" ispod)
+2. Navigirajte do `folder-desktop-app/build/windows/x64/runner/Release/`
+3. Pokrenite `serilovers_frontend.exe`
+
+**Napomena:** Ako pokrećete direktno iz File Explorera, provjerite da je backend pokrenut na `http://localhost:5149`
+
+#### Android aplikacija
+
+1. Pokrenite backend servise (vidi "Preko Docker-a" ispod)
+2. Pokrenite Android emulator (AVD)
+3. Instalirajte APK fajl iz `folder-mobilne-app/build/app/outputs/flutter-apk/app-release.apk`
+   - Možete prevući APK fajl u emulator ili koristiti `adb install app-release.apk`
+
+**Napomena:** Android emulator automatski mapira `10.0.2.2` na `localhost` računara, tako da aplikacija može pristupiti backend-u.
+
 ### Preko Docker-a (Preporučeno)
 
 1. Navigirajte do `SeriLovers.API` direktorijuma:
