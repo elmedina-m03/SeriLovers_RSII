@@ -12,6 +12,25 @@ SeriLovers je platforma za otkrivanje i upravljanje TV serijama.
 
 ## Pokretanje aplikacije
 
+### ⚡ Brzo pokretanje (Za evaluaciju)
+
+**VAŽNO:** Backend **MORA** biti pokrenut prije nego što pokrenete aplikaciju!
+
+1. **Pokrenite backend:**
+   ```bash
+   cd SeriLovers.API
+   docker-compose up -d --build
+   ```
+   Sačekajte 30-60 sekundi da se svi servisi pokrenu.
+
+2. **Pokrenite Windows aplikaciju:**
+   - Otvorite File Explorer
+   - Navigirajte do: `folder-desktop-app/build/windows/x64/runner/Release/`
+   - Duplim klikom pokrenite: `serilovers_frontend.exe`
+   - Prijavite se sa: `desktop` / `test`
+
+**Napomena:** Ako se aplikacija ne otvori ili login ne radi, provjerite da je backend pokrenut (`docker-compose ps` u `SeriLovers.API` folderu).
+
 ### Pokretanje buildanih aplikacija (Za evaluaciju)
 
 **Važno:** Buildane aplikacije već imaju ispravno konfigurisane `.env` fajlove:
