@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
+import 'dart:convert';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
@@ -50,6 +52,71 @@ class _MobileLoginScreenState extends State<MobileLoginScreen> {
       });
 
       if (success) {
+        // Check if user is admin - block admin from accessing mobile interface
+        final token = authProvider.token;
+        if (token != null && token.isNotEmpty) {
+          try {
+            final decodedToken = JwtDecoder.decode(token);
+            bool isAdmin = false;
+            
+            // Check for Admin role in token
+            final rolesJson = decodedToken['roles'];
+            if (rolesJson != null && rolesJson is String) {
+              try {
+                final rolesList = (jsonDecode(rolesJson) as List).map((e) => e.toString()).toList();
+                if (rolesList.contains('Admin')) {
+                  isAdmin = true;
+                }
+              } catch (e) {
+                // Error parsing roles JSON
+              }
+            }
+            
+            // Check "role" claim
+            if (!isAdmin) {
+              final roleClaim = decodedToken['role'];
+              if (roleClaim is String && roleClaim == 'Admin') {
+                isAdmin = true;
+              }
+            }
+            
+            // Check all keys that might contain role information
+            if (!isAdmin) {
+              for (var key in decodedToken.keys) {
+                final keyStr = key.toString().toLowerCase();
+                if (keyStr.contains('role') && keyStr != 'roles') {
+                  final roleValue = decodedToken[key];
+                  if (roleValue is String && roleValue == 'Admin') {
+                    isAdmin = true;
+                    break;
+                  } else if (roleValue is List && roleValue.contains('Admin')) {
+                    isAdmin = true;
+                    break;
+                  }
+                }
+              }
+            }
+            
+            if (isAdmin) {
+              // Admin user - deny access to mobile interface
+              await authProvider.logout();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Access Forbidden – Mobile interface is for regular users only. Admins must use desktop interface.'),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 5),
+                  ),
+                );
+              }
+              return;
+            }
+          } catch (e) {
+            // Error decoding token - allow access but log warning
+            print('Warning: Could not decode token to check admin role: $e');
+          }
+        }
+        
         // Navigate to mobile home screen
         Navigator.pushReplacementNamed(context, '/mobile');
       } else {

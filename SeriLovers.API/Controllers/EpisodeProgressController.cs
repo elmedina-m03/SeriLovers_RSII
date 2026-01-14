@@ -153,6 +153,34 @@ namespace SeriLovers.API.Controllers
                         dto.EpisodeId, currentUserId.Value, seriesId);
                     _context.EpisodeProgresses.Remove(existingProgress);
                     await _context.SaveChangesAsync();
+                    
+                    // Update series watching state after removing progress
+                    if (seriesId > 0 && currentUserId.HasValue)
+                    {
+                        try
+                        {
+                            await _seriesWatchingStateService.UpdateStatusAsync(currentUserId.Value, seriesId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error updating series watching state after unmarking episode: UserId={UserId}, SeriesId={SeriesId}", 
+                                currentUserId.Value, seriesId);
+                        }
+                    }
+                    
+                    // Update challenge progress after removing progress
+                    if (currentUserId.HasValue)
+                    {
+                        try
+                        {
+                            await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Error updating challenge progress after unmarking episode for user {UserId}", currentUserId.Value);
+                        }
+                    }
+                    
                     _logger.LogInformation("Successfully removed EpisodeProgress record: EpisodeId={EpisodeId}, UserId={UserId}", 
                         dto.EpisodeId, currentUserId.Value);
                     return Ok(new { message = "Episode progress removed successfully." });
@@ -730,6 +758,19 @@ namespace SeriLovers.API.Controllers
                 {
                     _logger.LogError(ex, "Error updating series watching state after removing progress: UserId={UserId}, SeriesId={SeriesId}", 
                         currentUserId.Value, seriesId);
+                }
+            }
+
+            // Update challenge progress after removing progress
+            if (currentUserId.HasValue)
+            {
+                try
+                {
+                    await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error updating challenge progress after removing episode progress for user {UserId}", currentUserId.Value);
                 }
             }
 

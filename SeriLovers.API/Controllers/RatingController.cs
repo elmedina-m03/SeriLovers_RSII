@@ -489,6 +489,16 @@ namespace SeriLovers.API.Controllers
             // Recalculate series average rating after deletion
             await RecalculateSeriesAverageRating(seriesId);
 
+            // Update challenge progress (deleting a rating should update challenges)
+            try
+            {
+                await _challengeService.UpdateChallengeProgressAsync(currentUserId.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error updating challenge progress after rating deletion for user {UserId}", currentUserId.Value);
+            }
+
             return Ok(new { message = "rating removed" });
         }
     }

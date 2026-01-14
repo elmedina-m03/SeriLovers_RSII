@@ -4,6 +4,8 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dim.dart';
 import '../../core/widgets/admin_data_table_config.dart';
 import '../../models/challenge.dart';
+import '../../providers/rating_provider.dart';
+import '../../providers/episode_progress_provider.dart';
 import '../providers/admin_challenge_provider.dart';
 import 'challenges/challenge_form_dialog.dart';
 
@@ -28,6 +30,35 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
       _loadChallenges();
       _loadSummary();
       _loadUserProgress();
+      
+      // Listen to rating and episode progress changes to auto-refresh challenges
+      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+      ratingProvider.addListener(_onRatingChanged);
+      
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      progressProvider.addListener(_onProgressChanged);
+    });
+  }
+
+  /// Called when rating provider changes (rating created/updated/deleted)
+  void _onRatingChanged() {
+    // Refresh challenge progress when ratings change
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadUserProgress();
+        _loadSummary();
+      }
+    });
+  }
+
+  /// Called when episode progress provider changes (episode marked/unmarked)
+  void _onProgressChanged() {
+    // Refresh challenge progress when episode progress changes
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadUserProgress();
+        _loadSummary();
+      }
     });
   }
 
@@ -49,6 +80,18 @@ class _AdminChallengesScreenState extends State<AdminChallengesScreen> {
     _verticalScrollController.dispose();
     _progressHorizontalScrollController.dispose();
     _progressVerticalScrollController.dispose();
+    try {
+      final ratingProvider = Provider.of<RatingProvider>(context, listen: false);
+      ratingProvider.removeListener(_onRatingChanged);
+    } catch (e) {
+      // Provider might not be available during dispose, ignore
+    }
+    try {
+      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
+      progressProvider.removeListener(_onProgressChanged);
+    } catch (e) {
+      // Provider might not be available during dispose, ignore
+    }
     super.dispose();
   }
 

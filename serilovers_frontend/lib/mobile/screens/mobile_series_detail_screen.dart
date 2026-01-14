@@ -58,11 +58,16 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       // Try to refresh series details from provider if available
       final updated = seriesProvider.getById(widget.series.id);
       if (updated != null) {
-        setState(() {
-          _series = updated;
-          // Auto-select first season if available
-          if (_series.seasons.isNotEmpty && _selectedSeasonNumber == null) {
-            _selectedSeasonNumber = _series.seasons.first.seasonNumber;
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _series = updated;
+              // Auto-select first season if available
+              if (_series.seasons.isNotEmpty && _selectedSeasonNumber == null) {
+                _selectedSeasonNumber = _series.seasons.first.seasonNumber;
+              }
+            });
           }
         });
       }
@@ -248,6 +253,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
               padding: const EdgeInsets.all(AppDim.paddingMedium),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Title
                   Text(
@@ -264,31 +270,42 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Text(
-                            '${_series.releaseDate.year}',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                          if (_series.seasons.isNotEmpty) ...[
-                            const SizedBox(width: AppDim.paddingSmall),
-                            Text(
-                              '• ${_series.totalSeasons} season${_series.totalSeasons > 1 ? 's' : ''}',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textSecondary,
+                      Flexible(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                '${_series.releaseDate.year}',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: AppDim.paddingSmall),
-                            Text(
-                              '• ${_series.totalEpisodes} episodes',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                color: AppColors.textSecondary,
+                            if (_series.seasons.isNotEmpty) ...[
+                              const SizedBox(width: AppDim.paddingSmall),
+                              Flexible(
+                                child: Text(
+                                  '• ${_series.totalSeasons} season${_series.totalSeasons > 1 ? 's' : ''}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: AppDim.paddingSmall),
+                              Flexible(
+                                child: Text(
+                                  '• ${_series.totalEpisodes} episodes',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                       // Heart icon positioned like in prototype
                       Consumer<WatchlistProvider>(
@@ -396,6 +413,7 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
 
                   // Rating Display
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -428,10 +446,13 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                       ),
                       const SizedBox(width: AppDim.paddingMedium),
                       if (_series.ratingsCount > 0)
-                        Text(
-                          '(${_series.ratingsCount} reviews)',
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            color: AppColors.textSecondary,
+                        Flexible(
+                          child: Text(
+                            '(${_series.ratingsCount} reviews)',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                     ],
@@ -457,23 +478,27 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                             ),
                           ),
                           const SizedBox(height: AppDim.paddingSmall),
-                          Row(
-                            children: List.generate(5, (index) {
-                              final rating = index + 1;
-                              final isSelected = _userRating != null && rating <= _userRating!;
-                              
-                              return GestureDetector(
-                                onTap: _isRatingLoading ? null : () => _handleRatingTap(rating),
-                                child: Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: Icon(
-                                    isSelected ? Icons.star : Icons.star_border,
-                                    color: isSelected ? Colors.amber : AppColors.textSecondary,
-                                    size: 32,
+                          Padding(
+                            padding: const EdgeInsets.only(right: AppDim.paddingMedium),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(5, (index) {
+                                final rating = index + 1;
+                                final isSelected = _userRating != null && rating <= _userRating!;
+                                
+                                return GestureDetector(
+                                  onTap: _isRatingLoading ? null : () => _handleRatingTap(rating),
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: Icon(
+                                      isSelected ? Icons.star : Icons.star_border,
+                                      color: isSelected ? Colors.amber : AppColors.textSecondary,
+                                      size: 32,
+                                    ),
                                   ),
-                                ),
-                              );
-                            }),
+                                );
+                              }),
+                            ),
                           ),
                           if (_isRatingLoading)
                             const Padding(
@@ -536,9 +561,11 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                           
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
                                     'Your Progress',
@@ -623,8 +650,13 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                       seasons: _series.seasons,
                       selectedSeasonNumber: _selectedSeasonNumber,
                       onSeasonSelected: (seasonNumber) {
-                        setState(() {
-                          _selectedSeasonNumber = seasonNumber;
+                        // Use post-frame callback to avoid setState during build
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) {
+                            setState(() {
+                              _selectedSeasonNumber = seasonNumber;
+                            });
+                          }
                         });
                       },
                     ),
@@ -759,9 +791,14 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                           await seriesProvider.fetchSeriesDetail(_series.id);
                           // Update local series data
                           final updated = seriesProvider.getById(_series.id);
-                          if (updated != null) {
-                            setState(() {
-                              _series = updated;
+                          if (updated != null && mounted) {
+                            // Use post-frame callback to avoid setState during build
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) {
+                                setState(() {
+                                  _series = updated;
+                                });
+                              }
                             });
                           }
                         }
@@ -780,6 +817,8 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                     ),
                   ),
 
+                  const SizedBox(height: AppDim.paddingLarge),
+                  // Extra bottom padding to prevent overflow
                   const SizedBox(height: AppDim.paddingLarge),
                 ],
               ),
@@ -889,9 +928,11 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                 ),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     const SizedBox(height: 4),
                     Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: List.generate(5, (index) {
                         return Icon(
                           index < review.starRating
@@ -989,14 +1030,17 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
           ),
         ),
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            Flexible(
               child: Text(
                 episode.title,
                 style: theme.textTheme.titleSmall?.copyWith(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.bold,
                 ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
               ),
             ),
             if (isWatched)
@@ -1037,10 +1081,13 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
                     color: Colors.amber,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    episode.rating!.toStringAsFixed(1),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
+                  Flexible(
+                    child: Text(
+                      episode.rating!.toStringAsFixed(1),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -1089,22 +1136,24 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         }
       }
       
-      // Refresh series progress and watched episodes
+      // Wait a bit to ensure backend has saved the data
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Refresh series progress
       _progressFuture = progressProvider.loadSeriesProgress(_series.id);
       await _progressFuture;
-      await _loadWatchedEpisodes();
       
-      // Refresh series detail to get any new episodes that might have been added
-      await _loadSeriesDetail();
-      
-      // Small delay to ensure watched episodes list is updated
-      await Future.delayed(const Duration(milliseconds: 300));
+      // Don't reload series detail - it's not necessary and can cause issues
+      // Series detail doesn't change when marking episodes
       
       if (mounted) {
         // Use post-frame callback to avoid setState during build
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           if (mounted) {
-            // Reload watched episodes to ensure persistence
+            // Wait a bit more to ensure backend is fully synced before reloading watched episodes
+            await Future.delayed(const Duration(milliseconds: 500));
+            
+            // Reload watched episodes to ensure persistence (but don't clear local state if backend is slow)
             await _loadWatchedEpisodes();
             
             // Reload progress to ensure it's synced with backend
@@ -1282,19 +1331,49 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       // Refresh reviews to show updated rating
       await ratingProvider.loadSeriesRatings(_series.id);
       
+      // Refresh series detail to update rating count and average
+      final seriesProvider = Provider.of<SeriesProvider>(context, listen: false);
+      await seriesProvider.fetchSeriesDetail(_series.id);
+      final updated = seriesProvider.getById(_series.id);
+      
+      // Refresh challenge progress (rating counts towards challenges)
+      try {
+        final challengesProvider = Provider.of<MobileChallengesProvider>(context, listen: false);
+        await challengesProvider.fetchMyProgress();
+      } catch (_) {
+        // Silently fail
+      }
+      
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('You rated this series ${rating} star${rating > 1 ? 's' : ''}'),
-            backgroundColor: AppColors.successColor,
-          ),
-        );
-        setState(() {}); // Refresh UI
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            if (updated != null) {
+              setState(() {
+                _series = updated;
+              });
+            } else {
+              setState(() {}); // Refresh UI
+            }
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('You rated this series ${rating} star${rating > 1 ? 's' : ''}'),
+                backgroundColor: AppColors.successColor,
+              ),
+            );
+          }
+        });
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _userRating = null;
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _userRating = null;
+            });
+          }
         });
         
         // Check if the error is about needing to finish the series
@@ -1331,8 +1410,13 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isRatingLoading = false;
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _isRatingLoading = false;
+            });
+          }
         });
       }
     }
@@ -1342,8 +1426,13 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
   Future<void> _loadSeriesDetail() async {
     if (_isLoadingDetail) return;
     
-    setState(() {
-      _isLoadingDetail = true;
+    // Use post-frame callback to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _isLoadingDetail = true;
+        });
+      }
     });
 
     try {
@@ -1364,21 +1453,31 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
               }
               _isLoadingDetail = false;
             });
-            // Reload watched episodes after series detail loads
-            _loadWatchedEpisodes();
+            // Don't reload watched episodes here - it will be loaded in initState
+            // Reloading here can cause episodes to be unmarked if backend is slow
             // Reset progress future to reload with new series data
             _progressFuture = null;
           }
         });
       } else if (mounted) {
-        setState(() {
-          _isLoadingDetail = false;
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _isLoadingDetail = false;
+            });
+          }
         });
       }
     } catch (e) {
       if (mounted) {
-        setState(() {
-          _isLoadingDetail = false;
+        // Use post-frame callback to avoid setState during build
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _isLoadingDetail = false;
+            });
+          }
         });
       }
     }
@@ -1498,7 +1597,6 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
     if (!mounted) return;
     
     try {
-      final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final token = authProvider.token;
       
@@ -1506,40 +1604,34 @@ class _MobileSeriesDetailScreenState extends State<MobileSeriesDetailScreen> {
         return;
       }
 
-      // Always reload progress for this series to ensure we have the latest data from backend
-      // Don't rely on cache as it might be stale after leaving a review or completing series
-      await progressProvider.loadSeriesProgress(_series.id);
-
       // Use getUserProgress to get all watched episodes for accurate data
       final progressService = EpisodeProgressService();
       final userProgress = await progressService.getUserProgress(token: token);
       
-      // Update watched episodes immediately (filter for completed episodes only)
+      // Update watched episodes (filter for completed episodes only)
       if (mounted) {
         final newWatchedIds = userProgress
             .where((p) => p.seriesId == _series.id && p.isCompleted)
             .map((p) => p.episodeId)
             .toSet();
         
-        // Always update to ensure we have the latest data from backend
+        // Check if backend has any data for this series
+        final hasSeriesData = userProgress.any((p) => p.seriesId == _series.id);
+        
+        if (hasSeriesData) {
+          // Backend has data for this series - use it (trust backend)
           setState(() {
             _watchedEpisodeIds = newWatchedIds;
           });
+        } else {
+          // Backend doesn't have data for this series yet - keep local state
+          // This handles the case where backend hasn't synced yet after marking episodes
+          // Don't clear _watchedEpisodeIds - keep what we have locally
+        }
       }
     } catch (e) {
       // Silently fail - watched indicators just won't show
-      // But try to use cached progress as fallback
-      try {
-        final progressProvider = Provider.of<EpisodeProgressProvider>(context, listen: false);
-        final progress = progressProvider.getSeriesProgress(_series.id);
-        if (progress != null && mounted) {
-          // If we have progress but couldn't load watched episodes,
-          // at least ensure we don't lose the progress data
-          // Watched episodes will be empty, but progress will still show
-        }
-      } catch (_) {
-        // Silently fail
-      }
+      // Keep existing _watchedEpisodeIds to prevent losing data
     }
   }
 

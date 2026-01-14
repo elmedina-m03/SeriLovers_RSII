@@ -328,9 +328,17 @@ namespace SeriLovers.API.Controllers.Admin
             var topWatchersList = new List<object>();
             foreach (var user in realUsers)
             {
+                // GetCompletedSeriesCountAsync counts series that user has rated (completed)
+                // This is the primary metric for "watched series"
                 var watchedSeriesCount = await _challengeService.GetCompletedSeriesCountAsync(user.id);
                 var ratingsCount = ratingsDict.ContainsKey(user.id) ? ratingsDict[user.id] : 0;
                 var watchlistCount = watchlistsDict.ContainsKey(user.id) ? watchlistsDict[user.id] : 0;
+                
+                // watchedSeriesCount should equal ratingsCount (each rating = 1 completed series)
+                // But we use GetCompletedSeriesCountAsync as it also checks episode progress for edge cases
+                // totalActivity = watchedSeriesCount (completed series) + watchlistCount (series in watchlist)
+                // Note: ratingsCount is already included in watchedSeriesCount, so we don't double-count
+                var totalActivity = watchedSeriesCount + watchlistCount;
                 
                 topWatchersList.Add(new
                 {
@@ -342,12 +350,14 @@ namespace SeriLovers.API.Controllers.Admin
                     watchedSeriesCount = watchedSeriesCount,
                     ratingsCount = ratingsCount,
                     watchlistCount = watchlistCount,
-                    totalActivity = watchedSeriesCount + ratingsCount + watchlistCount
+                    totalActivity = totalActivity
                 });
             }
             
             var topWatchers = topWatchersList
                 .OrderByDescending(u => ((dynamic)u).totalActivity)
+                .ThenByDescending(u => ((dynamic)u).watchedSeriesCount)
+                .ThenByDescending(u => ((dynamic)u).ratingsCount)
                 .Take(3)
                 .ToList();
 

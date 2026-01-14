@@ -40,7 +40,12 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     super.initState();
     _searchController.addListener(() {
       // Update UI state but don't trigger search
-      setState(() {});
+      // Use post-frame callback to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSeries();
@@ -292,6 +297,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Filter buttons
                   Padding(
@@ -495,6 +501,8 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
                     },
                   ),
 
+                  const SizedBox(height: AppDim.paddingLarge),
+                  // Bottom padding to prevent overflow
                   const SizedBox(height: AppDim.paddingLarge),
                 ],
               ),
@@ -837,6 +845,7 @@ class _MobileHomeScreenState extends State<MobileHomeScreen> {
     final secondRow = series.sublist(midPoint);
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         // First row - horizontal scrolling
         SizedBox(

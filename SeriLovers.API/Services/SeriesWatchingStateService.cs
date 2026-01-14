@@ -175,6 +175,35 @@ namespace SeriLovers.API.Services
 
         private async Task<SeriesWatchingStatus> CalculateAndPersistStatusAsync(int userId, int seriesId)
         {
+            // CRITICAL: First check if user has a review for this series
+            // If they do, the series MUST be Finished (cannot be InProgress or ToWatch)
+            // This must be checked BEFORE calculating episode progress to prevent reversion
+            var hasReview = await _context.Ratings
+                .AnyAsync(r => r.UserId == userId && r.SeriesId == seriesId);
+            
+            if (hasReview)
+            {
+                _logger.LogInformation("Series {SeriesId} for User {UserId} has a review. Ensuring status is Finished regardless of episode progress.",
+                    seriesId, userId);
+                
+                var seriesWithReview = await _context.Series
+                    .Include(s => s.Seasons)
+                        .ThenInclude(season => season.Episodes)
+                    .FirstOrDefaultAsync(s => s.Id == seriesId);
+
+                if (seriesWithReview != null)
+                {
+                    var totalEpisodesForReview = (seriesWithReview.Seasons ?? Enumerable.Empty<Season>())
+                        .SelectMany(season => season.Episodes ?? Enumerable.Empty<Episode>())
+                        .Count();
+                    
+                    // Ensure status is Finished - review exists means series must be Finished
+                    var finishedState = BaseSeriesWatchingState.GetState(SeriesWatchingStatus.Finished, _serviceProvider);
+                    var newStatus = await finishedState.UpdateStateAsync(userId, seriesId, totalEpisodesForReview, totalEpisodesForReview);
+                    return newStatus;
+                }
+            }
+
             var series = await _context.Series
                 .Include(s => s.Seasons)
                     .ThenInclude(season => season.Episodes)
@@ -231,25 +260,6 @@ namespace SeriLovers.API.Services
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.SeriesId == seriesId);
 
             var currentStatus = currentStateEntity?.Status ?? SeriesWatchingStatus.ToWatch;
-            
-            // CRITICAL: If current status is Finished, check if user has a review
-            // If they do, the series must remain Finished (cannot revert to InProgress)
-            if (currentStatus == SeriesWatchingStatus.Finished)
-            {
-                var hasReview = await _context.Ratings
-                    .AnyAsync(r => r.UserId == userId && r.SeriesId == seriesId);
-                
-                if (hasReview)
-                {
-                    _logger.LogInformation("Series {SeriesId} for User {UserId} is Finished and has a review. Keeping status as Finished even if EpisodeProgress suggests otherwise.",
-                        seriesId, userId);
-                    
-                    // Ensure status remains Finished
-                    var finishedState = BaseSeriesWatchingState.GetState(SeriesWatchingStatus.Finished, _serviceProvider);
-                    var newStatus = await finishedState.UpdateStateAsync(userId, seriesId, totalEpisodes, watchedEpisodes);
-                    return newStatus;
-                }
-            }
             
             var currentState = BaseSeriesWatchingState.GetState(currentStatus, _serviceProvider);
             var newStatusResult = await currentState.UpdateStateAsync(userId, seriesId, totalEpisodes, watchedEpisodes);

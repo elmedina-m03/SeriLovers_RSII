@@ -124,31 +124,52 @@ namespace SeriLovers.API.Services
                     
                     if (seriesIdsWithActivity.Any())
                     {
-                        // Calculate average ratings for each series from ALL ratings in database
-                        // This ensures we show correct ratings from all users, not just filtered ones
-                        // Use direct query to Ratings table to ensure we get all ratings
-                        var seriesRatingsFromDb = await _context.Ratings
+                        // Calculate average ratings for each series using the SAME filtering logic as SeriesService
+                        // Filter out test users (but include mobile/desktop users) to match what users see in the app
+                        // Get all ratings first, then filter in memory (same logic as SeriesService.GetByIdAsync)
+                        var allRatingsForTopSeries = await _context.Ratings
                             .Where(r => seriesIdsWithActivity.Contains(r.SeriesId))
-                            .GroupBy(r => r.SeriesId)
-                            .Select(g => new
-                            {
-                                SeriesId = g.Key,
-                                // Calculate average from ALL ratings in database for this series
-                                // This includes ratings from all users (mobile, desktop, test users, etc.)
-                                AvgRating = g.Average(r => r.Score)
-                            })
+                            .Include(r => r.User)
                             .ToListAsync();
                         
-                        var seriesRatingsDict = seriesRatingsFromDb
-                            .ToDictionary(s => s.SeriesId, s => s.AvgRating);
+                        // Filter ratings using the same logic as SeriesService.GetByIdAsync
+                        var filteredRatings = allRatingsForTopSeries
+                            .Where(r => r.User != null
+                                && (
+                                    // Include mobile and desktop users (seminar test users) - check username first
+                                    (r.User.UserName != null && (r.User.UserName.Equals("mobile", StringComparison.OrdinalIgnoreCase) 
+                                        || r.User.UserName.Equals("desktop", StringComparison.OrdinalIgnoreCase)))
+                                    ||
+                                    // Include other users that don't match test patterns
+                                    (r.User.Email != null
+                                        && !r.User.Email.EndsWith("@test.com", StringComparison.OrdinalIgnoreCase)
+                                        && !r.User.Email.EndsWith("@example.com", StringComparison.OrdinalIgnoreCase)
+                                        && !r.User.Email.EndsWith("@test", StringComparison.OrdinalIgnoreCase)
+                                        && !r.User.Email.StartsWith("testuser", StringComparison.OrdinalIgnoreCase))
+                                ))
+                            .ToList();
                         
-                        _logger.LogDebug("Calculated average ratings for {Count} series from database", seriesRatingsDict.Count);
+                        // Calculate average ratings from filtered ratings (matching SeriesService logic)
+                        // IMPORTANT: Always calculate from actual ratings, not from Series.Rating field
+                        // Series.Rating might be stale or not updated yet
+                        var seriesRatingsDict = filteredRatings
+                            .GroupBy(r => r.SeriesId)
+                            .ToDictionary(
+                                g => g.Key,
+                                g => Math.Round(g.Average(r => r.Score), 2)
+                            );
+                        
+                        _logger.LogDebug("Calculated average ratings for {Count} series from filtered ratings", seriesRatingsDict.Count);
                         foreach (var kvp in seriesRatingsDict.Take(5))
                         {
-                            _logger.LogDebug("Series {SeriesId}: AvgRating = {AvgRating}", kvp.Key, kvp.Value);
+                            _logger.LogDebug("Series {SeriesId}: AvgRating = {AvgRating} (calculated from {Count} ratings)", 
+                                kvp.Key, kvp.Value, filteredRatings.Count(r => r.SeriesId == kvp.Key));
                         }
                         
                         // Get all series and calculate TopSeries with real data
+                        // Include ALL series that have activity (ratings or watchlists)
+                        // If series has ratings, use calculated average from ratings
+                        // If series has no ratings, use Series.Rating from seed data (initial rating)
                         var allSeries = await _context.Series
                             .Where(s => seriesIdsWithActivity.Contains(s.Id))
                             .ToListAsync();
@@ -158,12 +179,16 @@ namespace SeriLovers.API.Services
                             {
                                 Id = s.Id,
                                 Title = s.Title ?? "Unknown",
-                                // Use average from ALL ratings in database for this series
-                                AvgRating = seriesRatingsDict.ContainsKey(s.Id) ? seriesRatingsDict[s.Id] : 0.0,
+                                // If series has ratings, use calculated average from actual ratings
+                                // If no ratings, use Series.Rating from seed data (initial rating set during creation)
+                                AvgRating = seriesRatingsDict.ContainsKey(s.Id) 
+                                    ? seriesRatingsDict[s.Id] 
+                                    : s.Rating, // Use seed data rating if no user ratings exist
                                 Views = (seriesViews.ContainsKey(s.Id) ? seriesViews[s.Id] : 0) + 
                                         (seriesWatchlistCounts.ContainsKey(s.Id) ? seriesWatchlistCounts[s.Id] : 0),
                                 ImageUrl = s.ImageUrl
                             })
+                            .Where(s => s.AvgRating > 0) // Only show series with rating > 0 (either from ratings or seed data)
                             .OrderByDescending(s => s.AvgRating)
                             .ThenByDescending(s => s.Views)
                             .Take(5)
