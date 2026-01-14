@@ -10,6 +10,17 @@ SeriLovers je platforma za otkrivanje i upravljanje TV serijama.
 - RabbitMQ (EasyNetQ)
 - Docker & Docker Compose
 
+## Preuzimanje projekta
+
+**Važno:** Ako Windows Defender prikaže "Virus detected" prilikom preuzimanja ZIP arhive, to je **false positive** (lažno pozitivno). Flutter Windows build fajlovi često pokreću ovo upozorenje, ali su potpuno sigurni.
+
+**Preporučeni način preuzimanja:**
+```bash
+git clone https://github.com/elmedina-m03/SeriLovers_RSII.git
+```
+
+Alternativno, možete ignorirati upozorenje ili dodati iznimku u Windows Defender.
+
 ## Pokretanje aplikacije
 
 ### ⚡ Brzo pokretanje (Za evaluaciju)
