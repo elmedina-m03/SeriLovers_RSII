@@ -7,6 +7,8 @@ serilovers_frontend/build/
 .env
 *.env
 !env.template
+# Exception: Windows build needs .env file for submission
+!folder-desktop-app/build/windows/x64/runner/Release/data/flutter_assets/.env
 
 # IDE
 .vs/
